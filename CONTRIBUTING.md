@@ -33,9 +33,9 @@ Do not report security problems in a public issue; see [docs/SECURITY.md](docs/S
 
 You need
 
-* Java 21 or newer
+* Java 25 or newer
 * [Apache Maven](https://maven.apache.org/)
-* [Node.js and npm](https://nodejs.org/)
+* [Node.js 26 and npm](https://nodejs.org/)
 * Docker Compose or Podman with Compose (for PostgreSQL and Keycloak)
 * Git
 

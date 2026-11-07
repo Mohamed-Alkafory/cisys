@@ -4,9 +4,9 @@
 
 ### Basic dependencies
 
-* [OpenJDK 21](https://openjdk.org/) or newer
+* [OpenJDK 25](https://openjdk.org/) or newer
 * [Apache Maven](https://maven.apache.org/)
-* [Node.js and npm](https://nodejs.org/)
+* [Node.js 26 and npm](https://nodejs.org/)
 * Docker Compose, or Podman with Compose
 
 PostgreSQL and Keycloak are started by `compose.yaml`; see [BUILDING.md](BUILDING.md). To use your own PostgreSQL instead, create a database and user, and set `DB_URL`, `DB_USER` and `DB_PASSWORD`:
@@ -89,6 +89,7 @@ See [SECURITY.md](SECURITY.md) for the role-to-endpoint mapping.
 | `contrib/keycloak`                       | Development Keycloak realm and login theme      |
 | `docs`                                   | Documentation, roadmap, screenshots and manual  |
 | `compose.yaml`                           | Local PostgreSQL and Keycloak                   |
+| `.github/workflows`                      | CI: backend tests, frontend lint and build      |
 
 ## Logging levels
 

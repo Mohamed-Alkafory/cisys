@@ -1,4 +1,4 @@
-.PHONY: all clean run test lint build docs platform-start platform-stop reset frontend setup full
+.PHONY: all clean run test lint check build docs platform-start platform-stop reset frontend setup full
 
 all: clean lint run
 
@@ -14,6 +14,9 @@ frontend:
 
 lint: frontend
 	@npm --prefix src/frontend run lint
+
+check: frontend
+	@npm --prefix src/frontend run check
 
 build: frontend
 	@npm --prefix src/frontend run build

@@ -31,7 +31,7 @@ Run `make` targets for the common tasks; see the Makefile section of the build g
 
 **cisys** is built with
 
-- [Quarkus](https://quarkus.io/) on [Java 21](https://openjdk.org/) for the backend
+- [Quarkus](https://quarkus.io/) on [Java 25](https://openjdk.org/) for the backend
 - [Keycloak](https://www.keycloak.org/) for identity management and Single Sign-On (SSO)
 - [PostgreSQL](https://www.postgresql.org) for storage
 - [JGit](https://www.eclipse.org/jgit/) for repository access
@@ -58,7 +58,7 @@ Run `make` targets for the common tasks; see the Makefile section of the build g
 
 ## Getting started
 
-Requires Java 21+, Maven, Node.js, npm, and Docker Compose or Podman with Compose. Images and dependencies must be downloadable. This setup is for a trusted local machine only.
+Requires Java 25+, Maven, Node.js 26, npm, and Docker Compose or Podman with Compose. Images and dependencies must be downloadable. This setup is for a trusted local machine only.
 
 Clone the repository:
 
@@ -117,7 +117,7 @@ The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `a
 
 ### Windows
 
-Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java 21, Maven, Node.js and npm inside Ubuntu, then follow the steps above from an Ubuntu terminal. Open <http://localhost:5173> in your Windows browser.
+Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java 25, Maven, Node.js 26 and npm inside Ubuntu, then follow the steps above from an Ubuntu terminal. Open <http://localhost:5173> in your Windows browser.
 
 ## Contributing
 

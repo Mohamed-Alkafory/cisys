@@ -8,9 +8,9 @@ This chapter describes how to prepare a local development setup for [**cisys**](
 
 Before you begin, make sure the following tools are available:
 
-* [Java](https://openjdk.org/) 21 or newer
+* [Java](https://openjdk.org/) 25 or newer
 * [Maven](https://maven.apache.org/)
-* [Node.js and npm](https://nodejs.org/)
+* [Node.js 26 and npm](https://nodejs.org/)
 * [Docker Compose](https://docs.docker.com/compose/) or [Podman](https://podman.io/) with Compose
 * [Git](https://git-scm.com/)
 
@@ -76,5 +76,5 @@ The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `a
 
 ## Windows
 
-Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java, Maven, Node.js and npm inside Ubuntu, and follow the steps above from an Ubuntu terminal. Open
+Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java, Maven, Node.js 26 and npm inside Ubuntu, and follow the steps above from an Ubuntu terminal. Open
 <http://localhost:5173> in your Windows browser.

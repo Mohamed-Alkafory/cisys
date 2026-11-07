@@ -3,10 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "lint": "eslint src",
+    "check": "npm run lint && npm run build",
     "prepare": "cd ../.. && husky"
   },
   "dependencies": {
