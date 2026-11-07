@@ -4,7 +4,7 @@ subtitle: "Continuous Integration System"
 keywords: [ci, build, continuous integration]
 lang: "en"
 titlepage: true
-titlepage-logo: "images/logo-titlepage.png"
+titlepage-logo: "images/logo-512.png"
 logo-width: 60mm
 titlepage-color: "176A4A"
 titlepage-text-color: "FFFFFF"
