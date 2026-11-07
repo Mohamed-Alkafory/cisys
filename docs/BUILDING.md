@@ -61,10 +61,12 @@ docker compose up -d
 
 (or `podman compose up -d`). The `compose.yaml` file starts:
 
-- `postgres` (PostgreSQL 16) on `127.0.0.1:5432`, database, user and password `cisys`
-- `keycloak` (26.8.1, `start-dev`) on `http://localhost:8180`, importing `contrib/keycloak/realm.json`
+- `postgres` (PostgreSQL 18) on `127.0.0.1:5432`, database, user and password `cisys`
+- `keycloak` (26.8.2, `start-dev`) on `http://localhost:8180`, importing `contrib/keycloak/realm.json`
 
-Wait for Keycloak to become available before using the application. The realm is imported only on the first start; existing Keycloak data is not overwritten. To recreate the local development data, run `docker compose down -v` (this deletes the local databases).
+Wait for Keycloak to become available before using the application. The realm is imported only on the first start; existing Keycloak data is not overwritten. To recreate the local development data, run `make reset` (this deletes the local databases).
+
+When cisys shuts down it signs all users out of the `cisys` realm through the `cisys-backend` service account, so everyone signs in again after a restart. A live reload keeps the sessions, and so does a crash, as nothing can run at that point. A Keycloak realm created before this client was added logs a warning instead; run `make reset` to import it. Access tokens that were already issued stay valid until they expire, by default within 5 minutes.
 
 ### Backend
 
@@ -104,6 +106,9 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | Variable            | Default                                  | Description                                          |
 | :------------------ | :--------------------------------------- | :--------------------------------------------------- |
 | `KEYCLOAK_URL`      | `http://localhost:8180`                  | Keycloak base URL (the `cisys` realm is appended)    |
+| `SESSION_INVALIDATE_ON_SHUTDOWN` | `true` | Signs all users out of the realm when cisys shuts down |
+| `KEYCLOAK_ADMIN_CLIENT_ID` | `cisys-backend` | Keycloak service account used to sign users out |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | `cisys` | Secret of that service account |
 | `DB_URL`            | `jdbc:postgresql://localhost:5432/cisys` | JDBC URL                                             |
 | `DB_USER`           | `cisys`                                  | Database user                                        |
 | `DB_PASSWORD`       | `cisys`                                  | Database password                                    |
@@ -176,15 +181,15 @@ The targets are
 * `clean` - Clean
 * `lint` - Run the frontend ESLint check
 * `build` - Build the frontend
-* `run` - Run the backend in development mode
+* `run` - Run the backend and the frontend in development mode
 * `test` - Run the backend test cases
 * `docs` - Generate the manual
-* `platform` - Start compose services (PostgreSQL + Keycloak)
-* `platform-down` - Stop the compose services
-* `platform-reset` - Stop the compose services and delete their data volumes
-* `full` - Run everything (platform, clean, frontend, lint, test, build, docs, run)
+* `platform-start` - Start compose services (PostgreSQL + Keycloak)
+* `platform-stop` - Stop the compose services
+* `reset` - Stop the compose services and delete their data volumes, after confirmation
+* `full` - Run everything (platform-start, clean, frontend, lint, test, build, docs, run)
 
-The `platform` targets use Podman Compose when available, otherwise Docker Compose.
+The `platform-start`, `platform-stop` and `reset` targets use Podman Compose when available, otherwise Docker Compose.
 
 ## Windows
 

@@ -7,6 +7,7 @@ import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
 import { Badge } from './components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
+import AppFooter from './components/layout/AppFooter';
 import PageHeader from './components/layout/PageHeader';
 import BrandingPanel from './BrandingPanel';
 import './style.css';
@@ -14,7 +15,13 @@ import './style.css';
 const keycloak = new Keycloak({ url: 'http://localhost:8180', realm: 'cisys', clientId: 'cisys-ui' });
 
 async function api(path, opts = {}) {
-  await keycloak.updateToken(30);
+  try {
+    await keycloak.updateToken(30);
+  } catch {
+    // The session is gone, for example because the application was restarted.
+    await keycloak.login();
+    throw new Error('Your session has ended. Please sign in again.');
+  }
   const response = await fetch('http://localhost:8080/api' + path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + keycloak.token, ...opts.headers },
@@ -170,7 +177,7 @@ function App() {
           </CardContent>
         </Card>}
       </main>}
-      <footer className="app-footer">Powered by {branding.name}</footer>
+      <AppFooter />
     </div>
   );
 }

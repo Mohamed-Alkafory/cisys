@@ -37,7 +37,7 @@ docker compose up -d
 
 The default local configuration expects a PostgreSQL database named `cisys` with user `cisys` and password `cisys`. These defaults can be changed through the `DB_URL`, `DB_USER` and `DB_PASSWORD` environment variables.
 
-The Keycloak realm is imported on the first startup only; existing Keycloak data is not overwritten. To recreate the local development data, run `docker compose down -v`. This deletes the local databases.
+The Keycloak realm is imported on the first startup only; existing Keycloak data is not overwritten. To recreate the local development data, run `make reset`. This deletes the local databases.
 
 ## Start the backend
 

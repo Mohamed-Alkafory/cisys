@@ -20,12 +20,12 @@ export default function AppFooter({ className }: AppFooterProps) {
     >
       Copyright © {new Date().getFullYear()} Powered by{" "}
       <a
-        href="https://github.com/mnemosyne-systems/billetsys"
+        href="https://github.com/mnemosyne-systems/cisys"
         target="_blank"
         rel="noreferrer"
         className="text-[var(--header-text)] hover:underline"
       >
-        billetsys
+        cisys
       </a>
     </footer>
   );

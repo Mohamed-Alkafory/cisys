@@ -86,7 +86,7 @@ See [SECURITY.md](SECURITY.md) for the role-to-endpoint mapping.
 | `src/backend/main/resources`             | Quarkus configuration                           |
 | `src/backend/test`                       | Backend tests (H2, `@TestSecurity`)             |
 | `src/frontend`                           | React frontend (Vite, Tailwind)                 |
-| `contrib/keycloak`                       | Development Keycloak realm                      |
+| `contrib/keycloak`                       | Development Keycloak realm and login theme      |
 | `docs`                                   | Documentation, roadmap, screenshots and manual  |
 | `compose.yaml`                           | Local PostgreSQL and Keycloak                   |
 
@@ -211,7 +211,7 @@ But they are not actually lost - using `git reflog`, you can find every commit t
 ## Verification status
 
 * Backend tests (`mvn test`) and the frontend lint and production build pass in the development workspace.
-* Keycloak 26.8.1 sign-in for Member, Lead and Admin, and private-project visibility, were tested against a real local Keycloak and PostgreSQL 16 on 2026-11-06.
+* Keycloak 26.8.2 tokens for Member, Lead and Admin, and private-project visibility, were tested through the REST API against a real local Keycloak and PostgreSQL 18 on 2026-11-07.
 * An opt-in smoke test fetches the public `octocat/Hello-World` repository via JGit and runs an Alpine container through Docker: `CISYS_RUNNER_SMOKE=true mvn -Dtest=RunnerSmokeTest test`.
 * Not yet verified: a real private Git provider, Podman, Windows/WSL, and the full Compose stack end to end.
 

@@ -1,22 +1,24 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_DB: cisys
       POSTGRES_USER: cisys
       POSTGRES_PASSWORD: cisys
     ports: ["127.0.0.1:5432:5432"]
-    volumes: ["cisys-db:/var/lib/postgresql/data"]
+    volumes: ["cisys-postgres:/var/lib/postgresql"]
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.1
+    image: quay.io/keycloak/keycloak:26.8.2
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_SPI_THEME__DEFAULT: cisys
     ports: ["127.0.0.1:8180:8080"]
     volumes:
-      - ./contrib/keycloak/realm.json:/opt/keycloak/data/import/cisys-realm.json:ro
+      - ./contrib/keycloak/realm.json:/opt/keycloak/data/import/cisys-realm.json:ro,z
+      - ./contrib/keycloak/themes/cisys:/opt/keycloak/themes/cisys:ro,z
       - cisys-keycloak:/opt/keycloak/data
 volumes:
-  cisys-db:
+  cisys-postgres:
   cisys-keycloak:

@@ -70,30 +70,40 @@ cd cisys
 Start PostgreSQL and Keycloak with compose:
 
 ```sh
-make platform
+make platform-start
 ```
 
 This detects whether you have Podman Compose or Docker Compose and starts the containers defined in `compose.yaml`. You can also run `docker compose up -d` directly. Wait for Keycloak to become available at <http://localhost:8180>.
 
-Start the backend in development mode:
+Run `make platform-stop` to stop the containers and keep their data, or `make reset` to stop them and delete their data after asking for confirmation.
+
+Start the backend and the frontend in development mode:
 
 ```sh
 make run
 ```
 
-(equivalent to `mvn quarkus:dev`). In a second terminal, start the frontend:
+This installs the frontend dependencies when needed, runs the frontend in the background and the backend (`mvn quarkus:dev`) in the foreground. Stopping the backend also stops the frontend and signs all users out. It does not compile or run the tests; use `make test` for those.
 
-```sh
-cd src/frontend
-npm install
-npm run dev
-```
-
-The install also sets up the Husky pre-commit hook in a Git checkout; if you unpacked an archive, run `git init` first. Run `npm run lint` for the frontend lint check.
+The install also sets up the Husky pre-commit hook in a Git checkout; if you unpacked an archive, run `git init` first. Run `make lint` for the frontend lint check.
 
 The application is available at <http://localhost:5173>.
 
 The configuration is defined in `src/backend/main/resources/application.properties`.
+
+### Ports
+
+The local setup uses the following ports. All of them are bound to the loopback interface.
+
+| Port   | Service             | Address                 | Started by                     |
+| :----- | :------------------ | :---------------------- | :----------------------------- |
+| `5173` | Frontend            | <http://localhost:5173> | `make run`                     |
+| `8080` | Backend API         | <http://localhost:8080> | `make run`                     |
+| `8180` | Keycloak            | <http://localhost:8180> | `make platform-start`          |
+| `5432` | PostgreSQL          | `localhost:5432`        | `make platform-start`          |
+| `5005` | Java debugger       | `localhost:5005`        | `make run` (development mode)  |
+
+Open the application on port `5173`. Keycloak and the backend only accept that frontend address, so sign-in and API calls fail if Vite moves to another port because `5173` is already in use.
 
 ### Test accounts
 
@@ -103,7 +113,7 @@ The users defined for testing are
 - Lead: `lead` / `lead`
 - Admin: `admin` / `admin`
 
-The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `admin`. The realm import runs on the first startup only; existing Keycloak data is not overwritten. To recreate the local development data, run `docker compose down -v` (this deletes the local databases).
+The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `admin`. The realm import runs on the first startup only; existing Keycloak data is not overwritten. To recreate the local development data, run `make reset` (this deletes the local databases).
 
 ### Windows
 

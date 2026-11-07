@@ -14,7 +14,7 @@ The default users installed by `contrib/keycloak/realm.json` in the development 
 * Lead: `lead` / `lead`
 * Admin: `admin` / `admin`
 
-The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin`. Replace all of these credentials before any shared deployment.
+The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin`. The `cisys-backend` service account, which signs users out when cisys shuts down, uses the secret `cisys` and can manage the realm's users. Replace all of these credentials before any shared deployment.
 
 ### Role-to-endpoint mapping
 

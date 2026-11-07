@@ -66,13 +66,13 @@ The targets are
 * `clean` - Clean
 * `lint` - Run the frontend ESLint check
 * `build` - Build the frontend
-* `run` - Run the backend in development mode
+* `run` - Run the backend and the frontend in development mode
 * `test` - Run the backend test cases
 * `docs` - Generate the manual
-* `platform` - Start compose services (PostgreSQL + Keycloak)
-* `platform-down` - Stop the compose services
-* `platform-reset` - Stop the compose services and delete their data volumes
-* `full` - Run everything (platform, clean, frontend, lint, test, build, docs, run)
+* `platform-start` - Start compose services (PostgreSQL + Keycloak)
+* `platform-stop` - Stop the compose services
+* `reset` - Stop the compose services and delete their data volumes, after confirmation
+* `full` - Run everything (platform-start, clean, frontend, lint, test, build, docs, run)
 
 ## Manual
 

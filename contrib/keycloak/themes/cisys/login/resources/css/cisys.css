@@ -1,0 +1,21 @@
+/* The default cisys brand green; see Branding.java. */
+.login-pf body {
+    background: #176a4a;
+}
+
+/* Keycloak renders the footer inside the login box; show it at the bottom of the page. */
+.cisys-footer {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    padding: .625rem 1.25rem;
+    color: #ffffff;
+    font-weight: 600;
+    text-align: center;
+}
+
+.cisys-footer a,
+.cisys-footer a:hover {
+    color: #ffffff;
+}
