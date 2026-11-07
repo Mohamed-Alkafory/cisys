@@ -2,6 +2,10 @@
 
 [![Discussions](https://img.shields.io/github/discussions/mnemosyne-systems/cisys)](https://github.com/mnemosyne-systems/cisys/discussions) [![GitHub stars](https://img.shields.io/github/stars/mnemosyne-systems/cisys?style=social)](https://github.com/mnemosyne-systems/cisys/stargazers)
 
+<p align="center">
+  <img src="docs/logo/logo.svg" alt="cisys logo" width="256"/>
+</p>
+
 **cisys** is an early-stage continuous integration (CI) system for local installations and, eventually, multi-user servers. It registers Git projects and runs manual Linux builds for them in disposable containers.
 
 ## Features
