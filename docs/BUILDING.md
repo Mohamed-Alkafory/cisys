@@ -1,0 +1,192 @@
+# Building cisys
+
+This document describes how to build the project, run it locally, run the tests, and generate the manual.
+
+## Prerequisites
+
+- Java 21 or newer
+- Maven
+- Node.js and npm
+- Docker Compose, or Podman with Compose (PostgreSQL and Keycloak for local development)
+- Pandoc and the Eisvogel Pandoc template (only for the PDF manual)
+
+Dependencies and container images must be downloadable. The setup below is for a trusted local machine only.
+
+## Build the project
+
+Install the frontend dependencies:
+
+```bash
+cd src/frontend
+npm install
+```
+
+Installing the frontend dependencies also installs the Git hooks (the `prepare` script in `src/frontend/package.json`). Hooks only install inside a Git checkout; if you unpacked an archive, run `git init` in the project root before `npm install`.
+
+Build the backend:
+
+```bash
+mvn package
+```
+
+This produces the application artifacts in `target/`. Use `mvn clean package` only when you want to remove previous build output first.
+
+Build the frontend for production:
+
+```bash
+cd src/frontend
+npm run build
+```
+
+The output is written to `src/frontend/dist`. The backend does not serve the frontend; in development the Vite dev server serves it.
+
+## Git hooks
+
+Hooks live in `.husky/`.
+
+* `pre-commit` (fast, on staged files only): `lint-staged` for changes under `src/frontend/`, which runs ESLint on the staged frontend files.
+* `pre-push` (full check): `npm run lint` in `src/frontend` and `mvn -B test`. If `mvn` is not installed the backend tests are skipped with a warning.
+
+Bypass a hook once with `git commit --no-verify` or `git push --no-verify`.
+
+## Running cisys
+
+### Support services
+
+From the project root start PostgreSQL and Keycloak:
+
+```bash
+docker compose up -d
+```
+
+(or `podman compose up -d`). The `compose.yaml` file starts:
+
+- `postgres` (PostgreSQL 16) on `127.0.0.1:5432`, database, user and password `cisys`
+- `keycloak` (26.8.1, `start-dev`) on `http://localhost:8180`, importing `contrib/keycloak/realm.json`
+
+Wait for Keycloak to become available before using the application. The realm is imported only on the first start; existing Keycloak data is not overwritten. To recreate the local development data, run `docker compose down -v` (this deletes the local databases).
+
+### Backend
+
+```bash
+mvn quarkus:dev
+```
+
+The backend listens on <http://localhost:8080>. The Quarkus configuration is in `src/backend/main/resources/application.properties`.
+
+### Frontend
+
+In a second terminal:
+
+```bash
+cd src/frontend
+npm run dev
+```
+
+The application is available at <http://localhost:5173>.
+
+### Local accounts
+
+| Role   | Username / password |
+| :----- | :------------------ |
+| Member | `member` / `member` |
+| Lead   | `lead` / `lead`     |
+| Admin  | `admin` / `admin`   |
+
+The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `admin`.
+
+### Running without Compose
+
+If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point cisys at them with the environment variables below. The Keycloak realm must be named `cisys` with the realm roles `member`, `lead` and `admin` and a public client `cisys-ui` using PKCE; `contrib/keycloak/realm.json` can be imported for this.
+
+### Environment variables
+
+| Variable            | Default                                  | Description                                          |
+| :------------------ | :--------------------------------------- | :--------------------------------------------------- |
+| `KEYCLOAK_URL`      | `http://localhost:8180`                  | Keycloak base URL (the `cisys` realm is appended)    |
+| `DB_URL`            | `jdbc:postgresql://localhost:5432/cisys` | JDBC URL                                             |
+| `DB_USER`           | `cisys`                                  | Database user                                        |
+| `DB_PASSWORD`       | `cisys`                                  | Database password                                    |
+| `RUNNER_ENABLED`    | `false`                                  | Enables the build runner                             |
+| `CONTAINER_RUNTIME` | `docker`                                 | Container engine used by the runner (`docker`, `podman`) |
+| `CISYS_GIT_*`       | not set                                  | Read-only Git provider tokens, referenced by name from the build form |
+
+The runner executes repository-controlled code. Read the **Builds** chapter of the manual and [SECURITY.md](SECURITY.md) before enabling it.
+
+## Run tests
+
+Backend tests use an in-memory H2 database and `@TestSecurity` with OIDC disabled, so neither Keycloak nor PostgreSQL is needed:
+
+```bash
+mvn test
+```
+
+An opt-in smoke test fetches a public repository and runs a container. It requires a trusted Linux Docker host with `alpine:3.23` already pulled:
+
+```bash
+CISYS_RUNNER_SMOKE=true mvn -Dtest=RunnerSmokeTest test
+```
+
+Check the frontend:
+
+```bash
+cd src/frontend
+npm run lint
+npm run build
+```
+
+## Build documentation
+
+Generate the English manual as HTML and PDF (Eisvogel) into `target/`:
+
+```bash
+mvn -Pmanual-docs generate-resources
+```
+
+or run the script directly:
+
+```bash
+cd docs/manual/en
+./generate-manual.sh
+```
+
+Generated files:
+
+- `target/cisys-en.html`
+- `target/cisys-en.pdf`
+
+Pass a directory as the first argument to write the output elsewhere. If the Eisvogel template is stored in a non-standard location, set `EISVOGEL_TEMPLATE`. See [DEVELOPERS.md](DEVELOPERS.md) for the required packages.
+
+If PDF generation fails with `Mismatched LaTeX support files detected`, refresh the XeLaTeX format and rerun:
+
+```bash
+fmtutil-user --byfmt xelatex
+```
+
+If your TeX installation is managed system-wide and the user refresh does not help, rebuild the system format instead with `sudo fmtutil-sys --byfmt xelatex`.
+
+## Makefile
+
+The `Makefile` wraps the common commands. The `frontend` target runs `npm ci` when dependencies are missing or when `src/frontend/package.json` or `package-lock.json` changes.
+
+The targets are
+
+* `all` - Clean, lint and run (Default)
+* `setup` - Install frontend dependencies and the Git hooks
+* `clean` - Clean
+* `lint` - Run the frontend ESLint check
+* `build` - Build the frontend
+* `run` - Run the backend in development mode
+* `test` - Run the backend test cases
+* `docs` - Generate the manual
+* `platform` - Start compose services (PostgreSQL + Keycloak)
+* `platform-down` - Stop the compose services
+* `platform-reset` - Stop the compose services and delete their data volumes
+* `full` - Run everything (platform, clean, frontend, lint, test, build, docs, run)
+
+The `platform` targets use Podman Compose when available, otherwise Docker Compose.
+
+## Windows
+
+Use Docker Desktop with its WSL 2 backend and Ubuntu. Extract or clone the project into your Ubuntu home directory, install Java, Maven, Node.js and npm inside Ubuntu, and follow the steps above from an Ubuntu terminal. Open
+<http://localhost:5173> in your Windows browser.

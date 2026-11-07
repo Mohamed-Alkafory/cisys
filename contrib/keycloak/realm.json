@@ -1,0 +1,92 @@
+{
+  "realm": "cisys",
+  "enabled": true,
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      {
+        "name": "member"
+      },
+      {
+        "name": "lead"
+      },
+      {
+        "name": "admin"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "cisys-ui",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://localhost:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "member",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "member",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "member"
+      ],
+      "firstName": "Member",
+      "lastName": "Cisys",
+      "email": "member@cisys.local",
+      "emailVerified": true
+    },
+    {
+      "username": "lead",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "lead",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "lead"
+      ],
+      "firstName": "Lead",
+      "lastName": "Cisys",
+      "email": "lead@cisys.local",
+      "emailVerified": true
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ],
+      "firstName": "Admin",
+      "lastName": "Cisys",
+      "email": "admin@cisys.local",
+      "emailVerified": true
+    }
+  ]
+}

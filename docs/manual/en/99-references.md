@@ -1,0 +1,20 @@
+[cisys]: https://github.com/mnemosyne-systems/cisys/
+[billetsys]: https://github.com/mnemosyne-systems/billetsys/
+[quarkus]: https://quarkus.io/
+[vite]: https://vite.dev/
+[postgresql]: https://www.postgresql.org
+[keycloak]: https://www.keycloak.org/
+[pandoc]: https://pandoc.org/
+[pandoc_latex_template]: https://github.com/Wandmalfarbe/pandoc-latex-template
+[texlive]: https://www.tug.org/texlive/
+[git_squash]: https://www.git-tower.com/learn/git/faq/git-squash
+[progit]: https://github.com/progit/progit2/releases
+[developers]: https://github.com/mnemosyne-systems/cisys/blob/main/docs/DEVELOPERS.md
+
+[ask]: https://github.com/mnemosyne-systems/cisys/discussions
+[issue]: https://github.com/mnemosyne-systems/cisys/issues
+[request]: https://github.com/mnemosyne-systems/cisys/issues
+[submission]: https://github.com/mnemosyne-systems/cisys/pulls
+[conduct]: https://github.com/mnemosyne-systems/cisys/blob/main/CODE_OF_CONDUCT.md
+[star]: https://github.com/mnemosyne-systems/cisys/stargazers
+[license]: https://www.eclipse.org/legal/epl-2.0/

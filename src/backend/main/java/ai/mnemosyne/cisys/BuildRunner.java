@@ -1,0 +1,66 @@
+package ai.mnemosyne.cisys;
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.runtime.StartupEvent;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
+import jakarta.annotation.PreDestroy;
+import jakarta.ws.rs.WebApplicationException;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.transport.RefSpec;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+@ApplicationScoped public class BuildRunner {
+ @ConfigProperty(name="cisys.runner.enabled",defaultValue="false") boolean enabled;
+ @ConfigProperty(name="cisys.runner.runtime",defaultValue="docker") String runtime;
+ private final AtomicBoolean busy=new AtomicBoolean();
+ private final ExecutorService executor=Executors.newSingleThreadExecutor();
+ void recover(@Observes StartupEvent event){QuarkusTransaction.requiringNew().run(()->Build.update("status = 'FAILED', finishedAt = ?1, output = 'Server restarted during build' where status = 'RUNNING'",Instant.now()));}
+ Build submit(Long projectId,String actor,String url,BuildResource.RunRequest request){
+  if(!enabled)throw new WebApplicationException("Runner disabled",503);
+  if(!busy.compareAndSet(false,true))throw new WebApplicationException("Runner busy",409);
+  try {Build b=QuarkusTransaction.requiringNew().call(()->{Build x=new Build();x.projectId=projectId;x.requestedBy=actor;x.status="RUNNING";x.startedAt=Instant.now();x.output="Preparing checkout";x.persist();return x;});executor.submit(()->run(b.id,url,request));return b;}catch(RuntimeException e){busy.set(false);throw e;}
+ }
+ private void run(Long id,String url,BuildResource.RunRequest request){
+  Path dir=null;String name="cisys-build-"+id, output="",revision=null,status="FAILED";
+  try {
+   dir=Files.createTempDirectory("cisys-");
+   try(Git git=Git.init().setDirectory(dir.toFile()).call()){
+    var cfg=git.getRepository().getConfig();cfg.setString("http",null,"followRedirects","false");cfg.save();
+    var fetch=git.fetch().setRemote(url).setRefSpecs(new RefSpec("+refs/heads/"+request.branch()+":refs/remotes/origin/build")).setDepth(1).setTimeout(60);
+    if(request.credentialRef()!=null){String token=System.getenv(request.credentialRef());if(token==null || token.isBlank())throw new IllegalStateException("Missing Git credential");fetch.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2",token));}
+    fetch.call();git.checkout().setName("build").setCreateBranch(true).setStartPoint("refs/remotes/origin/build").call();revision=git.getRepository().resolve("HEAD").name();
+   }
+   delete(dir.resolve(".git"));
+   try(var paths=Files.walk(dir)){for(Path path:paths.toList()){if(path.equals(dir)||Files.isSymbolicLink(path))continue;Files.setPosixFilePermissions(path,PosixFilePermissions.fromString(Files.isDirectory(path)||Files.isExecutable(path)?"rwxr-xr-x":"rw-r--r--"));}}
+   checked(List.of(runtime,"create","--name",name,"--network=none","--log-driver=none","--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=256","--memory=1g","--cpus=1","--user=65534:65534","--workdir=/workspace",request.image(),"sh","-c","cp -R /workspace/. /tmp/build && cd /tmp/build && exec sh -c \"$1\"","cisys",request.command()),120);
+   checked(List.of(runtime,"cp",dir.toString()+"/.",name+":/workspace"),60);
+   Result result=command(List.of(runtime,"start","--attach",name),600,120000);output=result.output();
+   if(result.timeout()){try{checked(List.of(runtime,"kill",name),15);}catch(Exception ignored){}output="Build timed out\n"+output;}
+   else {String exit=checked(List.of(runtime,"inspect","--format={{.State.ExitCode}}",name),15).trim();status="0".equals(exit)?"PASSED":"FAILED";}
+  } catch(Exception e){output="Build failed during checkout or container execution ("+e.getClass().getSimpleName()+"). Check the runner configuration.";}
+  finally {
+   try{checked(List.of(runtime,"rm","-f",name),15);}catch(Exception ignored){}
+   if(dir!=null)try{delete(dir);}catch(Exception ignored){}
+   String result=status,text=output.replace("\u0000","\uFFFD"),sha=revision;
+   try{QuarkusTransaction.requiringNew().run(()->{Build b=Build.findById(id);b.status=result;b.output=text;b.revision=sha;b.finishedAt=Instant.now();});}finally{busy.set(false);}
+  }
+ }
+ record Result(int code,boolean timeout,String output){}
+ static Result command(List<String> args,int timeout,int limit)throws Exception{
+  Process p=new ProcessBuilder(args).redirectErrorStream(true).start();p.getOutputStream().close();ByteArrayOutputStream buffer=new ByteArrayOutputStream();boolean[] truncated={false};
+  Thread reader=Thread.ofPlatform().daemon(true).start(()->{try(var in=p.getInputStream()){byte[] bytes=new byte[8192];int n;while((n=in.read(bytes))!=-1){synchronized(buffer){int count=Math.min(n,limit-buffer.size());buffer.write(bytes,0,count);if(count<n)truncated[0]=true;}}}catch(IOException ignored){}});
+  try{boolean done=p.waitFor(timeout,TimeUnit.SECONDS);if(!done){p.destroyForcibly();p.waitFor(5,TimeUnit.SECONDS);}reader.join(2000);synchronized(buffer){return new Result(done?p.exitValue():-1,!done,buffer.toString(StandardCharsets.UTF_8)+(truncated[0]?"\n[output truncated]\n":""));}}finally{if(p.isAlive())p.destroyForcibly();}
+ }
+ static String checked(List<String> args,int timeout)throws Exception{Result r=command(args,timeout,4096);if(r.timeout()||r.code()!=0)throw new IllegalStateException("Container command failed");return r.output();}
+ static void delete(Path dir)throws IOException{try(var files=Files.walk(dir)){for(Path f:files.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(f);}}
+ @PreDestroy void stop(){executor.shutdownNow();}
+}

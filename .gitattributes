@@ -1,0 +1,4 @@
+*.sh text eol=lf
+Makefile text eol=lf
+.husky/* text eol=lf
+docs/manual/**/*.md text eol=lf

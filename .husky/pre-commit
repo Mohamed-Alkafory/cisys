@@ -1,0 +1,12 @@
+# Fast checks on staged changes (mirrors CI but keeps commits quick).
+# Full checks (frontend `npm run lint` + `mvn test`) run in .husky/pre-push.
+# Bypass with: git commit --no-verify
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# --- Frontend: lint-staged on staged files under src/frontend/ ---
+if printf '%s\n' "$STAGED" | grep -q '^src/frontend/'; then
+  (cd src/frontend && npm exec -- lint-staged) || exit 1
+fi
