@@ -6,7 +6,7 @@
   <img src="docs/logo/logo.svg" alt="cisys logo" width="256"/>
 </p>
 
-**cisys** is an early-stage continuous integration (CI) system for local installations and, eventually, multi-user servers. It registers Git projects and runs manual Linux builds for them in disposable containers.
+**cisys** is a modern continuous integration (CI) system for local installations and multi-user servers. It registers Git projects and runs manual Linux builds for them in disposable containers.
 
 ## Features
 
@@ -71,13 +71,13 @@ git clone https://github.com/mnemosyne-systems/cisys.git
 cd cisys
 ```
 
-Start PostgreSQL and Keycloak with compose:
+Start PostgreSQL and Keycloak:
 
 ```sh
 make platform-start
 ```
 
-This detects whether you have Podman Compose or Docker Compose and starts the containers defined in `compose.yaml`. You can also run `docker compose up -d` directly. Wait for Keycloak to become available at <http://localhost:8180>.
+Wait for Keycloak to become available at <http://localhost:8180>.
 
 Run `make platform-stop` to stop the containers and keep their data, or `make reset` to stop them and delete their data after asking for confirmation.
 
@@ -87,9 +87,9 @@ Start the backend and the frontend in development mode:
 make run
 ```
 
-This installs the frontend dependencies when needed, runs the frontend in the background and the backend (`mvn quarkus:dev`) in the foreground. Stopping the backend also stops the frontend and signs all users out. It does not compile or run the tests; use `make test` for those.
+This installs the frontend dependencies when needed, runs the frontend in the background and the backend in the foreground. Stopping the backend also stops the frontend and signs all users out.
 
-The install also sets up the Husky pre-commit hook in a Git checkout; if you unpacked an archive, run `git init` first. Run `make lint` for the frontend lint check.
+It does not compile or run the tests; use `make test` for those.
 
 The application is available at <http://localhost:5173>.
 
@@ -107,7 +107,7 @@ The local setup uses the following ports. All of them are bound to the loopback 
 | `5432` | PostgreSQL          | `localhost:5432`        | `make platform-start`          |
 | `5005` | Java debugger       | `localhost:5005`        | `make run` (development mode)  |
 
-Open the application on port `5173`. Keycloak and the backend only accept that frontend address, so sign-in and API calls fail if Vite moves to another port because `5173` is already in use.
+Open the application on port `5173`.
 
 ### Test accounts
 
@@ -117,11 +117,11 @@ The users defined for testing are
 - Lead: `lead` / `lead`
 - Admin: `admin` / `admin`
 
-The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `admin`. The realm import runs on the first startup only; existing Keycloak data is not overwritten. To recreate the local development data, run `make reset` (this deletes the local databases).
+The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `admin`.
 
 ### Windows
 
-Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java 25, Maven, Node.js 26 and npm inside Ubuntu, then follow the steps above from an Ubuntu terminal. Open <http://localhost:5173> in your Windows browser.
+Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java 25, Maven, Node.js 26 and npm inside Ubuntu, then follow the steps above from an Ubuntu terminal.
 
 ## Contributing
 
