@@ -1,4 +1,4 @@
-# cisys: Continuous Integration System
+# cisys: Modern Continuous Integration System
 
 [![Discussions](https://img.shields.io/github/discussions/mnemosyne-systems/cisys)](https://github.com/mnemosyne-systems/cisys/discussions) [![GitHub stars](https://img.shields.io/github/stars/mnemosyne-systems/cisys?style=social)](https://github.com/mnemosyne-systems/cisys/stargazers)
 
