@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 @QuarkusTest class BuildResourceTest {
  @Inject BuildRunner runner;
- private Long project(boolean priv){return QuarkusTransaction.requiringNew().call(()->{Project p=new Project();p.name="example";p.repositoryUrl="https://github.com/octocat/Hello-World.git";p.ownerSubject="owner-id";p.privateRepository=priv;p.persist();return p.id;});}
+ private Long project(boolean priv){return QuarkusTransaction.requiringNew().call(()->{Project p=new Project();String n=java.util.UUID.randomUUID().toString();p.name="example-"+n;p.repositoryUrl="https://github.com/octocat/Hello-World-"+n+".git";p.ownerSubject="owner-id";p.privateRepository=priv;p.persist();return p.id;});}
  private static void allow(String image){QuarkusTransaction.requiringNew().run(()->{if(AllowedImage.findById(image)==null){AllowedImage i=new AllowedImage();i.name=image;i.persist();}});}
  static final String REQUEST="{\"branch\":\"main\",\"image\":\"alpine:3.23\",\"command\":\"echo hello\"}";
  @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void privateLogsAreHidden(){Long id=project(true);given().get("/api/projects/"+id+"/builds").then().statusCode(404);}

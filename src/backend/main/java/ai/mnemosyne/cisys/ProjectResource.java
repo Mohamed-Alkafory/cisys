@@ -11,6 +11,8 @@ import jakarta.ws.rs.core.Response;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import jakarta.persistence.PersistenceException;
 
 @Path("/api") @Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 @Authenticated
@@ -41,8 +43,17 @@ public class ProjectResource {
     @POST @Path("/projects") @Transactional public Response create(CreateProject input) {
         if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
         if (input == null || input.name() == null || input.name().isBlank() || input.name().length() > 100 || input.repositoryUrl() == null || input.repositoryUrl().length() > 2048) throw new BadRequestException("Name and repository URL are required");
-        try { URI url = URI.create(input.repositoryUrl()); if (!"https".equals(url.getScheme()) || url.getHost() == null || url.getUserInfo() != null) throw new IllegalArgumentException(); } catch (IllegalArgumentException e) { throw new BadRequestException("Use an HTTPS repository URL without credentials"); }
-        Project p = new Project(); p.name = input.name().trim(); p.repositoryUrl = input.repositoryUrl(); p.privateRepository = input.privateRepository(); p.ownerSubject = subject(); p.persist();
+        try { URI url = URI.create(input.repositoryUrl().trim()); if (!"https".equals(url.getScheme()) || url.getHost() == null || url.getUserInfo() != null) throw new IllegalArgumentException(); } catch (IllegalArgumentException e) { throw new BadRequestException("Use an HTTPS repository URL without credentials"); }
+        String name = input.name().trim(), url = input.repositoryUrl().trim();
+        // Checked across all projects, including private projects the caller cannot see.
+        if (Project.count("lower(name) = ?1", name.toLowerCase(Locale.ROOT)) > 0) throw conflict("A project with this name already exists");
+        if (Project.count("repositoryUrl", url) > 0) throw conflict("A project with this repository URL already exists");
+        Project p = new Project(); p.name = name; p.repositoryUrl = url; p.privateRepository = input.privateRepository(); p.ownerSubject = subject();
+        try { p.persistAndFlush(); }
+        catch (PersistenceException e) { throw conflict("A project with this name or repository URL already exists"); }
         return Response.status(201).entity(p).build();
+    }
+    private static WebApplicationException conflict(String message) {
+        return new WebApplicationException(Response.status(409).type(MediaType.APPLICATION_JSON).entity(Map.of("error", message)).build());
     }
 }

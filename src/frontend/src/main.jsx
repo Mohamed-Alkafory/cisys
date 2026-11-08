@@ -181,7 +181,7 @@ function App() {
           <CardHeader><CardTitle>Repositories</CardTitle></CardHeader>
           <CardContent>
             {projects.length === 0 ? (
-              <div className="empty-state"><FolderGit2 size={28} aria-hidden="true"/><strong>No projects yet</strong><p>{canCreate ? 'Add a repository above to get started.' : 'Ask a lead or admin to add a project.'}</p></div>
+              <div className="empty-state"><FolderGit2 size={28} aria-hidden="true"/><strong>No projects yet</strong>{!canCreate && <p>Ask a lead or admin to add a project.</p>}</div>
             ) : projects.map((project) => (
               <div className="project-grid project-row" key={project.id}>
                 <strong className="project-name">{project.name}</strong>

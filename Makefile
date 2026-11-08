@@ -51,14 +51,27 @@ platform-start:
 		echo "No container runtime found (podman-compose or docker). Skipping compose services."; \
 	fi
 
+# Removes the compose containers, pod and network that exist, quietly; with
+# argument "volumes" the data volumes too. Sets "removed" when anything was removed.
+define remove_platform
+if command -v podman >/dev/null 2>&1; then runtime=podman; \
+elif command -v docker >/dev/null 2>&1; then runtime=docker; \
+else echo "No container runtime found (podman or docker)."; exit 0; fi; \
+filter=label=com.docker.compose.project=cisys; removed=; \
+ids=$$($$runtime ps -aq --filter $$filter); \
+if [ -n "$$ids" ]; then $$runtime stop -t 30 $$ids >/dev/null 2>&1; $$runtime rm -f $$ids >/dev/null && removed=1; fi; \
+if [ $$runtime = podman ] && podman pod exists pod_cisys; then podman pod rm -f pod_cisys >/dev/null && removed=1; fi; \
+ids=$$($$runtime network ls -q --filter $$filter); \
+if [ -n "$$ids" ]; then $$runtime network rm $$ids >/dev/null && removed=1; fi; \
+if [ "$(1)" = volumes ]; then \
+	ids=$$($$runtime volume ls -q --filter $$filter); \
+	if [ -n "$$ids" ]; then $$runtime volume rm $$ids >/dev/null && removed=1; fi; \
+fi
+endef
+
 platform-stop:
-	@if command -v podman-compose >/dev/null 2>&1; then \
-		podman-compose down; \
-	elif command -v docker >/dev/null 2>&1; then \
-		docker compose down; \
-	else \
-		echo "No container runtime found (podman-compose or docker). Nothing to stop."; \
-	fi
+	@$(call remove_platform); \
+	if [ -n "$$removed" ]; then echo "Platform stopped."; else echo "Platform is not running."; fi
 
 # Deletes the local PostgreSQL and Keycloak data volumes, after confirmation.
 reset:
@@ -66,14 +79,9 @@ reset:
 	read -r answer || answer=; \
 	case "$$answer" in \
 		[yY]|[yY][eE][sS]) ;; \
-		*) echo "Aborted. Nothing was deleted."; exit 1 ;; \
+		*) echo "Aborted. Nothing was deleted."; exit 0 ;; \
 	esac; \
-	if command -v podman-compose >/dev/null 2>&1; then \
-		podman-compose down -v; \
-	elif command -v docker >/dev/null 2>&1; then \
-		docker compose down -v; \
-	else \
-		echo "No container runtime found (podman-compose or docker). Nothing to reset."; \
-	fi
+	$(call remove_platform,volumes); \
+	if [ -n "$$removed" ]; then echo "Local PostgreSQL and Keycloak data deleted."; else echo "Nothing to reset."; fi
 
 full: platform-start clean frontend lint test build docs run
