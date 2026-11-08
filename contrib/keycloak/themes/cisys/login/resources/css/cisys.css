@@ -29,6 +29,26 @@ html.login-pf.pf-v5-theme-dark {
     background: var(--cisys-header);
 }
 
+/* The title above the login box, with the logo on its left. */
+.login-pf #kc-header-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .75rem;
+    color: var(--cisys-header-text) !important;
+    /* Show the branding name as written, like the cisys header does. */
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 700;
+}
+
+.login-pf .cisys-logo {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    flex: none;
+}
+
 .login-pf #kc-page-title {
     color: var(--cisys-heading);
 }

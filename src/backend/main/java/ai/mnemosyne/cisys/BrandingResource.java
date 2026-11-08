@@ -13,7 +13,9 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import java.util.Base64;
 
 @Path("/api/branding")
@@ -23,18 +25,26 @@ import java.util.Base64;
 public class BrandingResource {
     @Inject SecurityIdentity identity;
     @Inject EntityManager em;
-    /** The colors only, readable without signing in so the Keycloak login pages can use them. */
-    public record Colors(String headerColor, String headingColor, String buttonColor) {}
+    /** The name and colors only, readable without signing in so the Keycloak login pages can use them. */
+    public record PublicBranding(String name, String headerColor, String headingColor, String buttonColor) {}
     public record Input(String name, String headerColor, String headingColor, String buttonColor, String fontFamily, String logo, String background) {}
     @GET public Branding get() {
         requireRole();
         Branding b = em.find(Branding.class, 1L);
         return b == null ? new Branding() : b;
     }
-    @GET @Path("/colors") @PermitAll public Colors colors() {
+    @GET @Path("/public") @PermitAll public PublicBranding publicBranding() {
         Branding b = em.find(Branding.class, 1L);
         if (b == null) b = new Branding();
-        return new Colors(b.headerColor, b.headingColor, b.buttonColor);
+        return new PublicBranding(b.name, b.headerColor, b.headingColor, b.buttonColor);
+    }
+    /** The logo as an image, readable without signing in so the Keycloak login pages can show it. */
+    @GET @Path("/logo") @PermitAll @Produces({"image/png", "image/jpeg"}) public Response logo() {
+        Branding b = em.find(Branding.class, 1L);
+        if (b == null || b.logo == null) throw new NotFoundException();
+        String type = b.logo.substring("data:".length(), b.logo.indexOf(';'));
+        byte[] bytes = Base64.getDecoder().decode(b.logo.substring(b.logo.indexOf(',') + 1));
+        return Response.ok(bytes, type).header("Cache-Control", "no-cache").build();
     }
     @PUT @Transactional public Branding update(Input input) {
         if (!identity.hasRole("admin")) throw new ForbiddenException();

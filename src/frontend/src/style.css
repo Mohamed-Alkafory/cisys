@@ -39,8 +39,8 @@ body { background: var(--body-bg); color: var(--body-text); }
 .project-card { margin-bottom: 1.25rem; background: var(--card-bg); border: 1px solid var(--card-border); }
 .project-form { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(14rem, 1.6fr) auto auto; align-items: end; gap: 1rem; }
 .form-field { display: grid; gap: .6rem; min-width: 0; }
-.private-choice { display: inline-flex; align-items: center; gap: .5rem; min-height: 2.5rem; white-space: nowrap; font-size: .875rem; }
-.private-choice input { accent-color: var(--button-bg); }
+.private-choice { display: inline-flex; align-items: center; min-height: 2.5rem; }
+.private-choice input { width: 1.1rem; height: 1.1rem; accent-color: var(--button-bg); cursor: pointer; }
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: .5rem; text-align: center; padding: 2.5rem 1rem; color: var(--muted-foreground); }
 .empty-state strong { color: var(--body-text); }
 .project-row { display: flex; align-items: center; gap: .875rem; padding: 1rem 0; border-top: 1px solid var(--card-border); }

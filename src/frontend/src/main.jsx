@@ -151,23 +151,23 @@ function App() {
           <CardHeader><CardTitle>{role}</CardTitle><CardDescription>Signed in as {user.username}</CardDescription></CardHeader>
         </Card>
       </main> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : <main id="projects" className="page-container">
-        <PageHeader title="Projects" subtitle="Manage the repositories available to your workspace." actions={<Badge variant="outline">{projects.length} {projects.length === 1 ? 'project' : 'projects'}</Badge>}/>
+        <PageHeader title="Projects" actions={<Badge variant="outline">{projects.length} {projects.length === 1 ? 'project' : 'projects'}</Badge>}/>
         {error && <div className="error-message" role="alert">{error}</div>}
         {canCreate && (
           <Card className="project-card">
-            <CardHeader><CardTitle>Add a project</CardTitle><CardDescription>Register a repository to get started.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Add a project</CardTitle></CardHeader>
             <CardContent>
               <form className="project-form" onSubmit={create}>
                 <div className="form-field"><Label htmlFor="project-name">Project name</Label><Input id="project-name" required maxLength="100" value={name} onChange={(e) => setName(e.target.value)} placeholder="My project"/></div>
                 <div className="form-field"><Label htmlFor="repository-url">Repository URL</Label><Input id="repository-url" required type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/org/repo.git"/></div>
-                <label className="private-choice"><input type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)}/> Private project</label>
+                <div className="form-field"><Label htmlFor="project-private" className="whitespace-nowrap">Private project</Label><span className="private-choice"><input id="project-private" type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)}/></span></div>
                 <Button type="submit" disabled={submitting}>{submitting ? 'Adding…' : 'Add project'}</Button>
               </form>
             </CardContent>
           </Card>
         )}
         <Card className="project-card">
-          <CardHeader><CardTitle>Repositories</CardTitle><CardDescription>Projects available to you.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Repositories</CardTitle></CardHeader>
           <CardContent>
             {projects.length === 0 ? (
               <div className="empty-state"><FolderGit2 size={28} aria-hidden="true"/><strong>No projects yet</strong><p>{canCreate ? 'Add a repository above to get started.' : 'Ask a lead or admin to add a project.'}</p></div>
