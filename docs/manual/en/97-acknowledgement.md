@@ -8,6 +8,7 @@
 
 ```
 Shashank Singh <shashanksgh3@gmail.com>
+Jesper Pedersen <jesperpedersen.db@gmail.com>
 ```
 
 ## BilletSys
