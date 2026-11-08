@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Keycloak from 'keycloak-js';
-import { FolderGit2, LockKeyhole, Moon, Sun, LogOut, ChevronDown, CircleUserRound, UserRound } from 'lucide-react';
+import { FolderGit2, LockKeyhole, LockKeyholeOpen, Moon, Sun, LogOut, ChevronDown, CircleUserRound, UserRound } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
@@ -175,7 +175,7 @@ function App() {
               <div className="project-grid project-row" key={project.id}>
                 <strong className="project-name">{project.name}</strong>
                 <p className="project-url">{project.repositoryUrl}</p>
-                <Badge variant="outline" className="justify-self-start">{project.privateRepository && <LockKeyhole size={12} aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
+                <Badge variant="outline" className="justify-self-start">{project.privateRepository ? <LockKeyhole size={12} aria-hidden="true"/> : <LockKeyholeOpen size={12} aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
                 <Button type="button" className="w-full" onClick={() => { setBuilds([]); setBuildProject(project.id); }}>Build history</Button>
               </div>
             ))}
