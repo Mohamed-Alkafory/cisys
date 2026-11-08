@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Keycloak from 'keycloak-js';
-import { FolderGit2, LockKeyhole, Moon, Sun, LogOut } from 'lucide-react';
+import { FolderGit2, LockKeyhole, Moon, Sun, LogOut, ChevronDown, CircleUserRound, UserRound } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
 import { Badge } from './components/ui/badge';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './components/ui/dropdown-menu';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
 import AppFooter from './components/layout/AppFooter';
 import PageHeader from './components/layout/PageHeader';
 import BrandingPanel from './BrandingPanel';
+import headerLogo from './assets/logo-header.svg';
 import './style.css';
 
 const keycloak = new Keycloak({ url: 'http://localhost:8180', realm: 'cisys', clientId: 'cisys-ui' });
@@ -121,18 +123,33 @@ function App() {
     <div className="app-shell" style={branding.background ? { backgroundImage: `linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.08)), url(${branding.background})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' } : undefined}>
       <header className="app-header">
         <div className="header-main">
-          <a className="brand" href="/" aria-label={`${branding.name} home`}>{branding.logo ? <img src={branding.logo} alt="" className="brand-logo"/> : <FolderGit2 aria-hidden="true" size={24}/>}<span>{branding.name}</span></a>
+          <a className="brand" href="/" aria-label={`${branding.name} home`}><img src={branding.logo || headerLogo} alt="" className={branding.logo ? 'brand-logo' : 'brand-logo brand-logo-default'}/><span>{branding.name}</span></a>
           <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={page === 'projects' ? 'page' : undefined} onClick={() => setPage('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'branding' ? 'page' : undefined} onClick={() => setPage('branding')}>Branding</button>}</nav>
         </div>
         <div className="header-actions">
           <button type="button" className="theme-toggle" onClick={() => setDark(!dark)} aria-label="Toggle dark mode" aria-pressed={dark} title="Toggle dark mode">
             <Sun size={15} aria-hidden="true"/><Moon size={15} aria-hidden="true"/><span className="theme-knob"/>
           </button>
-          <span className="user-info"><strong>{user.username}</strong><span>{role}</span></span>
-          <button type="button" className="sign-out" onClick={() => keycloak.logout()}><LogOut size={16} aria-hidden="true"/> Sign out</button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="user-menu-trigger" aria-label="Account menu" title="Account menu">
+                <CircleUserRound size={22} aria-hidden="true"/>
+                <ChevronDown size={14} aria-hidden="true"/>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setPage('profile')}><UserRound aria-hidden="true"/> Profile</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => keycloak.logout()}><LogOut aria-hidden="true"/> Sign out</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
-      {page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : <main id="projects" className="page-container">
+      {page === 'profile' ? <main id="profile" className="page-container">
+        <PageHeader title="Profile"/>
+        <Card className="project-card">
+          <CardHeader><CardTitle>{role}</CardTitle><CardDescription>Signed in as {user.username}</CardDescription></CardHeader>
+        </Card>
+      </main> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : <main id="projects" className="page-container">
         <PageHeader title="Projects" subtitle="Manage the repositories available to your workspace." actions={<Badge variant="outline">{projects.length} {projects.length === 1 ? 'project' : 'projects'}</Badge>}/>
         {error && <div className="error-message" role="alert">{error}</div>}
         {canCreate && (
