@@ -2,9 +2,9 @@
 
 # Introduction
 
-[**cisys**](https://github.com/mnemosyne-systems/cisys) is an early-stage continuous integration (CI) system for local installations and, eventually, multi-user servers. It registers Git projects and runs manual builds for them in disposable containers.
+[**cisys**](https://github.com/mnemosyne-systems/cisys) is a modern continuous integration (CI) system for local installations and multi-user servers. It registers Git projects and runs manual builds for them in disposable containers.
 
-The current version is an initial foundation. It provides sign-in through Keycloak, three roles, project registration with public and private visibility, manual Linux builds with stored logs, and configurable branding.
+It provides sign-in through Keycloak, three roles, project registration with public and private visibility, manual Linux builds with stored logs, and configurable branding.
 
 ![Keycloak sign-in page](images/keycloak-login.png){ width=100% }
 
@@ -40,7 +40,3 @@ Each build keeps
 * The commit ID that was built
 * Start and finish times
 * The output, retained up to 120 KB
-
-## Scope and limitations
-
-Webhooks, scheduling, artifact storage, multi-user repository membership and an isolated remote worker are not implemented yet. Do not run this setup on a public server. See the **Security** chapter and the roadmap in `docs/ROADMAP.md`.

@@ -9,40 +9,33 @@
 Start the support services from the repository root
 
 ```sh
-docker compose up -d
+make platform-start
 ```
 
-then the backend
+then the application stack
 
 ```sh
-mvn quarkus:dev
+make run
 ```
 
-and, in a second terminal, the frontend
+To stop the application press Ctrl+c in the application window, and
 
 ```sh
-cd src/frontend
-npm install
-npm run dev
+make platform-stop
 ```
-
-Backend changes are handled by Quarkus dev mode and frontend changes are reloaded by Vite.
 
 Use
 
 ```sh
-mvn clean quarkus:dev
+make clean
 ```
 
-only when you need to clear `target/` and force a fresh rebuild.
+when you need to clear `target/` and force a fresh rebuild.
 
 ## Tests and checks
 
 ```sh
-mvn test
-cd src/frontend
-npm run lint
-npm run build
+make test
 ```
 
 The backend tests use an in-memory H2 database and do not need Keycloak or PostgreSQL. The Husky `pre-commit` hook runs ESLint on staged frontend files, and the `pre-push` hook runs `npm run lint` and `mvn -B test`. Bypass a hook once with `--no-verify`.
@@ -50,12 +43,10 @@ The backend tests use an in-memory H2 database and do not need Keycloak or Postg
 ## Production build
 
 ```sh
-mvn package
-cd src/frontend
-npm run build
+make package
 ```
 
-The backend is packaged in `target/`; the frontend is written to `src/frontend/dist`. The backend does not serve the frontend. Production deployment (TLS, secrets, hardened Keycloak, migrations) is not supported yet.
+Production deployment (TLS, secrets, hardened Keycloak, migrations) are not supported yet.
 
 ## Makefile
 
@@ -78,12 +69,6 @@ The targets are
 ## Manual
 
 The manual is built with [Pandoc][pandoc] and the Eisvogel template:
-
-```sh
-mvn -Pmanual-docs generate-resources
-```
-
-or run the script directly:
 
 ```sh
 cd docs/manual/en

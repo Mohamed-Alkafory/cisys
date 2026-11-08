@@ -1,6 +1,6 @@
 ---
 title: "cisys"
-subtitle: "Continuous Integration System"
+subtitle: "Modern Continuous Integration System"
 keywords: [ci, build, continuous integration]
 lang: "en"
 titlepage: true

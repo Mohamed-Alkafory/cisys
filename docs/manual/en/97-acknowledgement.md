@@ -11,10 +11,6 @@ Shashank Singh <shashanksgh3@gmail.com>
 Jesper Pedersen <jesperpedersen.db@gmail.com>
 ```
 
-## BilletSys
-
-Parts of the frontend are copied from [BilletSys][billetsys] by the BilletSys community under the Eclipse Public License 2.0.
-
 ## Contributing
 
 Contributions to [**cisys**][cisys] are managed on [GitHub][cisys]
