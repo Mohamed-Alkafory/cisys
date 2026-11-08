@@ -3,7 +3,6 @@ import { Container, Download, Trash2 } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
 import { Input } from './components/ui/input';
-import { Label } from './components/ui/label';
 import { Card, CardHeader, CardTitle, CardContent } from './components/ui/card';
 import PageHeader from './components/layout/PageHeader';
 
@@ -69,14 +68,14 @@ export default function ImagesPanel({ api, onSaved }) {
   );
 
   return <main className="page-container">
-    <PageHeader title="Images" subtitle="Choose which container images leads and admins can use for builds." actions={<Badge variant="outline">{selected.size} allowed</Badge>}/>
+    <PageHeader title="Images" actions={<Badge variant="outline">{selected.size} allowed</Badge>}/>
     {error && <div className="error-message" role="alert">{error}</div>}
     {notice && <div className="success-message" role="status">{notice}</div>}
     <Card className="project-card">
       <CardHeader><CardTitle>Pull an image</CardTitle></CardHeader>
       <CardContent>
         <form className="image-pull" onSubmit={pull}>
-          <div className="form-field"><Label htmlFor="pull-name">Image</Label><Input id="pull-name" required maxLength="201" pattern="[A-Za-z0-9][A-Za-z0-9_./:@\-]*" value={pullName} onChange={(e) => setPullName(e.target.value)} placeholder="docker.io/library/alpine:3.23"/></div>
+          <div className="form-field"><Input id="pull-name" aria-label="Image to pull" required maxLength="201" pattern="[A-Za-z0-9][A-Za-z0-9_./:@\-]*" value={pullName} onChange={(e) => setPullName(e.target.value)} placeholder="docker.io/library/alpine:3.23"/></div>
           <Button type="submit" disabled={!!working || busy}><Download aria-hidden="true"/>{working === 'pull' ? 'Pulling…' : 'Pull'}</Button>
         </form>
       </CardContent>
