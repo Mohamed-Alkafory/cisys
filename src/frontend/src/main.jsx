@@ -63,7 +63,8 @@ function App() {
     root.setProperty('--header-bg', branding.headerColor);
     root.setProperty('--section-header-color', branding.headingColor);
     root.setProperty('--button-bg', branding.buttonColor);
-    root.setProperty('--button-hover', branding.buttonColor);
+    root.setProperty('--section-header-hover', `color-mix(in srgb, ${branding.headingColor}, black 20%)`);
+    root.setProperty('--button-hover', `color-mix(in srgb, ${branding.buttonColor}, black 20%)`);
     const contrast = (hex) => {
       const rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
       return 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2] > 0.179 ? '#111111' : '#ffffff';

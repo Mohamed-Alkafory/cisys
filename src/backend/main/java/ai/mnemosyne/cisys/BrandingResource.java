@@ -1,6 +1,7 @@
 package ai.mnemosyne.cisys;
 
 import io.quarkus.security.Authenticated;
+import jakarta.annotation.security.PermitAll;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -22,11 +23,18 @@ import java.util.Base64;
 public class BrandingResource {
     @Inject SecurityIdentity identity;
     @Inject EntityManager em;
+    /** The colors only, readable without signing in so the Keycloak login pages can use them. */
+    public record Colors(String headerColor, String headingColor, String buttonColor) {}
     public record Input(String name, String headerColor, String headingColor, String buttonColor, String fontFamily, String logo, String background) {}
     @GET public Branding get() {
         requireRole();
         Branding b = em.find(Branding.class, 1L);
         return b == null ? new Branding() : b;
+    }
+    @GET @Path("/colors") @PermitAll public Colors colors() {
+        Branding b = em.find(Branding.class, 1L);
+        if (b == null) b = new Branding();
+        return new Colors(b.headerColor, b.headingColor, b.buttonColor);
     }
     @PUT @Transactional public Branding update(Input input) {
         if (!identity.hasRole("admin")) throw new ForbiddenException();

@@ -25,5 +25,6 @@ Colors are `#RRGGBB` values. The logo and background must be PNG or JPEG images 
 ## Notes
 
 * Branding is stored in the database as a single record.
-* The Keycloak-hosted sign-in page is not customized by these settings.
+* The Keycloak-hosted sign-in pages use the three colors: the header color for the page background, the heading color for the title, and the button color for buttons and links. They read the colors from cisys without signing in, through `/api/branding/colors`, which returns only the colors. The display name, font, logo and background image are not applied there.
+* If cisys is not reachable at `http://localhost:8080` from the browser, set `CISYS_API_URL` for the Keycloak container so the sign-in pages can find it.
 * Light and dark mode is chosen per user in the header and is remembered by the browser.

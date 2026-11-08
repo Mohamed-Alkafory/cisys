@@ -1,6 +1,57 @@
-/* The default cisys brand green; see Branding.java. */
+/*
+ * The cisys branding colors. The defaults are the cisys brand green (see Branding.java);
+ * js/cisys.js replaces them with the colors saved under Branding in cisys.
+ */
+html.login-pf {
+    --cisys-header: #176a4a;
+    --cisys-header-text: #ffffff;
+    --cisys-heading: #176a4a;
+    --cisys-button: #176a4a;
+    --cisys-button-text: #ffffff;
+    --cisys-button-hover: color-mix(in srgb, var(--cisys-button), black 20%);
+    --cisys-link: var(--cisys-button);
+    --cisys-link-hover: var(--cisys-button-hover);
+
+    /* PatternFly's primary color drives links, focus underlines and selected states. */
+    --pf-v5-global--primary-color--100: var(--cisys-button);
+    --pf-v5-global--primary-color--200: var(--cisys-button-hover);
+    --pf-v5-global--link--Color: var(--cisys-link);
+    --pf-v5-global--link--Color--hover: var(--cisys-link-hover);
+}
+
+/* Lighten the brand colors on the dark card so headings and links stay readable. */
+html.login-pf.pf-v5-theme-dark {
+    --cisys-link: color-mix(in srgb, var(--cisys-button), white 55%);
+    --cisys-link-hover: color-mix(in srgb, var(--cisys-button), white 70%);
+}
+
 .login-pf body {
-    background: #176a4a;
+    background: var(--cisys-header);
+}
+
+.login-pf #kc-page-title {
+    color: var(--cisys-heading);
+}
+
+.login-pf.pf-v5-theme-dark #kc-page-title {
+    color: color-mix(in srgb, var(--cisys-heading), white 55%);
+}
+
+/* Primary buttons (f.ex. "Sign In") use the button color instead of PatternFly blue. */
+.login-pf .pf-v5-c-button.pf-m-primary {
+    --pf-v5-c-button--m-primary--BackgroundColor: var(--cisys-button);
+    --pf-v5-c-button--m-primary--hover--BackgroundColor: var(--cisys-button-hover);
+    --pf-v5-c-button--m-primary--focus--BackgroundColor: var(--cisys-button-hover);
+    --pf-v5-c-button--m-primary--active--BackgroundColor: var(--cisys-button-hover);
+    --pf-v5-c-button--m-primary--Color: var(--cisys-button-text);
+    --pf-v5-c-button--m-primary--hover--Color: var(--cisys-button-text);
+    --pf-v5-c-button--m-primary--focus--Color: var(--cisys-button-text);
+    --pf-v5-c-button--m-primary--active--Color: var(--cisys-button-text);
+}
+
+.login-pf input[type="checkbox"],
+.login-pf input[type="radio"] {
+    accent-color: var(--cisys-button);
 }
 
 /* Keycloak renders the footer inside the login box; show it at the bottom of the page. */
@@ -10,12 +61,12 @@
     bottom: 0;
     left: 0;
     padding: .625rem 1.25rem;
-    color: #ffffff;
+    color: var(--cisys-header-text);
     font-weight: 600;
     text-align: center;
 }
 
 .cisys-footer a,
 .cisys-footer a:hover {
-    color: #ffffff;
+    color: var(--cisys-header-text);
 }
