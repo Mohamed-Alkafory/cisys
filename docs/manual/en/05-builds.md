@@ -11,7 +11,7 @@ A **build** fetches a branch of a project's repository and runs a command inside
 Leads and admins open **Build history** on a visible project and start a manual build by entering
 
 * **Branch**: the branch to fetch
-* **Image**: a container image that is already available locally
+* **Image**: one of the images an admin has allowed on the **Images** page
 * **Command**: the shell command to run
 * **Credential reference** (admins only, optional): see below
 
@@ -39,22 +39,21 @@ Set an environment variable whose name starts with `CISYS_GIT_`, for example `CI
 * Only admins can use credential references until credentials are scoped to individual projects.
 * Never include secrets in build commands or output.
 
-## Enable the runner
+## Images
 
-The runner is disabled by default; starting a build then fails with "Runner disabled". On a dedicated Linux machine with trusted users and source, pre-pull an image and start the backend with the runner enabled:
+Admins manage build images under **Images** in the header. The page lists the images present in the container runtime on the backend host, with their ID, size and age.
 
-```sh
-docker pull alpine:3.23
-RUNNER_ENABLED=true mvn quarkus:dev
-```
+* **Pull** downloads an image from its registry, for example `docker.io/library/alpine:3.23`.
+* **Remove** deletes a local image and takes it off the allowed list.
+* Tick the images that builds may use and select **Save**. Only those images appear in the build form, and the backend rejects any other image.
 
-For Podman:
+An image that is allowed but no longer present locally is listed separately, where it can be pulled again or cleared.
 
-```sh
-RUNNER_ENABLED=true CONTAINER_RUNTIME=podman mvn quarkus:dev
-```
+## Container runtime
 
-**Trust boundary:** enabling the runner allows trusted leads and admins to execute code through the local container daemon. Docker socket access grants host-level control to the backend. These limits are not a hostile-code sandbox. Use a dedicated machine, disk quotas and trusted repositories, and do not expose this setup to the Internet. Repository checkout sizes are not bounded.
+The runner is always on. It uses Podman when it is installed and Docker otherwise.
+
+**Trust boundary:** the runner allows trusted leads and admins to execute code through the local container daemon. Docker socket access grants host-level control to the backend. These limits are not a hostile-code sandbox. Use a dedicated machine, disk quotas and trusted repositories, and do not expose this setup to the Internet. Repository checkout sizes are not bounded.
 
 ## Verification status
 

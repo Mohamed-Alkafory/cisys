@@ -28,6 +28,9 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `POST` build with a `credentialRef`       | no                        | no                   | yes   |
 | `GET /api/branding`                       | yes                       | yes                  | yes   |
 | `PUT /api/branding`                       | no                        | no                   | yes   |
+| `GET /api/images` (allowed images)        | yes                       | yes                  | yes   |
+| `PUT /api/images`                         | no                        | no                   | yes   |
+| `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |
 
 Private projects (and their build history and logs) are visible only to their creator and admins. Ownership is recorded with the immutable Keycloak subject (`sub`), not the user name. A project that is not visible to the caller is reported as `404 Not Found`.
 
@@ -41,14 +44,14 @@ The private flag controls visibility inside cisys; it does not grant or restrict
 
 ## Build runner
 
-The runner is disabled by default (`RUNNER_ENABLED=false`). Enabling it lets leads and admins run code from a Git repository in a container on the backend host.
+The runner is always on. It lets leads and admins run code from a Git repository in a container on the backend host, using only images an admin has allowed on the **Images** page.
 
 **Trust boundary:** access to the container engine (in particular the Docker socket) grants host-level control to the backend. The limits below are not a hostile-code sandbox. Use a dedicated Linux machine, disk quotas and trusted repositories only.
 
 Controls that are in place
 
 * Only HTTPS `github.com` and `gitlab.com` repository URLs are accepted for builds; redirects, embedded credentials, query strings, fragments and non-default ports are rejected.
-* Branch names are validated as Git references; image names are validated against a restrictive pattern.
+* Branch names are validated as Git references. Builds may only use images an admin has allowed; image names are validated against a restrictive pattern.
 * The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build. The `.git` directory is not copied into the container.
 * The container runs with no network, no capabilities, `no-new-privileges`, a PID limit of 256, 1 GiB of memory, one CPU, and as the unprivileged user `65534:65534`.
 * One build runs at a time and times out after ten minutes. Output is limited to 120 KB.

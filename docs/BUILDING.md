@@ -112,11 +112,9 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | `DB_URL`            | `jdbc:postgresql://localhost:5432/cisys` | JDBC URL                                             |
 | `DB_USER`           | `cisys`                                  | Database user                                        |
 | `DB_PASSWORD`       | `cisys`                                  | Database password                                    |
-| `RUNNER_ENABLED`    | `false`                                  | Enables the build runner                             |
-| `CONTAINER_RUNTIME` | `docker`                                 | Container engine used by the runner (`docker`, `podman`) |
 | `CISYS_GIT_*`       | not set                                  | Read-only Git provider tokens, referenced by name from the build form |
 
-The runner executes repository-controlled code. Read the **Builds** chapter of the manual and [SECURITY.md](SECURITY.md) before enabling it.
+The runner executes repository-controlled code. Read the **Builds** chapter of the manual and [SECURITY.md](SECURITY.md) before using it.
 
 ## Run tests
 

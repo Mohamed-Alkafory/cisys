@@ -11,6 +11,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './com
 import AppFooter from './components/layout/AppFooter';
 import PageHeader from './components/layout/PageHeader';
 import BrandingPanel from './BrandingPanel';
+import ImagesPanel from './ImagesPanel';
 import headerLogo from './assets/logo-header.svg';
 import './style.css';
 
@@ -28,7 +29,11 @@ async function api(path, opts = {}) {
     ...opts,
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + keycloak.token, ...opts.headers },
   });
-  if (!response.ok) throw new Error(response.status === 503 ? 'The build runner is disabled. See the setup guide.' : response.status === 409 ? 'Another build is running. Try again when it finishes.' : `Request failed (${response.status}). Check the branch, image and project access.`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    if (body?.error) throw new Error(body.error);
+  }
+  if (!response.ok) throw new Error(response.status === 409 ? 'Another build is running. Try again when it finishes.' : `Request failed (${response.status}). Check the branch, image and project access.`);
   return response.json();
 }
 
@@ -44,7 +49,8 @@ function App() {
   const [buildProject, setBuildProject] = useState(null);
   const [builds, setBuilds] = useState([]);
   const [branch, setBranch] = useState('main');
-  const [image, setImage] = useState('alpine:3.23');
+  const [image, setImage] = useState('');
+  const [images, setImages] = useState([]);
   const [command, setCommand] = useState('echo Hello from Cisys; ls');
   const [credentialRef, setCredentialRef] = useState('');
   const [buildBusy, setBuildBusy] = useState(false);
@@ -81,10 +87,15 @@ function App() {
         setUser(await api('/session'));
         setBranding(await api('/branding'));
         setProjects(await api('/projects'));
+        setImages(await api('/images'));
         setReady(true);
       })
       .catch((e) => setError(e.message || 'Unable to connect to Keycloak'));
   }, []);
+
+  useEffect(() => {
+    if (!images.includes(image)) setImage(images[0] || '');
+  }, [images, image]);
 
   async function create(event) {
     event.preventDefault();
@@ -125,7 +136,7 @@ function App() {
       <header className="app-header">
         <div className="header-main">
           <a className="brand" href="/" aria-label={`${branding.name} home`}><img src={branding.logo || headerLogo} alt="" className={branding.logo ? 'brand-logo' : 'brand-logo brand-logo-default'}/><span>{branding.name}</span></a>
-          <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={page === 'projects' ? 'page' : undefined} onClick={() => setPage('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'branding' ? 'page' : undefined} onClick={() => setPage('branding')}>Branding</button>}</nav>
+          <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={page === 'projects' ? 'page' : undefined} onClick={() => setPage('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'images' ? 'page' : undefined} onClick={() => setPage('images')}>Images</button>}{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'branding' ? 'page' : undefined} onClick={() => setPage('branding')}>Branding</button>}</nav>
         </div>
         <div className="header-actions">
           <button type="button" className="theme-toggle" onClick={() => setDark(!dark)} aria-label="Toggle dark mode" aria-pressed={dark} title="Toggle dark mode">
@@ -150,7 +161,7 @@ function App() {
         <Card className="project-card">
           <CardHeader><CardTitle>{role}</CardTitle><CardDescription>Signed in as {user.username}</CardDescription></CardHeader>
         </Card>
-      </main> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : <main id="projects" className="page-container">
+      </main> : page === 'images' && user.roles.includes('admin') ? <ImagesPanel api={api} onSaved={setImages}/> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : <main id="projects" className="page-container">
         <PageHeader title="Projects" actions={<Badge variant="outline">{projects.length} {projects.length === 1 ? 'project' : 'projects'}</Badge>}/>
         {error && <div className="error-message" role="alert">{error}</div>}
         {canCreate && (
@@ -176,7 +187,7 @@ function App() {
                 <strong className="project-name">{project.name}</strong>
                 <p className="project-url">{project.repositoryUrl}</p>
                 <Badge variant="outline" className="justify-self-start">{project.privateRepository ? <LockKeyhole size={12} className="text-red-600 dark:text-red-400" aria-hidden="true"/> : <LockKeyholeOpen size={12} className="text-green-600 dark:text-green-400" aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
-                <Button type="button" className="w-full" onClick={() => { setBuilds([]); setBuildProject(project.id); }}>Build history</Button>
+                <Button type="button" className="w-full" onClick={() => { setBuilds([]); setBuildProject(project.id); api('/images').then(setImages).catch(() => {}); }}>Build history</Button>
               </div>
             ))}
           </CardContent>
@@ -186,10 +197,10 @@ function App() {
           <CardContent>
             {canCreate && <form className="project-form" onSubmit={runBuild}>
               <div className="form-field"><Label htmlFor="build-branch">Branch</Label><Input id="build-branch" value={branch} onChange={(e) => setBranch(e.target.value)} required/></div>
-              <div className="form-field"><Label htmlFor="build-image">Pre-pulled image</Label><Input id="build-image" value={image} onChange={(e) => setImage(e.target.value)} required/></div>
+              <div className="form-field"><Label htmlFor="build-image">Image</Label>{images.length === 0 ? <p className="file-help">No images are allowed for builds yet. {user.roles.includes('admin') ? 'Choose some under Images.' : 'Ask an admin to allow one.'}</p> : <select id="build-image" className="font-select" value={image} onChange={(e) => setImage(e.target.value)} required>{images.map((name) => <option key={name} value={name}>{name}</option>)}</select>}</div>
               <div className="form-field"><Label htmlFor="build-command">Build command</Label><Input id="build-command" value={command} onChange={(e) => setCommand(e.target.value)} required/></div>
               {user.roles.includes('admin') && <div className="form-field"><Label htmlFor="git-credential">Private Git credential environment variable (optional)</Label><Input id="git-credential" value={credentialRef} onChange={(e) => setCredentialRef(e.target.value)} placeholder="CISYS_GIT_PROJECT"/></div>}
-              <Button disabled={buildBusy || builds.some((b) => b.status === 'RUNNING')}>{buildBusy ? 'Starting…' : 'Run build'}</Button>
+              <Button disabled={buildBusy || !image || builds.some((b) => b.status === 'RUNNING')}>{buildBusy ? 'Starting…' : 'Run build'}</Button>
             </form>}
             {builds.length === 0 ? <p>No builds yet.</p> : builds.map((b) => <details key={b.id}><summary>#{b.id} · {b.status} · {new Date(b.startedAt).toLocaleString()} {b.revision ? `· ${b.revision.slice(0, 12)}` : ''}</summary><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.output}</pre></details>)}
           </CardContent>

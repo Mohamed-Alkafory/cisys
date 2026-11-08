@@ -4,8 +4,9 @@ import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
+import io.quarkus.logging.Log;
 import jakarta.ws.rs.WebApplicationException;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
@@ -19,13 +20,23 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @ApplicationScoped public class BuildRunner {
- @ConfigProperty(name="cisys.runner.enabled",defaultValue="false") boolean enabled;
- @ConfigProperty(name="cisys.runner.runtime",defaultValue="docker") String runtime;
+ String runtime;
+ /** Uses podman when it is installed, otherwise docker. */
+ @PostConstruct void resolveRuntime(){
+  runtime=onPath("podman")?"podman":onPath("docker")?"docker":"podman";
+  Log.infof("Build runner uses the %s container runtime",runtime);
+ }
+ String runtime(){return runtime;}
+ private static boolean onPath(String program){
+  for(String dir:System.getenv().getOrDefault("PATH","").split(File.pathSeparator)){if(!dir.isEmpty()&&Files.isExecutable(Path.of(dir,program)))return true;}
+  return false;
+ }
  private final AtomicBoolean busy=new AtomicBoolean();
+ /** For tests: whether a build is running. */
+ AtomicBoolean busy(){return busy;}
  private final ExecutorService executor=Executors.newSingleThreadExecutor();
  void recover(@Observes StartupEvent event){QuarkusTransaction.requiringNew().run(()->Build.update("status = 'FAILED', finishedAt = ?1, output = 'Server restarted during build' where status = 'RUNNING'",Instant.now()));}
  Build submit(Long projectId,String actor,String url,BuildResource.RunRequest request){
-  if(!enabled)throw new WebApplicationException("Runner disabled",503);
   if(!busy.compareAndSet(false,true))throw new WebApplicationException("Runner busy",409);
   try {Build b=QuarkusTransaction.requiringNew().call(()->{Build x=new Build();x.projectId=projectId;x.requestedBy=actor;x.status="RUNNING";x.startedAt=Instant.now();x.output="Preparing checkout";x.persist();return x;});executor.submit(()->run(b.id,url,request));return b;}catch(RuntimeException e){busy.set(false);throw e;}
  }
@@ -54,6 +65,25 @@ import java.util.concurrent.atomic.AtomicBoolean;
    try{QuarkusTransaction.requiringNew().run(()->{Build b=Build.findById(id);b.status=result;b.output=text;b.revision=sha;b.finishedAt=Instant.now();});}finally{busy.set(false);}
   }
  }
+ record LocalImage(String name,String id,String size,String created){}
+ /** Lists the tagged images in the local container runtime. */
+ List<LocalImage> images()throws Exception{
+  Result r=command(List.of(runtime,"images","--format","{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}\t{{.CreatedSince}}"),30,1000000);
+  if(r.timeout()||r.code()!=0)throw new IllegalStateException("Container command failed");
+  Map<String,LocalImage> images=new TreeMap<>();
+  for(String line:r.output().split("\n")){
+   String[] f=line.split("\t");
+   if(f.length<5||f[0].equals("<none>")||f[1].equals("<none>"))continue;
+   String name=f[0]+":"+f[1];
+   if(name.matches(AllowedImage.PATTERN))images.putIfAbsent(name,new LocalImage(name,f[2],f[3],f[4]));
+  }
+  return List.copyOf(images.values());
+ }
+ /** Pulls an image into the local container runtime. Returns the runtime's output when the pull fails. */
+ Optional<String> pull(String name)throws Exception{Result r=command(List.of(runtime,"pull",name),600,8192);return r.code()==0&&!r.timeout()?Optional.empty():Optional.of(r.timeout()?"Pull timed out":tail(r.output()));}
+ /** Removes an image from the local container runtime. Returns the runtime's output when the removal fails. */
+ Optional<String> remove(String name)throws Exception{Result r=command(List.of(runtime,"rmi",name),60,8192);return r.code()==0&&!r.timeout()?Optional.empty():Optional.of(r.timeout()?"Removal timed out":tail(r.output()));}
+ private static String tail(String s){s=s.strip();return s.length()>500?"…"+s.substring(s.length()-500):s;}
  record Result(int code,boolean timeout,String output){}
  static Result command(List<String> args,int timeout,int limit)throws Exception{
   Process p=new ProcessBuilder(args).redirectErrorStream(true).start();p.getOutputStream().close();ByteArrayOutputStream buffer=new ByteArrayOutputStream();boolean[] truncated={false};

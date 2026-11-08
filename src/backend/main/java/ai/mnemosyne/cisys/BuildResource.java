@@ -28,7 +28,8 @@ public class BuildResource {
   Project p=visible(id);
   if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
   if(input==null || input.branch()==null || !org.eclipse.jgit.lib.Repository.isValidRefName("refs/heads/"+input.branch()) || input.branch().startsWith("-") || input.branch().length()>150)throw new BadRequestException("Invalid branch");
-  if(input.image()==null || !input.image().matches("[A-Za-z0-9][A-Za-z0-9_./:@-]{0,200}") || input.command()==null || input.command().isBlank() || input.command().length()>4000)throw new BadRequestException("Image and command are required");
+  if(input.image()==null || !input.image().matches(AllowedImage.PATTERN) || input.command()==null || input.command().isBlank() || input.command().length()>4000)throw new BadRequestException("Image and command are required");
+  if(!AllowedImage.isAllowed(input.image()))throw new BadRequestException("Image is not allowed");
   if(input.credentialRef()!=null && !identity.hasRole("admin"))throw new ForbiddenException();
   if(input.credentialRef()!=null && !input.credentialRef().matches("CISYS_GIT_[A-Z0-9_]{1,80}"))throw new BadRequestException("Invalid credential reference");
   URI uri=URI.create(p.repositoryUrl);
