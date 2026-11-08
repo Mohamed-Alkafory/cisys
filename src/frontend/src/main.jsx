@@ -175,7 +175,7 @@ function App() {
               <div className="project-grid project-row" key={project.id}>
                 <strong className="project-name">{project.name}</strong>
                 <p className="project-url">{project.repositoryUrl}</p>
-                <Badge variant="outline" className="justify-self-start">{project.privateRepository ? <LockKeyhole size={12} aria-hidden="true"/> : <LockKeyholeOpen size={12} aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
+                <Badge variant="outline" className="justify-self-start">{project.privateRepository ? <LockKeyhole size={12} className="text-red-600 dark:text-red-400" aria-hidden="true"/> : <LockKeyholeOpen size={12} className="text-green-600 dark:text-green-400" aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
                 <Button type="button" className="w-full" onClick={() => { setBuilds([]); setBuildProject(project.id); }}>Build history</Button>
               </div>
             ))}
