@@ -157,11 +157,11 @@ function App() {
           <Card className="project-card">
             <CardHeader><CardTitle>Add a project</CardTitle></CardHeader>
             <CardContent>
-              <form className="project-form" onSubmit={create}>
+              <form className="project-grid project-add" onSubmit={create}>
                 <div className="form-field"><Label htmlFor="project-name">Project name</Label><Input id="project-name" required maxLength="100" value={name} onChange={(e) => setName(e.target.value)} placeholder="My project"/></div>
                 <div className="form-field"><Label htmlFor="repository-url">Repository URL</Label><Input id="repository-url" required type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/org/repo.git"/></div>
                 <div className="form-field"><Label htmlFor="project-private" className="whitespace-nowrap">Private project</Label><span className="private-choice"><input id="project-private" type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)}/></span></div>
-                <Button type="submit" disabled={submitting}>{submitting ? 'Adding…' : 'Add project'}</Button>
+                <Button type="submit" className="w-full" disabled={submitting}>{submitting ? 'Adding…' : 'Add project'}</Button>
               </form>
             </CardContent>
           </Card>
@@ -172,11 +172,11 @@ function App() {
             {projects.length === 0 ? (
               <div className="empty-state"><FolderGit2 size={28} aria-hidden="true"/><strong>No projects yet</strong><p>{canCreate ? 'Add a repository above to get started.' : 'Ask a lead or admin to add a project.'}</p></div>
             ) : projects.map((project) => (
-              <div className="project-row" key={project.id}>
-                <div className="project-icon"><FolderGit2 size={19} aria-hidden="true"/></div>
-                <div className="project-details"><strong>{project.name}</strong><p>{project.repositoryUrl}</p></div>
-                <Badge variant="outline">{project.privateRepository && <LockKeyhole size={12} aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
-                <Button type="button" onClick={() => { setBuilds([]); setBuildProject(project.id); }}>Build history</Button>
+              <div className="project-grid project-row" key={project.id}>
+                <strong className="project-name">{project.name}</strong>
+                <p className="project-url">{project.repositoryUrl}</p>
+                <Badge variant="outline" className="justify-self-start">{project.privateRepository && <LockKeyhole size={12} aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
+                <Button type="button" className="w-full" onClick={() => { setBuilds([]); setBuildProject(project.id); }}>Build history</Button>
               </div>
             ))}
           </CardContent>
