@@ -1,4 +1,12 @@
 /*
+ * Eclipse Public License - v 2.0
+ *
+ *   THE ACCOMPANYING PROGRAM IS PROVIDED UNDER THE TERMS OF THIS ECLIPSE
+ *   PUBLIC LICENSE ("AGREEMENT"). ANY USE, REPRODUCTION OR DISTRIBUTION
+ *   OF THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
+ */
+
+/*
  * Applies the cisys branding to the Keycloak login pages: the colors, the
  * display name as the title, and the logo on the left of the title.
  *
