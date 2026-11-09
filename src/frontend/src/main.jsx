@@ -6,7 +6,7 @@
  *   OF THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Keycloak from 'keycloak-js';
 import { FolderGit2, LockKeyhole, LockKeyholeOpen, Moon, Sun, LogOut, ChevronDown, CircleUserRound, UserRound } from 'lucide-react';
@@ -20,10 +20,21 @@ import AppFooter from './components/layout/AppFooter';
 import PageHeader from './components/layout/PageHeader';
 import BrandingPanel from './BrandingPanel';
 import ImagesPanel from './ImagesPanel';
+import PublicHome from './PublicHome';
+import PublicStats from './PublicStats';
 import headerLogo from './assets/logo-header.svg';
 import './style.css';
 
+const API = 'http://localhost:8080/api';
 const keycloak = new Keycloak({ url: 'http://localhost:8180', realm: 'cisys', clientId: 'cisys-ui' });
+// Matches the Branding entity defaults, used when the public branding cannot be loaded.
+const DEFAULT_BRANDING = { name: 'cisys', headerColor: '#176a4a', headingColor: '#176a4a', buttonColor: '#176a4a' };
+
+async function publicJson(path) {
+  const response = await fetch(API + path);
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  return response.json();
+}
 
 async function api(path, opts = {}) {
   try {
@@ -33,7 +44,7 @@ async function api(path, opts = {}) {
     await keycloak.login();
     throw new Error('Your session has ended. Please sign in again.');
   }
-  const response = await fetch('http://localhost:8080/api' + path, {
+  const response = await fetch(API + path, {
     ...opts,
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + keycloak.token, ...opts.headers },
   });
@@ -46,6 +57,10 @@ async function api(path, opts = {}) {
 }
 
 function App() {
+  // 'loading' until Keycloak answers, then 'public' for anonymous visitors or 'app' for signed-in users.
+  const [mode, setMode] = useState('loading');
+  const [stats, setStats] = useState(undefined);
+  const [statsError, setStatsError] = useState('');
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -89,17 +104,43 @@ function App() {
     document.title = branding.name;
   }, [branding]);
 
+  // Loads the public statistics for the public page and the signed-in home page.
+  // Numbers already on screen stay visible while refreshing; a failure replaces them with an error.
+  const loadPublicStats = useCallback(async () => {
+    try {
+      setStats(await publicJson('/stats/public'));
+      setStatsError('');
+    } catch {
+      setStats(null);
+      setStatsError('Statistics are unavailable right now.');
+    }
+  }, []);
+
   useEffect(() => {
-    keycloak.init({ onLoad: 'login-required', pkceMethod: 'S256', checkLoginIframe: false })
-      .then(async () => {
+    const showPublic = async () => {
+      setMode('public');
+      const loadBranding = publicJson('/branding/public')
+        .then((value) => setBranding({ ...DEFAULT_BRANDING, ...value }))
+        .catch(() => setBranding(DEFAULT_BRANDING));
+      await Promise.allSettled([loadBranding, loadPublicStats()]);
+    };
+    const showApp = async () => {
+      setMode('app');
+      try {
         setUser(await api('/session'));
         setBranding(await api('/branding'));
         setProjects(await api('/projects'));
         setImages(await api('/images'));
         setReady(true);
-      })
-      .catch((e) => setError(e.message || 'Unable to connect to Keycloak'));
-  }, []);
+      } catch (e) {
+        setError(e.message || 'Unable to load Cisys');
+      }
+    };
+    keycloak.init({ onLoad: 'check-sso', pkceMethod: 'S256', checkLoginIframe: false })
+      .then((authenticated) => (authenticated ? showApp() : showPublic()))
+      // Keycloak is unreachable: still show the public page; Sign in retries the login.
+      .catch(() => showPublic());
+  }, [loadPublicStats]);
 
   useEffect(() => {
     if (!images.includes(image)) setImage(images[0] || '');
@@ -135,6 +176,7 @@ function App() {
     catch (e) { setError(e.message); } finally { setBuildBusy(false); }
   }
 
+  if (mode === 'public') return <PublicHome branding={branding || DEFAULT_BRANDING} stats={stats} statsError={statsError} logoUrl={API + '/branding/logo'} onSignIn={() => keycloak.login()} dark={dark} setDark={setDark}/>;
   if (!ready) return <main className="loading-state" role={error ? 'alert' : 'status'}>{error || 'Connecting to Cisys…'}</main>;
   const canCreate = user.roles.includes('lead') || user.roles.includes('admin');
   const role = user.roles.includes('admin') ? 'Admin' : user.roles.includes('lead') ? 'Lead' : 'Member';
@@ -143,7 +185,7 @@ function App() {
     <div className="app-shell" style={branding.background ? { backgroundImage: `linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.08)), url(${branding.background})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' } : undefined}>
       <header className="app-header">
         <div className="header-main">
-          <a className="brand" href="/" aria-label={`${branding.name} home`}><img src={branding.logo || headerLogo} alt="" className={branding.logo ? 'brand-logo' : 'brand-logo brand-logo-default'}/><span>{branding.name}</span></a>
+          <a className="brand" href="/" aria-label={`${branding.name} home`} onClick={(event) => { event.preventDefault(); setPage('home'); void loadPublicStats(); }}><img src={branding.logo || headerLogo} alt="" className={branding.logo ? 'brand-logo' : 'brand-logo brand-logo-default'}/><span>{branding.name}</span></a>
           <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={page === 'projects' ? 'page' : undefined} onClick={() => setPage('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'images' ? 'page' : undefined} onClick={() => setPage('images')}>Images</button>}{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'branding' ? 'page' : undefined} onClick={() => setPage('branding')}>Branding</button>}</nav>
         </div>
         <div className="header-actions">
@@ -159,12 +201,14 @@ function App() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => setPage('profile')}><UserRound aria-hidden="true"/> Profile</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => keycloak.logout()}><LogOut aria-hidden="true"/> Sign out</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => keycloak.logout({ redirectUri: window.location.origin + '/' })}><LogOut aria-hidden="true"/> Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </header>
-      {page === 'profile' ? <main id="profile" className="page-container">
+      {page === 'home' ? <main id="home" className="page-container">
+        <PublicStats stats={stats} statsError={statsError}/>
+      </main> : page === 'profile' ? <main id="profile" className="page-container">
         <PageHeader title="Profile"/>
         <Card className="project-card">
           <CardHeader><CardTitle>{role}</CardTitle><CardDescription>Signed in as {user.username}</CardDescription></CardHeader>

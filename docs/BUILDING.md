@@ -66,6 +66,8 @@ docker compose up -d
 
 Wait for Keycloak to become available before using the application. The realm is imported only on the first start; existing Keycloak data is not overwritten. To recreate the local development data, run `make reset` (this deletes the local databases).
 
+Signing out returns to the public front page, which needs `http://localhost:5173/*` as a valid post-logout redirect URI on the `cisys-ui` client. Realms imported before this setting was added must either be re-imported with `make reset` or updated in the Keycloak admin console (Clients → `cisys-ui` → Valid post logout redirect URIs).
+
 When cisys shuts down it signs all users out of the `cisys` realm through the `cisys-backend` service account, so everyone signs in again after a restart. A live reload keeps the sessions, and so does a crash, as nothing can run at that point. A Keycloak realm created before this client was added logs a warning instead; run `make reset` to import it. Access tokens that were already issued stay valid until they expire, by default within 5 minutes.
 
 ### Backend
@@ -109,6 +111,7 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | `SESSION_INVALIDATE_ON_SHUTDOWN` | `true` | Signs all users out of the realm when cisys shuts down |
 | `KEYCLOAK_ADMIN_CLIENT_ID` | `cisys-backend` | Keycloak service account used to sign users out |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | `cisys` | Secret of that service account |
+| `STATS_CACHE_SECONDS` | `30` | How long the public front-page statistics are cached on the server |
 | `DB_URL`            | `jdbc:postgresql://localhost:5432/cisys` | JDBC URL                                             |
 | `DB_USER`           | `cisys`                                  | Database user                                        |
 | `DB_PASSWORD`       | `cisys`                                  | Database password                                    |

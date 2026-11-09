@@ -32,6 +32,8 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `PUT /api/images`                         | no                        | no                   | yes   |
 | `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |
 
+Without signing in, `GET /api/branding/public`, `GET /api/branding/logo` and `GET /api/stats/public` are readable. The statistics are aggregate counts computed from public projects only (public projects, their builds by status, success rate, last build time). Private projects and their builds are left out of every number, and no names, repository URLs, logs or users are exposed. The server caches the result for `STATS_CACHE_SECONDS` (default 30) seconds.
+
 Private projects (and their build history and logs) are visible only to their creator and admins. Ownership is recorded with the immutable Keycloak subject (`sub`), not the user name. A project that is not visible to the caller is reported as `404 Not Found`.
 
 The private flag controls visibility inside cisys; it does not grant or restrict Git access.

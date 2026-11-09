@@ -17,14 +17,28 @@ The backend validates the access token, reads roles from `realm_access/roles` an
 ## How to sign in
 
 1. Open the application at <http://localhost:5173>.
-2. If you are not signed in, you are redirected to Keycloak.
+2. If you are not signed in, click **Sign in** in the header.
 3. Enter your user name and password and click **Sign In**.
 
 ![Keycloak sign-in page](images/keycloak-login.png){ width=100% }
 
 4. Keycloak redirects you back to cisys.
 
-To sign out, use the sign-out control in the header.
+To sign out, use the sign-out control in the header. You return to the public front page.
+
+## Public front page
+
+Visitors who are not signed in see the public front page. It shows statistics for the public projects of the instance:
+
+* The number of public projects
+* Their builds, and how many passed, failed or are running
+* The success rate of finished builds
+* The number of builds started in the last 7 days
+* The time of the last build
+
+Private projects and their builds are not counted. The page never shows project names, repository URLs, build logs or users.
+
+When you are signed in, click the logo in the header to return to these statistics.
 
 ## Development accounts
 

@@ -17,6 +17,7 @@
 - Private Git access through environment-variable credential references
 - Branding (name, font, colors, logo and background image)
 - Light and dark mode
+- Public front page for visitors who are not signed in, with aggregate statistics for public projects
 
 ## Documentation
 

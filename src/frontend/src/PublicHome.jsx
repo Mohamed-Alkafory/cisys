@@ -1,0 +1,43 @@
+/*
+ * Eclipse Public License - v 2.0
+ *
+ *   THE ACCOMPANYING PROGRAM IS PROVIDED UNDER THE TERMS OF THIS ECLIPSE
+ *   PUBLIC LICENSE ("AGREEMENT"). ANY USE, REPRODUCTION OR DISTRIBUTION
+ *   OF THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
+ */
+
+import React, { useState } from 'react';
+import { Moon, Sun, LogIn } from 'lucide-react';
+import { Button } from './components/ui/button';
+import AppFooter from './components/layout/AppFooter';
+import PublicStats from './PublicStats';
+import headerLogo from './assets/logo-header.svg';
+
+/** Landing page for visitors who are not signed in. */
+export default function PublicHome({ branding, stats, statsError, logoUrl, onSignIn, dark, setDark }) {
+  // One-way flag: once the logo request fails (404 when none is set) we use the bundled logo and never retry.
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  return (
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="header-main">
+          <a className="brand" href="/" aria-label={`${branding.name} home`}>
+            <img src={logoFailed ? headerLogo : logoUrl} alt="" className={logoFailed ? 'brand-logo brand-logo-default' : 'brand-logo'} onError={() => setLogoFailed(true)}/>
+            <span>{branding.name}</span>
+          </a>
+        </div>
+        <div className="header-actions">
+          <button type="button" className="theme-toggle" onClick={() => setDark(!dark)} aria-label="Toggle dark mode" aria-pressed={dark} title="Toggle dark mode">
+            <Sun size={15} aria-hidden="true"/><Moon size={15} aria-hidden="true"/><span className="theme-knob"/>
+          </button>
+          <Button type="button" onClick={onSignIn}><LogIn aria-hidden="true"/> Sign in</Button>
+        </div>
+      </header>
+      <main id="public-home" className="page-container">
+        <PublicStats stats={stats} statsError={statsError}/>
+      </main>
+      <AppFooter />
+    </div>
+  );
+}
