@@ -24,6 +24,7 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `GET /api/projects`                       | public projects           | public and own       | all   |
 | `POST /api/projects`                      | no                        | yes                  | yes   |
 | `GET /api/projects/{id}/builds[/{id}]`    | visible projects          | visible projects     | all   |
+| `GET /api/projects/{id}/branches`         | visible projects          | visible projects     | all   |
 | `POST /api/projects/{id}/builds`          | no                        | yes                  | yes   |
 | `POST` build with a `credentialRef`       | no                        | no                   | yes   |
 | `GET /api/branding`                       | yes                       | yes                  | yes   |
@@ -52,7 +53,8 @@ The runner is always on. It lets leads and admins run code from a Git repository
 
 Controls that are in place
 
-* Only HTTPS `github.com` and `gitlab.com` repository URLs are accepted for builds; redirects, embedded credentials, query strings, fragments and non-default ports are rejected.
+* Only HTTPS `github.com` and `gitlab.com` repository URLs are accepted for builds and branch discovery; redirects, embedded credentials, query strings, fragments and non-default ports are rejected. Branch discovery reads the project's own repository URL, never a URL supplied by the caller.
+* Branch discovery for private projects is not attempted because credentials are not stored on the project; the endpoint returns an empty list with reason `private_repository`.
 * Branch names are validated as Git references. Builds may only use images an admin has allowed; image names are validated against a restrictive pattern.
 * The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build. The `.git` directory is not copied into the container.
 * The container runs with no network, no capabilities, `no-new-privileges`, a PID limit of 256, 1 GiB of memory, one CPU, and as the unprivileged user `65534:65534`.
