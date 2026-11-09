@@ -84,7 +84,7 @@ See [SECURITY.md](SECURITY.md) for the role-to-endpoint mapping.
 | :--------------------------------------- | :---------------------------------------------- |
 | `src/backend/main/java/ai/mnemosyne/cisys` | Quarkus backend (entities, REST resources, runner) |
 | `src/backend/main/resources`             | Quarkus configuration                           |
-| `src/backend/test`                       | Backend tests (H2, `@TestSecurity`)             |
+| `src/backend/test`                       | Backend tests (PostgreSQL via Dev Services, `@TestSecurity`) |
 | `src/frontend`                           | React frontend (Vite, Tailwind)                 |
 | `contrib/keycloak`                       | Development Keycloak realm and login theme      |
 | `docs`                                   | Documentation, roadmap, screenshots and manual  |

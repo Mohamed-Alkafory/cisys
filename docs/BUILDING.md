@@ -120,7 +120,7 @@ The runner executes repository-controlled code. Read the **Builds** chapter of t
 
 ## Run tests
 
-Backend tests use an in-memory H2 database and `@TestSecurity` with OIDC disabled, so neither Keycloak nor PostgreSQL is needed:
+Backend tests run against a real PostgreSQL that Quarkus Dev Services starts in a container (`postgres:18`), so Docker or Podman must be running. Flyway applies the migrations and Hibernate validates the schema, as in production. OIDC is disabled and `@TestSecurity` supplies users, so Keycloak is not needed, and the `make platform-start` database is not used:
 
 ```bash
 mvn test

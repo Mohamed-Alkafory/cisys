@@ -38,7 +38,7 @@ when you need to clear `target/` and force a fresh rebuild.
 make test
 ```
 
-The backend tests use an in-memory H2 database and do not need Keycloak or PostgreSQL. `make test` runs the frontend lint (`npm run lint`) followed by the backend tests. The Husky `pre-commit` hook runs ESLint on staged frontend files; there is no `pre-push` hook. Bypass the hook once with `--no-verify`.
+The backend tests run against a PostgreSQL container started by Quarkus Dev Services, so Docker or Podman must be running; they do not need Keycloak or the `make platform-start` database. cisys supports PostgreSQL only. `make test` runs the frontend lint (`npm run lint`) followed by the backend tests. The Husky `pre-commit` hook runs ESLint on staged frontend files; there is no `pre-push` hook. Bypass the hook once with `--no-verify`.
 
 ## Production build
 
