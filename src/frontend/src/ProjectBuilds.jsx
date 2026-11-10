@@ -7,18 +7,32 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { FolderGit2, LockKeyhole, LockKeyholeOpen, LogIn } from 'lucide-react';
+import { FolderGit2, GitBranch, LockKeyhole, LockKeyholeOpen, LogIn } from 'lucide-react';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
 import PageHeader from './components/layout/PageHeader';
-import BuildLogView from './BuildLogView';
+import BuildStatus from './BuildStatus';
+import { branchFromSegment, buildPath, duration, shortRevision, startedAt } from './build-format';
 
 /** Returns the project name for paths like /cisys/ (or /cisys), otherwise null. */
 export function projectNameFromPath(pathname) {
   const match = /^\/([^/]+)\/?$/.exec(pathname);
   if (!match) return null;
   try { return decodeURIComponent(match[1]); } catch { return null; }
+}
+
+/** Returns { name, branch, buildId } for paths like /cisys/master/build/51, otherwise null. */
+export function projectBuildFromPath(pathname) {
+  const match = /^\/([^/]+)\/([^/]+)\/build\/(\d+)\/?$/.exec(pathname);
+  if (!match) return null;
+  try {
+    return {
+      name: decodeURIComponent(match[1]),
+      branch: branchFromSegment(decodeURIComponent(match[2])),
+      buildId: Number(match[3]),
+    };
+  } catch { return null; }
 }
 
 export function projectPath(name) {
@@ -30,17 +44,28 @@ export function projectPath(name) {
  * The API answers 404 both for unknown projects and for private projects the visitor may not see,
  * so anonymous visitors are offered to sign in. Render it with `key={name}` so state resets per project.
  */
-export default function ProjectBuilds({ name, load, onSignIn }) {
+export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initialBranch = '' }) {
   // undefined while loading, null when not found.
   const [page, setPage] = useState(undefined);
   const [error, setError] = useState('');
+  const [branches, setBranches] = useState(null);
+  const [branchesError, setBranchesError] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState(initialBranch);
+  const [buildsBranch, setBuildsBranch] = useState('');
+  const isPublic = page?.project?.privateRepository === false;
+  // main is the default branch; older repositories still use master. There is no "all branches" view.
+  const branchNames = branches || [];
+  const defaultBranch = branchNames.includes('main') ? 'main'
+    : branchNames.includes('master') ? 'master' : (branchNames[0] || '');
+  const activeBranch = isPublic ? (selectedBranch || defaultBranch) : '';
 
   useEffect(() => {
     let active = true;
+    const branchQuery = activeBranch ? `?branch=${encodeURIComponent(activeBranch)}` : '';
     const fetchPage = async () => {
       try {
-        const data = await load(`/project-pages/${encodeURIComponent(name)}`);
-        if (active) { setPage(data); setError(''); }
+        const data = await load(`/project-pages/${encodeURIComponent(name)}${branchQuery}`);
+        if (active) { setPage(data); setBuildsBranch(activeBranch); setError(''); }
       } catch (e) {
         if (!active) return;
         if (e.status === 404) setPage(null);
@@ -50,7 +75,21 @@ export default function ProjectBuilds({ name, load, onSignIn }) {
     void fetchPage();
     const timer = setInterval(fetchPage, 5000);
     return () => { active = false; clearInterval(timer); };
-  }, [name, load]);
+  }, [name, load, activeBranch]);
+
+  // Branches are loaded once per public project, not on every build refresh.
+  useEffect(() => {
+    if (!isPublic) return undefined;
+    let active = true;
+    load(`/project-pages/${encodeURIComponent(name)}/branches`)
+      .then((data) => {
+        if (active) { setBranches(Array.isArray(data.branches) ? data.branches : []); setBranchesError(false); }
+      })
+      .catch(() => {
+        if (active) { setBranches([]); setBranchesError(true); }
+      });
+    return () => { active = false; };
+  }, [name, load, isPublic]);
 
   if (page === null) {
     return (
@@ -78,26 +117,93 @@ export default function ProjectBuilds({ name, load, onSignIn }) {
   }
 
   const { project, builds } = page;
+  // While the branches load, or while a branch-filtered fetch is in flight, do not show the previous
+  // unfiltered builds. Otherwise a build from another branch flashes on screen and then disappears.
+  const buildsReady = (!isPublic || branches !== null) && (!isPublic || buildsBranch === activeBranch);
+  const openBuild = (build) => onOpenBuild?.(project.name, build.branch || activeBranch, build.id);
+
   return (
     <main id="project-builds" className="page-container">
       <PageHeader title={project.name} actions={
         <Badge variant="outline">{project.privateRepository
           ? <LockKeyhole size={12} className="text-red-600 dark:text-red-400" aria-hidden="true"/>
           : <LockKeyholeOpen size={12} className="text-green-600 dark:text-green-400" aria-hidden="true"/>}
-        {project.privateRepository ? 'Private' : 'Public'}</Badge>}/>
+        {project.privateRepository ? 'Private' : 'Public'}</Badge>
+      }/>
       {error && <div className="error-message" role="alert">{error}</div>}
-      <Card className="project-card">
-        <CardHeader>
-          <CardTitle>Builds</CardTitle>
-          <CardDescription className="project-url">{project.repositoryUrl}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {builds.length === 0 ? <p>No builds yet.</p> : builds.map((b) => (
-            <BuildLogView key={b.id} api={load} build={b}
-              logPath={`/project-pages/${encodeURIComponent(project.name)}/builds/${b.id}/log`}/>
-          ))}
-        </CardContent>
-      </Card>
+      <div className={isPublic ? 'project-layout' : 'project-layout project-layout-single'}>
+        {isPublic && (
+          <aside className="branch-panel" aria-label="Branches">
+            <h2 className="branch-panel-title"><GitBranch size={14} aria-hidden="true"/> Branches</h2>
+            {branches === null && !branchesError ? <p className="branch-panel-note">Loading branches…</p>
+              : branchNames.length === 0 && !branchesError ? <p className="branch-panel-note">No branches found.</p>
+              : (
+                <ul className="branch-list">
+                  {branchNames.map((branch) => (
+                    <li key={branch}>
+                      <button type="button" className="branch-option" aria-current={activeBranch === branch ? 'page' : undefined}
+                        onClick={() => setSelectedBranch(branch)}>{branch}</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            {branchesError && <p className="branch-panel-note">Branches unavailable</p>}
+          </aside>
+        )}
+        <Card className="project-card builds-panel">
+          <CardHeader>
+            <CardTitle>Builds</CardTitle>
+            <CardDescription className="project-url">
+              {activeBranch ? `${activeBranch} · ` : ''}newest first · {project.repositoryUrl}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!buildsReady ? (
+              <p className="loading-state" role="status">Loading builds…</p>
+            ) : builds.length === 0 ? (
+              <p>{activeBranch ? `No builds for ${activeBranch} yet.` : 'No builds yet.'}</p>
+            ) : (
+              <div className="builds-table-wrap">
+                <table className="builds-table">
+                  <thead>
+                    <tr>
+                      <th scope="col"><span className="sr-only">Status</span></th>
+                      <th scope="col">Build</th>
+                      <th scope="col">Branch</th>
+                      <th scope="col">Commit</th>
+                      <th scope="col">Started</th>
+                      <th scope="col">Duration</th>
+                      <th scope="col">Exit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {builds.map((b) => (
+                      <tr key={b.id} className={onOpenBuild ? 'builds-row-link' : undefined}
+                        onClick={onOpenBuild ? () => openBuild(b) : undefined}>
+                        <td className="builds-status-cell"><BuildStatus status={b.status}/></td>
+                        <td>
+                          <a className="build-link" href={buildPath(project.name, b.branch || activeBranch, b.id)}
+                            onClick={(event) => {
+                              if (!onOpenBuild) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openBuild(b);
+                            }}>#{b.id}</a>
+                        </td>
+                        <td className="build-branch">{b.branch || '—'}</td>
+                        <td><code className="build-commit" title={b.revision ?? undefined}>{shortRevision(b.revision)}</code></td>
+                        <td className="build-meta">{startedAt(b)}</td>
+                        <td className="build-meta">{duration(b)}</td>
+                        <td className="build-meta">{b.exitCode ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

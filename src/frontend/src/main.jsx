@@ -22,8 +22,10 @@ import BrandingPanel from './BrandingPanel';
 import ImagesPanel from './ImagesPanel';
 import PublicHome from './PublicHome';
 import PublicStats from './PublicStats';
-import ProjectBuilds, { projectNameFromPath, projectPath } from './ProjectBuilds';
+import ProjectBuilds, { projectBuildFromPath, projectNameFromPath, projectPath } from './ProjectBuilds';
+import ProjectBuild from './ProjectBuild';
 import BuildLogView from './BuildLogView';
+import { buildPath } from './build-format';
 import headerLogo from './assets/logo-header.svg';
 import './style.css';
 
@@ -83,8 +85,11 @@ function App() {
   const [buildBusy, setBuildBusy] = useState(false);
   const [branding, setBranding] = useState(null);
   const [page, setPage] = useState('projects');
-  // Set when the URL is a project page such as /cisys/; it takes precedence over `page`.
-  const [projectName, setProjectName] = useState(() => projectNameFromPath(window.location.pathname));
+  // Set when the URL is a project page such as /cisys/ or a build such as /cisys/master/build/51.
+  const [projectName, setProjectName] = useState(() =>
+    projectBuildFromPath(window.location.pathname)?.name ?? projectNameFromPath(window.location.pathname));
+  const [projectBranch, setProjectBranch] = useState(() => projectBuildFromPath(window.location.pathname)?.branch ?? '');
+  const [buildId, setBuildId] = useState(() => projectBuildFromPath(window.location.pathname)?.buildId ?? null);
   const [dark, setDark] = useState(() => localStorage.getItem('cisys-theme') === 'dark');
 
   useEffect(() => {
@@ -149,7 +154,12 @@ function App() {
   }, [loadPublicStats]);
 
   useEffect(() => {
-    const onPopState = () => setProjectName(projectNameFromPath(window.location.pathname));
+    const onPopState = () => {
+      const build = projectBuildFromPath(window.location.pathname);
+      setBuildId(build ? build.buildId : null);
+      setProjectBranch(build ? build.branch : '');
+      setProjectName(build ? build.name : projectNameFromPath(window.location.pathname));
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
@@ -158,12 +168,23 @@ function App() {
   function go(target) {
     if (window.location.pathname !== '/') window.history.pushState(null, '', '/');
     setProjectName(null);
+    setProjectBranch('');
+    setBuildId(null);
     setPage(target);
   }
 
-  function openProject(name) {
+  function openProject(name, branch = '') {
     window.history.pushState(null, '', projectPath(name));
     setProjectName(name);
+    setProjectBranch(branch);
+    setBuildId(null);
+  }
+
+  function openBuild(name, branch, id) {
+    window.history.pushState(null, '', buildPath(name, branch, id));
+    setProjectName(name);
+    setProjectBranch(branch);
+    setBuildId(id);
   }
 
   useEffect(() => {
@@ -201,7 +222,9 @@ function App() {
   }
 
   if (mode === 'public') return <PublicHome branding={branding || DEFAULT_BRANDING} stats={stats} statsError={statsError} logoUrl={API + '/branding/logo'} onSignIn={() => keycloak.login()} dark={dark} setDark={setDark}>
-    {projectName !== null && <ProjectBuilds key={projectName} name={projectName} load={publicJson} onSignIn={() => keycloak.login()}/>}
+    {projectName !== null && (buildId !== null
+      ? <ProjectBuild key={`${projectName}-${projectBranch}-${buildId}`} name={projectName} branch={projectBranch} buildId={buildId} load={publicJson} onBack={() => openProject(projectName, projectBranch)}/>
+      : <ProjectBuilds key={projectName} name={projectName} initialBranch={projectBranch} load={publicJson} onSignIn={() => keycloak.login()} onOpenBuild={openBuild}/>)}
   </PublicHome>;
   if (!ready) return <main className="loading-state" role={error ? 'alert' : 'status'}>{error || 'Connecting to Cisys…'}</main>;
   const canCreate = user.roles.includes('lead') || user.roles.includes('admin');
@@ -232,7 +255,9 @@ function App() {
           </DropdownMenu>
         </div>
       </header>
-      {projectName !== null ? <ProjectBuilds key={projectName} name={projectName} load={api}/> : page === 'home' ? <main id="home" className="page-container">
+      {projectName !== null ? (buildId !== null
+        ? <ProjectBuild key={`${projectName}-${projectBranch}-${buildId}`} name={projectName} branch={projectBranch} buildId={buildId} load={api} onBack={() => openProject(projectName, projectBranch)}/>
+        : <ProjectBuilds key={projectName} name={projectName} initialBranch={projectBranch} load={api} onOpenBuild={openBuild}/>) : page === 'home' ? <main id="home" className="page-container">
         <PublicStats stats={stats} statsError={statsError}/>
       </main> : page === 'profile' ? <main id="profile" className="page-container">
         <PageHeader title="Profile"/>

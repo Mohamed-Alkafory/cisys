@@ -54,6 +54,17 @@ class ProjectPageResourceTest {
         return seeded;
     }
 
+    private void addBuild(String projectName, String branch) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Project p = Project.<Project>find("name = ?1", projectName).firstResult();
+            Build b = new Build();
+            b.projectId = p.id;
+            b.status = "PASSED";
+            b.branch = branch;
+            b.persist();
+        });
+    }
+
     @Test
     void anonymousSeesPublicProjectBuilds() {
         String name = project(false);
@@ -62,6 +73,63 @@ class ProjectPageResourceTest {
                         "builds", hasSize(1), "builds[0].status", equalTo("PASSED"), "builds[0].logTruncated", equalTo(false),
                         "builds[0]", not(hasKey("output")),
                         "builds[0]", not(hasKey("requestedBy")), "builds[0]", not(hasKey("credentialRef")));
+    }
+
+    @Test
+    void anonymousCanFilterPublicProjectBuildsByBranch() {
+        String name = project(false);
+        addBuild(name, "dev");
+        given().queryParam("branch", "dev").get("/api/project-pages/" + name.toLowerCase()).then()
+                .statusCode(200).body("builds", hasSize(1), "builds[0].branch", equalTo("dev"));
+        given().queryParam("branch", "main").get("/api/project-pages/" + name.toLowerCase()).then()
+                .statusCode(200).body("builds", hasSize(1), "builds[0].branch", equalTo("main"));
+    }
+
+    @Test
+    void filteringByUnknownBranchReturnsNoBuilds() {
+        String name = project(false);
+        given().queryParam("branch", "missing").get("/api/project-pages/" + name.toLowerCase()).then()
+                .statusCode(200).body("builds", hasSize(0));
+    }
+
+    @Test
+    void privateProjectFilterIsStillNotFound() {
+        String name = project(true);
+        given().queryParam("branch", "main").get("/api/project-pages/" + name.toLowerCase()).then().statusCode(404);
+    }
+
+    @Test
+    void anonymousReadsPublicBuildPage() {
+        Seeded s = seed(false);
+        given().get("/api/project-pages/" + s.name().toLowerCase() + "/builds/" + s.buildId()).then().statusCode(200)
+                .body("status", equalTo("PASSED"), "branch", equalTo("main"), "logTruncated", equalTo(false),
+                        "$", not(hasKey("requestedBy")), "$", not(hasKey("credentialRef")));
+    }
+
+    @Test
+    void anonymousCannotReadPrivateBuildPage() {
+        Seeded s = seed(true);
+        given().get("/api/project-pages/" + s.name().toLowerCase() + "/builds/" + s.buildId()).then().statusCode(404);
+    }
+
+    @Test
+    @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
+    void ownerReadsPrivateBuildPage() {
+        Seeded s = seed(true);
+        given().get("/api/project-pages/" + s.name().toLowerCase() + "/builds/" + s.buildId()).then().statusCode(200)
+                .body("status", equalTo("PASSED"));
+    }
+
+    @Test
+    void buildPageOfAnotherProjectIsNotFound() {
+        Seeded page = seed(false), other = seed(false);
+        given().get("/api/project-pages/" + page.name().toLowerCase() + "/builds/" + other.buildId()).then().statusCode(404);
+    }
+
+    @Test
+    void unknownBuildPageIsNotFound() {
+        given().get("/api/project-pages/" + project(false).toLowerCase() + "/builds/999999").then().statusCode(404);
     }
 
     @Test

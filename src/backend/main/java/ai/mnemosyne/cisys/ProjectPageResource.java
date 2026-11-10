@@ -16,6 +16,7 @@ import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.StreamingOutput;
 import java.time.Instant;
@@ -44,13 +45,29 @@ public class ProjectPageResource {
     public record ProjectPage(ProjectInfo project, List<PageBuild> builds) {}
 
     @GET
-    public ProjectPage page(@PathParam("name") String name) {
+    public ProjectPage page(@PathParam("name") String name, @QueryParam("branch") String branch) {
         Project p = visible(name);
-        List<PageBuild> builds = Build.<Build>find("projectId = ?1 order by id desc", p.id).page(0, 50).list().stream()
-                .map(b -> new PageBuild(b.id, b.status, b.revision, b.branch, b.image, b.command, b.startedAt, b.finishedAt,
-                        b.imageDigest, b.exitCode, b.logTruncated))
-                .toList();
+        String branchFilter = branch == null ? "" : branch.trim();
+        List<Build> rows = branchFilter.isEmpty()
+                ? Build.<Build>find("projectId = ?1 order by id desc", p.id).page(0, 50).list()
+                : Build.<Build>find("projectId = ?1 and branch = ?2 order by id desc", p.id, branchFilter).page(0, 50).list();
+        List<PageBuild> builds = rows.stream().map(ProjectPageResource::pageBuild).toList();
         return new ProjectPage(new ProjectInfo(p.id, p.name, p.repositoryUrl, p.privateRepository), builds);
+    }
+
+    /** One build of a project, for the dedicated build page. Visibility matches the project page and the log. */
+    @GET
+    @Path("/builds/{buildId}")
+    public PageBuild build(@PathParam("name") String name, @PathParam("buildId") Long buildId) {
+        Project p = visible(name);
+        Build b = Build.findById(buildId);
+        if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
+        return pageBuild(b);
+    }
+
+    private static PageBuild pageBuild(Build b) {
+        return new PageBuild(b.id, b.status, b.revision, b.branch, b.image, b.command, b.startedAt, b.finishedAt,
+                b.imageDigest, b.exitCode, b.logTruncated);
     }
 
     @GET
