@@ -43,6 +43,12 @@ class ProjectResourceTest {
         given().contentType("application/json").body("{\"name\":\"unique-two\",\"repositoryUrl\":\"https://example.com/unique-one\"}")
             .when().post("/api/projects").then().statusCode(409).body("error", containsString("repository URL"));
     }
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+    void rejectsSlashInName() {
+        given().contentType("application/json").body("{\"name\":\"org/repo\",\"repositoryUrl\":\"https://example.com/org-repo\"}")
+            .when().post("/api/projects").then().statusCode(400);
+    }
     @Test @TestSecurity(user = "outsider", roles = "unrelated")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "outsider-id")})
     void unrelatedRoleCannotReadProjects() {

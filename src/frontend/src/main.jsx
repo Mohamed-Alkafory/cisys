@@ -22,6 +22,7 @@ import BrandingPanel from './BrandingPanel';
 import ImagesPanel from './ImagesPanel';
 import PublicHome from './PublicHome';
 import PublicStats from './PublicStats';
+import ProjectBuilds, { projectNameFromPath, projectPath } from './ProjectBuilds';
 import headerLogo from './assets/logo-header.svg';
 import './style.css';
 
@@ -32,7 +33,7 @@ const DEFAULT_BRANDING = { name: 'cisys', headerColor: '#176a4a', headingColor: 
 
 async function publicJson(path) {
   const response = await fetch(API + path);
-  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  if (!response.ok) throw Object.assign(new Error(`Request failed (${response.status})`), { status: response.status });
   return response.json();
 }
 
@@ -50,9 +51,9 @@ async function api(path, opts = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    if (body?.error) throw new Error(body.error);
+    if (body?.error) throw Object.assign(new Error(body.error), { status: response.status });
   }
-  if (!response.ok) throw new Error(response.status === 409 ? 'Another build is running. Try again when it finishes.' : `Request failed (${response.status}). Check the branch, image and project access.`);
+  if (!response.ok) throw Object.assign(new Error(response.status === 409 ? 'Another build is running. Try again when it finishes.' : `Request failed (${response.status}). Check the branch, image and project access.`), { status: response.status });
   return response.json();
 }
 
@@ -79,6 +80,8 @@ function App() {
   const [buildBusy, setBuildBusy] = useState(false);
   const [branding, setBranding] = useState(null);
   const [page, setPage] = useState('projects');
+  // Set when the URL is a project page such as /cisys/; it takes precedence over `page`.
+  const [projectName, setProjectName] = useState(() => projectNameFromPath(window.location.pathname));
   const [dark, setDark] = useState(() => localStorage.getItem('cisys-theme') === 'dark');
 
   useEffect(() => {
@@ -143,6 +146,24 @@ function App() {
   }, [loadPublicStats]);
 
   useEffect(() => {
+    const onPopState = () => setProjectName(projectNameFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Switches to an in-app page, leaving any project URL behind.
+  function go(target) {
+    if (window.location.pathname !== '/') window.history.pushState(null, '', '/');
+    setProjectName(null);
+    setPage(target);
+  }
+
+  function openProject(name) {
+    window.history.pushState(null, '', projectPath(name));
+    setProjectName(name);
+  }
+
+  useEffect(() => {
     if (!images.includes(image)) setImage(images[0] || '');
   }, [images, image]);
 
@@ -176,7 +197,9 @@ function App() {
     catch (e) { setError(e.message); } finally { setBuildBusy(false); }
   }
 
-  if (mode === 'public') return <PublicHome branding={branding || DEFAULT_BRANDING} stats={stats} statsError={statsError} logoUrl={API + '/branding/logo'} onSignIn={() => keycloak.login()} dark={dark} setDark={setDark}/>;
+  if (mode === 'public') return <PublicHome branding={branding || DEFAULT_BRANDING} stats={stats} statsError={statsError} logoUrl={API + '/branding/logo'} onSignIn={() => keycloak.login()} dark={dark} setDark={setDark}>
+    {projectName !== null && <ProjectBuilds key={projectName} name={projectName} load={publicJson} onSignIn={() => keycloak.login()}/>}
+  </PublicHome>;
   if (!ready) return <main className="loading-state" role={error ? 'alert' : 'status'}>{error || 'Connecting to Cisys…'}</main>;
   const canCreate = user.roles.includes('lead') || user.roles.includes('admin');
   const role = user.roles.includes('admin') ? 'Admin' : user.roles.includes('lead') ? 'Lead' : 'Member';
@@ -185,8 +208,8 @@ function App() {
     <div className="app-shell" style={branding.background ? { backgroundImage: `linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.08)), url(${branding.background})`, backgroundSize: 'cover', backgroundAttachment: 'fixed' } : undefined}>
       <header className="app-header">
         <div className="header-main">
-          <a className="brand" href="/" aria-label={`${branding.name} home`} onClick={(event) => { event.preventDefault(); setPage('home'); void loadPublicStats(); }}><img src={branding.logo || headerLogo} alt="" className={branding.logo ? 'brand-logo' : 'brand-logo brand-logo-default'}/><span>{branding.name}</span></a>
-          <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={page === 'projects' ? 'page' : undefined} onClick={() => setPage('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'images' ? 'page' : undefined} onClick={() => setPage('images')}>Images</button>}{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={page === 'branding' ? 'page' : undefined} onClick={() => setPage('branding')}>Branding</button>}</nav>
+          <a className="brand" href="/" aria-label={`${branding.name} home`} onClick={(event) => { event.preventDefault(); go('home'); void loadPublicStats(); }}><img src={branding.logo || headerLogo} alt="" className={branding.logo ? 'brand-logo' : 'brand-logo brand-logo-default'}/><span>{branding.name}</span></a>
+          <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={projectName === null && page === 'projects' ? 'page' : undefined} onClick={() => go('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={projectName === null && page === 'images' ? 'page' : undefined} onClick={() => go('images')}>Images</button>}{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={projectName === null && page === 'branding' ? 'page' : undefined} onClick={() => go('branding')}>Branding</button>}</nav>
         </div>
         <div className="header-actions">
           <button type="button" className="theme-toggle" onClick={() => setDark(!dark)} aria-label="Toggle dark mode" aria-pressed={dark} title="Toggle dark mode">
@@ -200,13 +223,13 @@ function App() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setPage('profile')}><UserRound aria-hidden="true"/> Profile</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => go('profile')}><UserRound aria-hidden="true"/> Profile</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => keycloak.logout({ redirectUri: window.location.origin + '/' })}><LogOut aria-hidden="true"/> Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </header>
-      {page === 'home' ? <main id="home" className="page-container">
+      {projectName !== null ? <ProjectBuilds key={projectName} name={projectName} load={api}/> : page === 'home' ? <main id="home" className="page-container">
         <PublicStats stats={stats} statsError={statsError}/>
       </main> : page === 'profile' ? <main id="profile" className="page-container">
         <PageHeader title="Profile"/>
@@ -221,7 +244,7 @@ function App() {
             <CardHeader><CardTitle>Add a project</CardTitle></CardHeader>
             <CardContent>
               <form className="project-grid project-add" onSubmit={create}>
-                <div className="form-field"><Label htmlFor="project-name">Project name</Label><Input id="project-name" required maxLength="100" value={name} onChange={(e) => setName(e.target.value)} placeholder="My project"/></div>
+                <div className="form-field"><Label htmlFor="project-name">Project name</Label><Input id="project-name" required maxLength="100" pattern="[^/]+" title="Project names cannot contain /" value={name} onChange={(e) => setName(e.target.value)} placeholder="My project"/></div>
                 <div className="form-field"><Label htmlFor="repository-url">Repository URL</Label><Input id="repository-url" required type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/org/repo.git"/></div>
                 <div className="form-field"><Label htmlFor="project-private" className="whitespace-nowrap">Private project</Label><span className="private-choice"><input id="project-private" type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)}/></span></div>
                 <Button type="submit" className="w-full" disabled={submitting}>{submitting ? 'Adding…' : 'Add project'}</Button>
@@ -236,7 +259,7 @@ function App() {
               <div className="empty-state"><FolderGit2 size={28} aria-hidden="true"/><strong>No projects yet</strong>{!canCreate && <p>Ask a lead or admin to add a project.</p>}</div>
             ) : projects.map((project) => (
               <div className="project-grid project-row" key={project.id}>
-                <strong className="project-name">{project.name}</strong>
+                <strong className="project-name"><a href={projectPath(project.name)} onClick={(event) => { event.preventDefault(); openProject(project.name); }}>{project.name}</a></strong>
                 <p className="project-url">{project.repositoryUrl}</p>
                 <Badge variant="outline" className="justify-self-start">{project.privateRepository ? <LockKeyhole size={12} className="text-red-600 dark:text-red-400" aria-hidden="true"/> : <LockKeyholeOpen size={12} className="text-green-600 dark:text-green-400" aria-hidden="true"/>}{project.privateRepository ? 'Private' : 'Public'}</Badge>
                 <Button type="button" className="w-full" onClick={() => { setBuilds([]); setBuildProject(project.id); api('/images').then(setImages).catch(() => {}); }}>Build history</Button>

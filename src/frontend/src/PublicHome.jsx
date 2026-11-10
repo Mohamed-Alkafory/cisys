@@ -13,8 +13,8 @@ import AppFooter from './components/layout/AppFooter';
 import PublicStats from './PublicStats';
 import headerLogo from './assets/logo-header.svg';
 
-/** Landing page for visitors who are not signed in. */
-export default function PublicHome({ branding, stats, statsError, logoUrl, onSignIn, dark, setDark }) {
+/** Landing page for visitors who are not signed in. `children`, when given, replace the statistics (for example a project page). */
+export default function PublicHome({ branding, stats, statsError, logoUrl, onSignIn, dark, setDark, children }) {
   // One-way flag: once the logo request fails (404 when none is set) we use the bundled logo and never retry.
   const [logoFailed, setLogoFailed] = useState(false);
 
@@ -34,9 +34,9 @@ export default function PublicHome({ branding, stats, statsError, logoUrl, onSig
           <Button type="button" onClick={onSignIn}><LogIn aria-hidden="true"/> Sign in</Button>
         </div>
       </header>
-      <main id="public-home" className="page-container">
+      {children || <main id="public-home" className="page-container">
         <PublicStats stats={stats} statsError={statsError}/>
-      </main>
+      </main>}
       <AppFooter />
     </div>
   );

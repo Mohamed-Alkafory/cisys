@@ -53,6 +53,8 @@ public class ProjectResource {
         if (input == null || input.name() == null || input.name().isBlank() || input.name().length() > 100 || input.repositoryUrl() == null || input.repositoryUrl().length() > 2048) throw new BadRequestException("Name and repository URL are required");
         try { URI url = URI.create(input.repositoryUrl().trim()); if (!"https".equals(url.getScheme()) || url.getHost() == null || url.getUserInfo() != null) throw new IllegalArgumentException(); } catch (IllegalArgumentException e) { throw new BadRequestException("Use an HTTPS repository URL without credentials"); }
         String name = input.name().trim(), url = input.repositoryUrl().trim();
+        // The name is the project's URL path, for example /cisys/ in the UI.
+        if (name.contains("/")) throw new BadRequestException("Project names cannot contain /");
         // Checked across all projects, including private projects the caller cannot see.
         if (Project.count("lower(name) = ?1", name.toLowerCase(Locale.ROOT)) > 0) throw conflict("A project with this name already exists");
         if (Project.count("repositoryUrl", url) > 0) throw conflict("A project with this repository URL already exists");
