@@ -151,7 +151,7 @@ npm run lint
 npm run build
 ```
 
-`npm install` also installs the Husky hooks: `pre-commit` runs ESLint on staged frontend files, and `pre-push` runs `npm run lint`, so failures surface locally. Tests are not run on push; run them explicitly with `make test`. If the hooks do not fire, run `make setup` from the repository root. Bypass once with `--no-verify` if needed.
+`npm install` also installs the Husky hooks: `pre-commit` runs ESLint on staged frontend files. There is no `pre-push` hook; run the full checks (frontend lint and backend tests) with `make test`. If the hooks do not fire, run `make setup` from the repository root. Bypass once with `--no-verify` if needed.
 
 ### AUTHORS
 

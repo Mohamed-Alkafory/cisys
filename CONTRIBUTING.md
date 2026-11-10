@@ -86,7 +86,7 @@ See [GitHub Pull Request Review Process](https://docs.github.com/en/pull-request
 * Discuss the feature
 * Do development
   + Follow the code style
-  + Run `mvn test` and `npm run lint` before you submit
+  + Run `make test` before you submit
 * Commits should be atomic and semantic. Therefore, squash your pull request before submission and keep it rebased until merged
   + If your feature has independent parts submit those as separate pull requests
 
@@ -142,4 +142,4 @@ In your first pull request you need to add yourself to the `AUTHORS` file.
 
 ## Code Style
 
-Please, follow the coding style of the project. The frontend is checked with ESLint (`npm run lint` in `src/frontend`), which also runs as a Husky `pre-commit` hook on staged files. The `pre-push` hook runs the lint check; run the tests explicitly with `make test`.
+Please, follow the coding style of the project. The frontend is checked with ESLint (`npm run lint` in `src/frontend`), which also runs as a Husky `pre-commit` hook on staged files. Run the full lint and the tests with `make test`.

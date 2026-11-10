@@ -36,7 +36,7 @@ run: frontend
 	trap 'kill $$frontend_pid $$backend_pid 2>/dev/null; wait' EXIT INT TERM; \
 	wait $$backend_pid
 
-test:
+test: lint
 	@mvn test
 
 docs:

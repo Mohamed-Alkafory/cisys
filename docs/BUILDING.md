@@ -45,9 +45,8 @@ The output is written to `src/frontend/dist`. The backend does not serve the fro
 Hooks live in `.husky/`.
 
 * `pre-commit` (fast, on staged files only): `lint-staged` for changes under `src/frontend/`, which runs ESLint on the staged frontend files.
-* `pre-push`: `npm run lint` in `src/frontend`. Tests are not run on push; run them explicitly with `make test`.
 
-Bypass a hook once with `git commit --no-verify` or `git push --no-verify`.
+There is no `pre-push` hook; run the full checks (frontend lint and backend tests) with `make test`. Bypass the hook once with `git commit --no-verify`.
 
 ## Running cisys
 
@@ -184,7 +183,7 @@ The targets are
 * `check` - Run the frontend checks (lint and build), as CI does
 * `build` - Build the frontend
 * `run` - Run the backend and the frontend in development mode
-* `test` - Run the backend test cases
+* `test` - Run the frontend lint and the backend test cases
 * `docs` - Generate the manual
 * `platform-start` - Start compose services (PostgreSQL + Keycloak)
 * `platform-stop` - Stop the compose services
