@@ -10,8 +10,8 @@ package ai.mnemosyne.cisys;
 
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -19,25 +19,29 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
- * Branches of a public project, for its public page. Private projects are reported as not found,
- * just like the rest of the public page, so anonymous callers learn nothing about them.
+ * Branches of a project page. Public projects read the repository. Private projects use the branches
+ * that already have builds, because reading a private repository needs credentials; anonymous callers
+ * and users without access get a 404, just like the rest of the private page.
  */
 @Path("/api/project-pages/{name}/branches")
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
-public class PublicBranchResource {
+public class ProjectBranchResource {
+    @Inject ProjectAccess access;
     @Inject GitRepositoryService repositories;
+    @Inject EntityManager entityManager;
 
     public record Branches(List<String> branches, String reason) {}
 
     @GET
     public Response list(@PathParam("name") String name) {
-        Project project = Project.<Project>find("lower(name) = ?1", name.trim().toLowerCase(Locale.ROOT)).firstResult();
-        if (project == null || project.privateRepository) throw new NotFoundException();
+        Project project = access.visible(name);
+        if (project.privateRepository) {
+            return Response.ok(new Branches(buildBranches(project), null)).build();
+        }
         try {
             return Response.ok(new Branches(repositories.listBranches(project), null)).build();
         } catch (IllegalArgumentException e) {
@@ -45,6 +49,13 @@ public class PublicBranchResource {
         } catch (GitRepositoryService.BranchLookupException e) {
             return error(502, e.getMessage());
         }
+    }
+
+    private List<String> buildBranches(Project project) {
+        return entityManager.createQuery("select distinct b.branch from Build b where b.projectId = :projectId"
+                + " and b.branch is not null and b.branch <> '' order by b.branch", String.class)
+                .setParameter("projectId", project.id)
+                .getResultList();
     }
 
     private static Response error(int status, String message) {

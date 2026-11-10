@@ -8,7 +8,6 @@
 
 package ai.mnemosyne.cisys;
 
-import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -21,8 +20,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.StreamingOutput;
 import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
-import org.eclipse.microprofile.jwt.JsonWebToken;
 
 /**
  * The page of a single project, addressed by its name (for example /cisys/ in the UI).
@@ -34,7 +31,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
 public class ProjectPageResource {
-    @Inject SecurityIdentity identity;
+    @Inject ProjectAccess access;
     @Inject BuildLogs logs;
 
     public record ProjectInfo(Long id, String name, String repositoryUrl, boolean privateRepository) {}
@@ -46,7 +43,7 @@ public class ProjectPageResource {
 
     @GET
     public ProjectPage page(@PathParam("name") String name, @QueryParam("branch") String branch) {
-        Project p = visible(name);
+        Project p = access.visible(name);
         String branchFilter = branch == null ? "" : branch.trim();
         List<Build> rows = branchFilter.isEmpty()
                 ? Build.<Build>find("projectId = ?1 order by id desc", p.id).page(0, 50).list()
@@ -59,7 +56,7 @@ public class ProjectPageResource {
     @GET
     @Path("/builds/{buildId}")
     public PageBuild build(@PathParam("name") String name, @PathParam("buildId") Long buildId) {
-        Project p = visible(name);
+        Project p = access.visible(name);
         Build b = Build.findById(buildId);
         if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
         return pageBuild(b);
@@ -74,22 +71,9 @@ public class ProjectPageResource {
     @Path("/builds/{buildId}/log")
     @Produces("text/plain; charset=UTF-8")
     public StreamingOutput log(@PathParam("name") String name, @PathParam("buildId") Long buildId) {
-        Project p = visible(name);
+        Project p = access.visible(name);
         Build b = Build.findById(buildId);
         if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
         return out -> logs.streamTo(buildId, out);
-    }
-
-    private Project visible(String name) {
-        Project p = Project.<Project>find("lower(name) = ?1", name.trim().toLowerCase(Locale.ROOT)).firstResult();
-        if (p == null || (p.privateRepository && !canSeePrivate(p))) throw new NotFoundException();
-        return p;
-    }
-
-    /** Same rule as the authenticated project and build endpoints: a Cisys role, and admin or owner. */
-    private boolean canSeePrivate(Project p) {
-        if (identity.isAnonymous() || !(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null) return false;
-        if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) return false;
-        return identity.hasRole("admin") || jwt.getSubject().equals(p.ownerSubject);
     }
 }

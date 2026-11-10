@@ -23,7 +23,7 @@ Selecting a branch in the left panel filters the build history to that branch. T
 
 Selecting a build opens its own page at `/<name>/<branch>/build/<id>`, for example `http://localhost:5173/cisys/master/build/51`, with the build details and the full log.
 
-Private projects do not have a public page; they are reported as not found. Sign in as their owner or an admin to see their builds.
+Private projects use the same page once you sign in as their owner or an administrator; everyone else is told the project does not exist. The branches panel lists the branches that already have builds, because reading a private repository requires credentials.
 
 ## Create a project
 

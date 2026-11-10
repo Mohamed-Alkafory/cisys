@@ -52,12 +52,12 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
   const [branchesError, setBranchesError] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState(initialBranch);
   const [buildsBranch, setBuildsBranch] = useState('');
-  const isPublic = page?.project?.privateRepository === false;
+  const projectId = page?.project?.id;
   // main is the default branch; older repositories still use master. There is no "all branches" view.
   const branchNames = branches || [];
   const defaultBranch = branchNames.includes('main') ? 'main'
     : branchNames.includes('master') ? 'master' : (branchNames[0] || '');
-  const activeBranch = isPublic ? (selectedBranch || defaultBranch) : '';
+  const activeBranch = selectedBranch || defaultBranch;
 
   useEffect(() => {
     let active = true;
@@ -77,9 +77,10 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
     return () => { active = false; clearInterval(timer); };
   }, [name, load, activeBranch]);
 
-  // Branches are loaded once per public project, not on every build refresh.
+  // Branches are loaded once per project, not on every build refresh. Public projects read the
+  // repository; private projects list the branches that already have builds.
   useEffect(() => {
-    if (!isPublic) return undefined;
+    if (projectId == null) return undefined;
     let active = true;
     load(`/project-pages/${encodeURIComponent(name)}/branches`)
       .then((data) => {
@@ -89,7 +90,7 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
         if (active) { setBranches([]); setBranchesError(true); }
       });
     return () => { active = false; };
-  }, [name, load, isPublic]);
+  }, [name, load, projectId]);
 
   if (page === null) {
     return (
@@ -119,7 +120,7 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
   const { project, builds } = page;
   // While the branches load, or while a branch-filtered fetch is in flight, do not show the previous
   // unfiltered builds. Otherwise a build from another branch flashes on screen and then disappears.
-  const buildsReady = (!isPublic || branches !== null) && (!isPublic || buildsBranch === activeBranch);
+  const buildsReady = branches !== null && buildsBranch === activeBranch;
   const openBuild = (build) => onOpenBuild?.(project.name, build.branch || activeBranch, build.id);
 
   return (
@@ -131,25 +132,23 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
         {project.privateRepository ? 'Private' : 'Public'}</Badge>
       }/>
       {error && <div className="error-message" role="alert">{error}</div>}
-      <div className={isPublic ? 'project-layout' : 'project-layout project-layout-single'}>
-        {isPublic && (
-          <aside className="branch-panel" aria-label="Branches">
-            <h2 className="branch-panel-title"><GitBranch size={14} aria-hidden="true"/> Branches</h2>
-            {branches === null && !branchesError ? <p className="branch-panel-note">Loading branches…</p>
-              : branchNames.length === 0 && !branchesError ? <p className="branch-panel-note">No branches found.</p>
-              : (
-                <ul className="branch-list">
-                  {branchNames.map((branch) => (
-                    <li key={branch}>
-                      <button type="button" className="branch-option" aria-current={activeBranch === branch ? 'page' : undefined}
-                        onClick={() => setSelectedBranch(branch)}>{branch}</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            {branchesError && <p className="branch-panel-note">Branches unavailable</p>}
-          </aside>
-        )}
+      <div className="project-layout">
+        <aside className="branch-panel" aria-label="Branches">
+          <h2 className="branch-panel-title"><GitBranch size={14} aria-hidden="true"/> Branches</h2>
+          {branches === null && !branchesError ? <p className="branch-panel-note">Loading branches…</p>
+            : branchNames.length === 0 && !branchesError ? <p className="branch-panel-note">No branches found.</p>
+            : (
+              <ul className="branch-list">
+                {branchNames.map((branch) => (
+                  <li key={branch}>
+                    <button type="button" className="branch-option" aria-current={activeBranch === branch ? 'page' : undefined}
+                      onClick={() => setSelectedBranch(branch)}>{branch}</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          {branchesError && <p className="branch-panel-note">Branches unavailable</p>}
+        </aside>
         <Card className="project-card builds-panel">
           <CardHeader>
             <CardTitle>Builds</CardTitle>

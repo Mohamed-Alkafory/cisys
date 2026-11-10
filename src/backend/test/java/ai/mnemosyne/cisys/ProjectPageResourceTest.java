@@ -99,6 +99,26 @@ class ProjectPageResourceTest {
     }
 
     @Test
+    @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
+    void ownerCanFilterPrivateProjectByBranch() {
+        String name = project(true);
+        addBuild(name, "dev");
+        given().queryParam("branch", "dev").get("/api/project-pages/" + name.toLowerCase()).then()
+                .statusCode(200).body("builds", hasSize(1), "builds[0].branch", equalTo("dev"));
+        given().queryParam("branch", "main").get("/api/project-pages/" + name.toLowerCase()).then()
+                .statusCode(200).body("builds", hasSize(1), "builds[0].branch", equalTo("main"));
+    }
+
+    @Test
+    @TestSecurity(user = "member", roles = "member")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "other-id"))
+    void otherMemberCannotFilterPrivateProjectByBranch() {
+        String name = project(true);
+        given().queryParam("branch", "main").get("/api/project-pages/" + name.toLowerCase()).then().statusCode(404);
+    }
+
+    @Test
     void anonymousReadsPublicBuildPage() {
         Seeded s = seed(false);
         given().get("/api/project-pages/" + s.name().toLowerCase() + "/builds/" + s.buildId()).then().statusCode(200)

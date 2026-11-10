@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @QuarkusTest
 @TestProfile(BranchTestProfile.class)
-class PublicBranchResourceTest {
+class ProjectBranchResourceTest {
     private static final String GITHUB = "https://github.com/octocat/Hello-World";
 
     private static String github() {
@@ -51,6 +51,17 @@ class PublicBranchResourceTest {
         });
     }
 
+    private void build(String projectName, String branch) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Project p = Project.<Project>find("name = ?1", projectName).firstResult();
+            Build b = new Build();
+            b.projectId = p.id;
+            b.status = "PASSED";
+            b.branch = branch;
+            b.persist();
+        });
+    }
+
     @Test
     void anonymousSeesBranchesOfPublicProject() {
         String name = project(false, github());
@@ -64,7 +75,17 @@ class PublicBranchResourceTest {
     }
 
     @Test
-    void privateProjectIsNotFound() {
+    void anonymousCannotSeeBranchesOfPrivateProject() {
+        String name = project(true, github());
+        TestGitRepositoryService.resetCalls();
+        given().get("/api/project-pages/" + name + "/branches").then().statusCode(404);
+        assertEquals(0, TestGitRepositoryService.calls());
+    }
+
+    @Test
+    @TestSecurity(user = "member", roles = "member")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "other-id"))
+    void otherMemberCannotSeeBranchesOfPrivateProject() {
         String name = project(true, github());
         TestGitRepositoryService.resetCalls();
         given().get("/api/project-pages/" + name + "/branches").then().statusCode(404);
@@ -74,19 +95,41 @@ class PublicBranchResourceTest {
     @Test
     @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
-    void ownerCannotUseThePublicEndpointForAPrivateProject() {
+    void ownerGetsTheBranchesThatHaveBuilds() {
         String name = project(true, github());
+        build(name, "dev");
+        build(name, "main");
+        build(name, "dev");
         TestGitRepositoryService.resetCalls();
-        given().get("/api/project-pages/" + name + "/branches").then().statusCode(404);
+        given().get("/api/project-pages/" + name + "/branches").then()
+                .statusCode(200)
+                .body("branches", hasSize(2))
+                .body("branches", contains("dev", "main"))
+                .body("reason", nullValue());
         assertEquals(0, TestGitRepositoryService.calls());
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "admin")
     @JwtSecurity(claims = @Claim(key = "sub", value = "admin-id"))
-    void adminCannotUseThePublicEndpointForAPrivateProject() {
+    void adminGetsTheBranchesThatHaveBuilds() {
         String name = project(true, github());
-        given().get("/api/project-pages/" + name + "/branches").then().statusCode(404);
+        build(name, "release");
+        given().get("/api/project-pages/" + name + "/branches").then()
+                .statusCode(200)
+                .body("branches", hasSize(1))
+                .body("branches", contains("release"));
+    }
+
+    @Test
+    @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
+    void ownerOfPrivateProjectWithoutBuildsGetsAnEmptyList() {
+        String name = project(true, github());
+        given().get("/api/project-pages/" + name + "/branches").then()
+                .statusCode(200)
+                .body("branches", hasSize(0))
+                .body("reason", nullValue());
     }
 
     @Test
