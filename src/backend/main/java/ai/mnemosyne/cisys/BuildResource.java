@@ -13,6 +13,7 @@ import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.StreamingOutput;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import java.net.URI;
 import java.time.Instant;
@@ -22,15 +23,18 @@ import java.util.List;
 public class BuildResource {
  @Inject SecurityIdentity identity;
  @Inject BuildRunner runner;
+ @Inject BuildLogs logs;
  public record RunRequest(String branch, String image, String command, String credentialRef) {}
  public record BuildResponse(Long id, Long projectId, String requestedBy, String status,
-     String revision, Instant startedAt, Instant finishedAt, String output, String branch,
-     String image, String command, @JsonInclude(JsonInclude.Include.NON_NULL) String credentialRef) {}
+     String revision, Instant startedAt, Instant finishedAt, String branch,
+     String image, String command, @JsonInclude(JsonInclude.Include.NON_NULL) String credentialRef,
+     String imageDigest, Integer exitCode, boolean logTruncated) {}
 
  private BuildResponse response(Build build) {
   return new BuildResponse(build.id, build.projectId, build.requestedBy, build.status,
-      build.revision, build.startedAt, build.finishedAt, build.output, build.branch,
-      build.image, build.command, identity.hasRole("admin") ? build.credentialRef : null);
+      build.revision, build.startedAt, build.finishedAt, build.branch,
+      build.image, build.command, identity.hasRole("admin") ? build.credentialRef : null,
+      build.imageDigest, build.exitCode, build.logTruncated);
  }
  private Project visible(Long id) {
   if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
@@ -46,6 +50,11 @@ public class BuildResource {
  }
  @GET @Path("/{buildId}") public BuildResponse detail(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
   visible(id); Build b=Build.findById(buildId);if(b==null || !id.equals(b.projectId))throw new NotFoundException();return response(b);
+ }
+ /** A running build returns what is stored so far. */
+ @GET @Path("/{buildId}/log") @Produces("text/plain; charset=UTF-8") public StreamingOutput log(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
+  detail(id,buildId);
+  return out->logs.streamTo(buildId,out);
  }
  @POST public BuildResponse start(@PathParam("projectId") Long id,RunRequest input) {
   Project p=visible(id);

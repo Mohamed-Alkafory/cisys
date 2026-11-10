@@ -25,7 +25,19 @@ Members can view build history and logs for the projects they can access. Privat
 4. The command runs in a writable copy of the checkout under `/tmp/build`.
 5. The status is `PASSED` when the exit code is 0, otherwise `FAILED`. A build that exceeds ten minutes is killed and reported as timed out.
 
-Only one build runs at a time; starting another returns "Runner busy". Output is retained up to 120 KB and truncated beyond that. Build status and output are stored in the database. If the server restarts during a build, that build is marked `FAILED`.
+Only one build runs at a time; starting another returns "Runner busy". If the server restarts during a build, that build is marked `FAILED` and the output stored so far is kept.
+
+## What a build records
+
+Each build stores the requested branch, image reference and command, the credential reference name if one was used (shown to admins only), the image digest when the container runtime reports one, the commit ID, the container exit code (none when the build timed out or never ran), who started it, and when it started and finished; the duration is derived from these times.
+
+## Build logs
+
+The complete output of the build, standard output and standard error together, is stored in PostgreSQL as one large object per build, appended while the build runs. It is stored as the raw bytes the build wrote and shown as UTF-8. Output from a running build is visible within about five seconds; use **Refresh** on the build.
+
+* `BUILD_LOG_MAX_BYTES` (default 1 GiB) is a safety limit per build, not a normal cap. Output beyond it is read and discarded, a marker line is added, and the build is marked as truncated. The limit is exact in bytes, so if it falls inside a multi-byte character, the last character shown may be incomplete.
+* A build is also marked as truncated if the log could not be stored completely. Logs from before this version were capped at 120 KB; those that reached the cap are marked as truncated.
+* The build page shows the first 2 MiB of a log. **Download log** saves the full log; in Chromium-based browsers it is written straight to the chosen file, in other browsers it is held in browser memory first. The backend never holds a whole log in memory.
 
 ## Repository URLs
 

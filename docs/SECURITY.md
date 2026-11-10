@@ -56,7 +56,7 @@ Controls that are in place
 * Branch names are validated as Git references. Builds may only use images an admin has allowed; image names are validated against a restrictive pattern.
 * The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build. The `.git` directory is not copied into the container.
 * The container runs with no network, no capabilities, `no-new-privileges`, a PID limit of 256, 1 GiB of memory, one CPU, and as the unprivileged user `65534:65534`.
-* One build runs at a time and times out after ten minutes. Output is limited to 120 KB.
+* One build runs at a time and times out after ten minutes. Output is stored in full, up to the `BUILD_LOG_MAX_BYTES` safety limit (default 1 GiB); output beyond it is discarded and the build is marked truncated.
 * Builds left in the `RUNNING` state by a server restart are marked `FAILED` at startup.
 
 Known gaps

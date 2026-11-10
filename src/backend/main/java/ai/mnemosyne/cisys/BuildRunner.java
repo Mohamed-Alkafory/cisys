@@ -26,8 +26,14 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped public class BuildRunner {
+ @Inject BuildLogs logs;
+ @ConfigProperty(name="cisys.build.log-max-bytes",defaultValue="1073741824") long logMaxBytes;
  String runtime;
  /** Uses podman when it is installed, otherwise docker. */
  @PostConstruct void resolveRuntime(){
@@ -43,7 +49,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  /** For tests: whether a build is running. */
  AtomicBoolean busy(){return busy;}
  private final ExecutorService executor=Executors.newSingleThreadExecutor();
- void recover(@Observes StartupEvent event){QuarkusTransaction.requiringNew().run(()->Build.update("status = 'FAILED', finishedAt = ?1, output = 'Server restarted during build' where status = 'RUNNING'",Instant.now()));}
+ void recover(@Observes StartupEvent event){
+  List<Long> running=QuarkusTransaction.requiringNew().call(()->Build.<Build>list("status","RUNNING").stream().map(b->b.id).toList());
+  for(Long id:running){
+   Throwable failure=logs.appendLine(id,"Server restarted during build");
+   if(failure!=null)Log.errorf(failure,"Could not append to the log of build %d",id);
+   String set=failure!=null?"status = 'FAILED', finishedAt = ?1, logTruncated = true where id = ?2":"status = 'FAILED', finishedAt = ?1 where id = ?2";
+   QuarkusTransaction.requiringNew().run(()->Build.update(set,Instant.now(),id));
+  }
+ }
  Build submit(Long projectId,String actor,String url,BuildResource.RunRequest request){
   if(!busy.compareAndSet(false,true))throw new WebApplicationException("Runner busy",409);
   try {
@@ -53,7 +67,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
     b.requestedBy=actor;
     b.status="RUNNING";
     b.startedAt=Instant.now();
-    b.output="Preparing checkout";
     b.branch=request.branch();
     b.image=request.image();
     b.command=request.command();
@@ -66,8 +79,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
   } catch(RuntimeException e){busy.set(false);throw e;}
  }
  private void run(Long id,String url,BuildResource.RunRequest request){
-  Path dir=null;String name="cisys-build-"+id, output="",revision=null,status="FAILED";
+  Path dir=null;String name="cisys-build-"+id,revision=null,status="FAILED",digest=null;Integer exit=null;boolean truncated=false;Throwable captureError=null;BuildLogs.Writer log=null;
   try {
+   log=logs.open(id);
    dir=Files.createTempDirectory("cisys-");
    try(Git git=Git.init().setDirectory(dir.toFile()).call()){
     var cfg=git.getRepository().getConfig();cfg.setString("http",null,"followRedirects","false");cfg.save();
@@ -79,15 +93,35 @@ import java.util.concurrent.atomic.AtomicBoolean;
    try(var paths=Files.walk(dir)){for(Path path:paths.toList()){if(path.equals(dir)||Files.isSymbolicLink(path))continue;Files.setPosixFilePermissions(path,PosixFilePermissions.fromString(Files.isDirectory(path)||Files.isExecutable(path)?"rwxr-xr-x":"rw-r--r--"));}}
    checked(List.of(runtime,"create","--name",name,"--network=none","--log-driver=none","--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=256","--memory=1g","--cpus=1","--user=65534:65534","--workdir=/workspace",request.image(),"sh","-c","cp -R /workspace/. /tmp/build && cd /tmp/build && exec sh -c \"$1\"","cisys",request.command()),120);
    checked(List.of(runtime,"cp",dir.toString()+"/.",name+":/workspace"),60);
-   Result result=command(List.of(runtime,"start","--attach",name),600,120000);output=result.output();
-   if(result.timeout()){try{checked(List.of(runtime,"kill",name),15);}catch(Exception ignored){}output="Build timed out\n"+output;}
-   else {String exit=checked(List.of(runtime,"inspect","--format={{.State.ExitCode}}",name),15).trim();status="0".equals(exit)?"PASSED":"FAILED";}
-  } catch(Exception e){output="Build failed during checkout or container execution ("+e.getClass().getSimpleName()+"). Check the runner configuration.";}
+   digest=digest(request.image());
+   Streamed result=stream(List.of(runtime,"start","--attach",name),600,log,logMaxBytes);
+   captureError=result.readerError();
+   if(result.truncated()){truncated=true;log.line("[output truncated after "+logMaxBytes+" bytes; "+(result.totalBytes()-logMaxBytes)+" further bytes discarded]");}
+   if(result.timeout()){try{checked(List.of(runtime,"kill",name),15);}catch(Exception ignored){}log.line("Build timed out");}
+   else {
+    // The container's exit code, not the attach client's.
+    exit=exitCode(name);
+    if(exit==null)log.line("Could not read the container exit code");else status=exit==0?"PASSED":"FAILED";
+   }
+  } catch(Exception e){
+   if(log!=null)log.line("Build failed during checkout or container execution ("+e.getClass().getSimpleName()+"). Check the runner configuration.");
+   else captureError=e;
+  }
   finally {
    try{checked(List.of(runtime,"rm","-f",name),15);}catch(Exception ignored){}
    if(dir!=null)try{delete(dir);}catch(Exception ignored){}
-   String result=status,text=output.replace("\u0000","\uFFFD"),sha=revision;
-   try{QuarkusTransaction.requiringNew().run(()->{Build b=Build.findById(id);b.status=result;b.output=text;b.revision=sha;b.finishedAt=Instant.now();});}finally{busy.set(false);}
+   // A log failure must not stop the status update.
+   try{
+    if(log!=null){
+     if(captureError==null)captureError=log.failure();
+     if(captureError!=null)log.line("[log capture failed: "+captureError.getClass().getSimpleName()+"]");
+     log.close();
+     if(captureError==null)captureError=log.failure();
+    }
+   }catch(Throwable t){if(captureError==null)captureError=t;}
+   if(captureError!=null){truncated=true;Log.errorf(captureError,"Log capture failed for build %d",id);}
+   String result=status,sha=revision,image=digest;Integer code=exit;boolean cut=truncated;
+   try{QuarkusTransaction.requiringNew().run(()->{Build b=Build.findById(id);b.status=result;b.revision=sha;b.exitCode=code;b.imageDigest=image;b.logTruncated=cut;b.finishedAt=Instant.now();});}finally{busy.set(false);}
   }
  }
  record LocalImage(String name,String id,String size,String created){}
@@ -116,6 +150,53 @@ import java.util.concurrent.atomic.AtomicBoolean;
   try{boolean done=p.waitFor(timeout,TimeUnit.SECONDS);if(!done){p.destroyForcibly();p.waitFor(5,TimeUnit.SECONDS);}reader.join(2000);synchronized(buffer){return new Result(done?p.exitValue():-1,!done,buffer.toString(StandardCharsets.UTF_8)+(truncated[0]?"\n[output truncated]\n":""));}}finally{if(p.isAlive())p.destroyForcibly();}
  }
  static String checked(List<String> args,int timeout)throws Exception{Result r=command(args,timeout,4096);if(r.timeout()||r.code()!=0)throw new IllegalStateException("Container command failed");return r.output();}
+ String digest(String image){
+  try{String d=checked(List.of(runtime,"image","inspect","--format","{{index .RepoDigests 0}}",image),15).trim();return d.length()<=300&&d.matches("\\S+@sha256:[0-9a-f]{64}")?d:null;}
+  catch(Exception e){return null;}
+ }
+ Integer exitCode(String name){
+  try{return Integer.valueOf(checked(List.of(runtime,"inspect","--format={{.State.ExitCode}}",name),15).trim());}
+  catch(Exception e){return null;}
+ }
+
+ interface LogSink{void append(byte[] bytes,int off,int len);}
+ record Streamed(int code,boolean timeout,boolean truncated,long totalBytes,Throwable readerError){}
+
+ static Streamed stream(List<String> args,int timeout,LogSink sink,long maxBytes)throws Exception{return stream(args,timeout,sink,maxBytes,30_000,5_000);}
+ /** Output beyond maxBytes, or after the sink fails, is still read and discarded so the process never blocks. */
+ static Streamed stream(List<String> args,int timeout,LogSink sink,long maxBytes,long drainMillis,long forceMillis)throws Exception{
+  Process p=new ProcessBuilder(args).redirectErrorStream(true).start();p.getOutputStream().close();
+  InputStream raw=p.getInputStream();
+  AtomicLong total=new AtomicLong();
+  AtomicReference<Throwable> error=new AtomicReference<>();
+  AtomicBoolean forced=new AtomicBoolean();
+  Thread reader=Thread.ofPlatform().daemon(true).name("cisys-log-reader").start(()->{
+   byte[] buf=new byte[8192];boolean sinkOk=true;int n;
+   try{
+    while((n=raw.read(buf))!=-1){
+     long before=total.getAndAdd(n);
+     int keep=(int)Math.max(0,Math.min(n,maxBytes-before));
+     if(keep>0&&sinkOk){try{sink.append(buf,0,keep);}catch(Throwable t){error.compareAndSet(null,t);sinkOk=false;}}
+    }
+   }catch(Throwable t){if(!forced.get())error.compareAndSet(null,t);}
+  });
+  try{
+   boolean done=p.waitFor(timeout,TimeUnit.SECONDS);
+   if(!done){p.destroyForcibly();p.waitFor(5,TimeUnit.SECONDS);}
+   reader.join(drainMillis);
+   if(reader.isAlive()){
+    // Something still holds the pipe open, such as a background child.
+    forced.set(true);
+    p.descendants().forEach(ProcessHandle::destroyForcibly);
+    try{raw.close();}catch(IOException ignored){}
+    reader.join(forceMillis);
+   }
+   Throwable err=error.get();
+   if(err==null&&reader.isAlive())err=new IllegalStateException("Log reader did not stop");
+   return new Streamed(done?p.exitValue():-1,!done,total.get()>maxBytes,total.get(),err);
+  }finally{if(p.isAlive())p.destroyForcibly();}
+ }
+
  static void delete(Path dir)throws IOException{try(var files=Files.walk(dir)){for(Path f:files.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(f);}}
  @PreDestroy void stop(){executor.shutdownNow();}
 }

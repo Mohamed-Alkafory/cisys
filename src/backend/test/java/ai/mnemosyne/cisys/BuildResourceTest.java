@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 @QuarkusTest class BuildResourceTest {
  @Inject BuildRunner runner;
+ @Inject BuildLogs logs;
  private Long project(boolean priv){return QuarkusTransaction.requiringNew().call(()->{Project p=new Project();String n=java.util.UUID.randomUUID().toString();p.name="example-"+n;p.repositoryUrl="https://github.com/octocat/Hello-World-"+n+".git";p.ownerSubject="owner-id";p.privateRepository=priv;p.persist();return p.id;});}
  private static void allow(String image){QuarkusTransaction.requiringNew().run(()->{if(AllowedImage.findById(image)==null){AllowedImage i=new AllowedImage();i.name=image;i.persist();}});}
+ private Long build(Long project,String status,String... logParts){Long id=QuarkusTransaction.requiringNew().call(()->{Build b=new Build();b.projectId=project;b.requestedBy="owner-id";b.status=status;b.branch="main";b.image="alpine:3.23";b.exitCode="PASSED".equals(status)?0:null;b.startedAt=java.time.Instant.now();b.persist();return b.id;});if(logParts.length>0)try(var w=logs.open(id)){for(String part:logParts){byte[] bytes=part.getBytes(java.nio.charset.StandardCharsets.UTF_8);w.append(bytes,0,bytes.length);}}return id;}
  static final String REQUEST="{\"branch\":\"main\",\"image\":\"alpine:3.23\",\"command\":\"echo hello\"}";
  @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void privateLogsAreHidden(){Long id=project(true);given().get("/api/projects/"+id+"/builds").then().statusCode(404);}
  @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void memberCanViewPublicButCannotTrigger(){Long id=project(false);given().get("/api/projects/"+id+"/builds").then().statusCode(200);given().contentType("application/json").body(REQUEST).post("/api/projects/"+id+"/builds").then().statusCode(403);}
@@ -90,4 +92,9 @@ import java.util.List;
  }
 
  @Test void processOutputIsBounded()throws Exception{var r=BuildRunner.command(List.of("sh","-c","head -c 500000 /dev/zero"),10,1024);assertEquals(0,r.code());assertTrue(r.output().endsWith("[output truncated]\n"));assertTrue(r.output().length()<1100);}
+ @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void listOmitsOutput(){Long id=project(false);build(id,"PASSED","secret-log-text");given().get("/api/projects/"+id+"/builds").then().statusCode(200).body(not(containsString("secret-log-text"))).body(not(containsString("\"output\""))).body("[0].branch",equalTo("main")).body("[0].image",equalTo("alpine:3.23")).body("[0].exitCode",equalTo(0)).body("[0].logTruncated",equalTo(false));}
+ @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void logStreamsAppendedParts(){Long id=project(false);Long b=build(id,"PASSED","one\n","two\n","é\n");given().get("/api/projects/"+id+"/builds/"+b+"/log").then().statusCode(200).contentType(startsWith("text/plain")).body(equalTo("one\ntwo\né\n"));}
+ @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void privateLogIsHidden(){Long id=project(true);Long b=build(id,"PASSED","hidden");given().get("/api/projects/"+id+"/builds/"+b+"/log").then().statusCode(404);}
+ @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void logOfBuildInOtherProjectIs404(){Long id=project(false),other=project(false);Long b=build(other,"PASSED","elsewhere");given().get("/api/projects/"+id+"/builds/"+b+"/log").then().statusCode(404);}
+ @Test void recoverKeepsPartialLog(){Long id=project(false);Long b=build(id,"RUNNING","partial\n");runner.recover(null);Build after=QuarkusTransaction.requiringNew().call(()->Build.findById(b));assertEquals("FAILED",after.status);assertNotNull(after.finishedAt);assertEquals("partial\nServer restarted during build\n",logs.readAll(b));}
 }

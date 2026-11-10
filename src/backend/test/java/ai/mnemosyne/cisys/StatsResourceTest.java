@@ -55,7 +55,7 @@ class StatsResourceTest {
     private static void build(Long projectId, String status, Instant startedAt) {
         QuarkusTransaction.requiringNew().run(() -> {
             Build b = new Build();
-            b.projectId = projectId; b.requestedBy = "stats-owner"; b.status = status; b.startedAt = startedAt; b.output = "";
+            b.projectId = projectId; b.requestedBy = "stats-owner"; b.status = status; b.startedAt = startedAt;
             if (!"RUNNING".equals(status)) b.finishedAt = startedAt.plusSeconds(10);
             b.persist();
         });

@@ -12,6 +12,7 @@ import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
 import PageHeader from './components/layout/PageHeader';
+import BuildLogView from './BuildLogView';
 
 /** Returns the project name for paths like /cisys/ (or /cisys), otherwise null. */
 export function projectNameFromPath(pathname) {
@@ -92,18 +93,8 @@ export default function ProjectBuilds({ name, load, onSignIn }) {
         </CardHeader>
         <CardContent>
           {builds.length === 0 ? <p>No builds yet.</p> : builds.map((b) => (
-            <details key={b.id}>
-              <summary>#{b.id} · {b.status} · {b.startedAt ? new Date(b.startedAt).toLocaleString() : 'Not started'} {b.revision ? `· ${b.revision.slice(0, 12)}` : ''}</summary>
-              <dl className="break-words">
-                <dt>Branch</dt>
-                <dd>{b.branch ?? 'Unknown'}</dd>
-                <dt>Image</dt>
-                <dd>{b.image ?? 'Unknown'}</dd>
-                <dt>Command</dt>
-                <dd><pre className="whitespace-pre-wrap">{b.command ?? 'Unknown'}</pre></dd>
-              </dl>
-              <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.output}</pre>
-            </details>
+            <BuildLogView key={b.id} api={load} build={b}
+              logPath={`/project-pages/${encodeURIComponent(project.name)}/builds/${b.id}/log`}/>
           ))}
         </CardContent>
       </Card>

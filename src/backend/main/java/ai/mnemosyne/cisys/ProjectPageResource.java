@@ -17,6 +17,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.StreamingOutput;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -33,21 +34,39 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 @PermitAll
 public class ProjectPageResource {
     @Inject SecurityIdentity identity;
+    @Inject BuildLogs logs;
 
     public record ProjectInfo(Long id, String name, String repositoryUrl, boolean privateRepository) {}
     /** Leaves out who requested the build and any credential reference, as the page may be anonymous. */
     public record PageBuild(Long id, String status, String revision, String branch, String image, String command,
-                            Instant startedAt, Instant finishedAt, String output) {}
+                            Instant startedAt, Instant finishedAt, String imageDigest, Integer exitCode,
+                            boolean logTruncated) {}
     public record ProjectPage(ProjectInfo project, List<PageBuild> builds) {}
 
     @GET
     public ProjectPage page(@PathParam("name") String name) {
-        Project p = Project.<Project>find("lower(name) = ?1", name.trim().toLowerCase(Locale.ROOT)).firstResult();
-        if (p == null || (p.privateRepository && !canSeePrivate(p))) throw new NotFoundException();
+        Project p = visible(name);
         List<PageBuild> builds = Build.<Build>find("projectId = ?1 order by id desc", p.id).page(0, 50).list().stream()
-                .map(b -> new PageBuild(b.id, b.status, b.revision, b.branch, b.image, b.command, b.startedAt, b.finishedAt, b.output))
+                .map(b -> new PageBuild(b.id, b.status, b.revision, b.branch, b.image, b.command, b.startedAt, b.finishedAt,
+                        b.imageDigest, b.exitCode, b.logTruncated))
                 .toList();
         return new ProjectPage(new ProjectInfo(p.id, p.name, p.repositoryUrl, p.privateRepository), builds);
+    }
+
+    @GET
+    @Path("/builds/{buildId}/log")
+    @Produces("text/plain; charset=UTF-8")
+    public StreamingOutput log(@PathParam("name") String name, @PathParam("buildId") Long buildId) {
+        Project p = visible(name);
+        Build b = Build.findById(buildId);
+        if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
+        return out -> logs.streamTo(buildId, out);
+    }
+
+    private Project visible(String name) {
+        Project p = Project.<Project>find("lower(name) = ?1", name.trim().toLowerCase(Locale.ROOT)).firstResult();
+        if (p == null || (p.privateRepository && !canSeePrivate(p))) throw new NotFoundException();
+        return p;
     }
 
     /** Same rule as the authenticated project and build endpoints: a Cisys role, and admin or owner. */

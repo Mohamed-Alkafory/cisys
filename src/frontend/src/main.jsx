@@ -23,6 +23,7 @@ import ImagesPanel from './ImagesPanel';
 import PublicHome from './PublicHome';
 import PublicStats from './PublicStats';
 import ProjectBuilds, { projectNameFromPath, projectPath } from './ProjectBuilds';
+import BuildLogView from './BuildLogView';
 import headerLogo from './assets/logo-header.svg';
 import './style.css';
 
@@ -31,9 +32,10 @@ const keycloak = new Keycloak({ url: 'http://localhost:8180', realm: 'cisys', cl
 // Matches the Branding entity defaults, used when the public branding cannot be loaded.
 const DEFAULT_BRANDING = { name: 'cisys', headerColor: '#176a4a', headingColor: '#176a4a', buttonColor: '#176a4a' };
 
-async function publicJson(path) {
+async function publicJson(path, opts = {}) {
   const response = await fetch(API + path);
   if (!response.ok) throw Object.assign(new Error(`Request failed (${response.status})`), { status: response.status });
+  if (opts.raw) return response;
   return response.json();
 }
 
@@ -54,6 +56,7 @@ async function api(path, opts = {}) {
     if (body?.error) throw Object.assign(new Error(body.error), { status: response.status });
   }
   if (!response.ok) throw Object.assign(new Error(response.status === 409 ? 'Another build is running. Try again when it finishes.' : `Request failed (${response.status}). Check the branch, image and project access.`), { status: response.status });
+  if (opts.raw) return response;
   return response.json();
 }
 
@@ -277,20 +280,7 @@ function App() {
               {user.roles.includes('admin') && <div className="form-field"><Label htmlFor="git-credential">Private Git credential environment variable (optional)</Label><Input id="git-credential" value={credentialRef} onChange={(e) => setCredentialRef(e.target.value)} placeholder="CISYS_GIT_PROJECT"/></div>}
               <Button disabled={buildBusy || !image || builds.some((b) => b.status === 'RUNNING')}>{buildBusy ? 'Starting…' : 'Run build'}</Button>
             </form>}
-            {builds.length === 0 ? <p>No builds yet.</p> : builds.map((b) => (
-              <details key={b.id}>
-                <summary>#{b.id} · {b.status} · {new Date(b.startedAt).toLocaleString()} {b.revision ? `· ${b.revision.slice(0, 12)}` : ''}</summary>
-                <dl className="break-words">
-                  <dt>Branch</dt>
-                  <dd>{b.branch ?? 'Unknown'}</dd>
-                  <dt>Image</dt>
-                  <dd>{b.image ?? 'Unknown'}</dd>
-                  <dt>Command</dt>
-                  <dd><pre className="whitespace-pre-wrap">{b.command ?? 'Unknown'}</pre></dd>
-                </dl>
-                <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{b.output}</pre>
-              </details>
-            ))}
+            {builds.length === 0 ? <p>No builds yet.</p> : builds.map((b) => <BuildLogView key={b.id} api={api} logPath={`/projects/${buildProject}/builds/${b.id}/log`} build={b} onRefresh={async () => setBuilds(await api(`/projects/${buildProject}/builds`))}/>)}
           </CardContent>
         </Card>}
       </main>}

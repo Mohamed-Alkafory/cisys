@@ -10,6 +10,7 @@ The sources are in `src/backend/main/java/ai/mnemosyne/cisys`.
 
 * The data model uses JPA entities backed by [Hibernate ORM Panache](https://quarkus.io/guides/hibernate-orm-panache): `Project`, `Build` and `Branding`.
 * HTTP endpoints use JAX-RS via [Quarkus REST](https://quarkus.io/guides/rest): `ProjectResource` (`/api/session`, `/api/projects`), `BuildResource` (`/api/projects/{projectId}/builds`) and `BrandingResource` (`/api/branding`).
+* `BuildLogs` stores each build log as one PostgreSQL large object, using JDBC and the pgjdbc `LargeObjectManager` directly rather than Hibernate. Output is appended while the build runs and streamed back from `/api/projects/{projectId}/builds/{buildId}/log`, about 1 MB per short transaction, so a log is never held in memory whole. cisys supports PostgreSQL only.
 * `BuildRunner` fetches repositories with [JGit](https://www.eclipse.org/jgit/) and runs builds through the Docker or Podman command line. It runs one build at a time on a single-thread executor.
 * Authentication uses [Quarkus OIDC](https://quarkus.io/guides/security-oidc-bearer-token-authentication) in `service` mode with Keycloak realm roles.
 
@@ -41,9 +42,14 @@ erDiagram
         STRING requested_by
         STRING status
         STRING revision
+        STRING branch
+        STRING image
+        STRING image_digest
+        INTEGER exit_code
+        BOOLEAN log_truncated
+        OID log_oid
         TIMESTAMP started_at
         TIMESTAMP finished_at
-        TEXT output
     }
 
     BRANDING {

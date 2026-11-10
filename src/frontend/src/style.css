@@ -96,3 +96,6 @@ body { background: var(--body-bg); color: var(--body-text); }
   .image-row { grid-template-columns:1.25rem minmax(0,1fr) auto; }
   .image-row > .image-meta, .image-row > span:empty, .image-head { display:none; }
 }
+.build-row > summary { cursor: pointer; }
+.build-detail { display: grid; gap: .5rem; margin: .5rem 0 1rem; }
+.build-log-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
