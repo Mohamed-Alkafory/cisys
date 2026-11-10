@@ -1,5 +1,5 @@
 # Fast checks on staged changes (mirrors CI but keeps commits quick).
-# Full checks (frontend `npm run lint` + `mvn test`) run in .husky/pre-push.
+# Full frontend lint (`npm run lint`) runs in .husky/pre-push; run tests with `make test`.
 # Bypass with: git commit --no-verify
 
 cd "$(git rev-parse --show-toplevel)" || exit 1

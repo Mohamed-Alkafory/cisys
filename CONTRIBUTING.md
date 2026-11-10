@@ -142,4 +142,4 @@ In your first pull request you need to add yourself to the `AUTHORS` file.
 
 ## Code Style
 
-Please, follow the coding style of the project. The frontend is checked with ESLint (`npm run lint` in `src/frontend`), which also runs as a Husky `pre-commit` hook on staged files. The `pre-push` hook runs the lint check and `mvn test`.
+Please, follow the coding style of the project. The frontend is checked with ESLint (`npm run lint` in `src/frontend`), which also runs as a Husky `pre-commit` hook on staged files. The `pre-push` hook runs the lint check; run the tests explicitly with `make test`.

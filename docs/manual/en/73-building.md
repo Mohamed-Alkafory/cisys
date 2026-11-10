@@ -38,7 +38,7 @@ when you need to clear `target/` and force a fresh rebuild.
 make test
 ```
 
-The backend tests use an in-memory H2 database and do not need Keycloak or PostgreSQL. The Husky `pre-commit` hook runs ESLint on staged frontend files, and the `pre-push` hook runs `npm run lint` and `mvn -B test`. Bypass a hook once with `--no-verify`.
+The backend tests use an in-memory H2 database and do not need Keycloak or PostgreSQL. The Husky `pre-commit` hook runs ESLint on staged frontend files, and the `pre-push` hook runs `npm run lint`. Run the tests explicitly with `make test`. Bypass a hook once with `--no-verify`.
 
 ## Production build
 

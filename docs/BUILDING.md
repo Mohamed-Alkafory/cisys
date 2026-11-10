@@ -45,7 +45,7 @@ The output is written to `src/frontend/dist`. The backend does not serve the fro
 Hooks live in `.husky/`.
 
 * `pre-commit` (fast, on staged files only): `lint-staged` for changes under `src/frontend/`, which runs ESLint on the staged frontend files.
-* `pre-push` (full check): `npm run lint` in `src/frontend` and `mvn -B test`. If `mvn` is not installed the backend tests are skipped with a warning.
+* `pre-push`: `npm run lint` in `src/frontend`. Tests are not run on push; run them explicitly with `make test`.
 
 Bypass a hook once with `git commit --no-verify` or `git push --no-verify`.
 
