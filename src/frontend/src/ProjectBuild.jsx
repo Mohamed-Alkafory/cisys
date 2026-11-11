@@ -75,10 +75,11 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
   return (
     <main id="project-build" className="page-container">
       <PageHeader title={`Build #${build.id}`} actions={<>
-        {build.canPin && <Button type="button" variant="outline" onClick={togglePin} disabled={pinning}>
-          {build.pinned ? <><PinOff aria-hidden="true"/> Unpin</> : <><Pin aria-hidden="true"/> Pin</>}
+        {build.canPin && <Button type="button" variant="outline" size="icon" onClick={togglePin} disabled={pinning}
+          title={build.pinned ? 'Unpin' : 'Pin'} aria-label={build.pinned ? 'Unpin build' : 'Pin build'}>
+          {build.pinned ? <PinOff size={16} aria-hidden="true"/> : <Pin size={16} aria-hidden="true"/>}
         </Button>}
-        <Button type="button" variant="outline" onClick={onBack}><ArrowLeft aria-hidden="true"/> Back to builds</Button>
+        <Button type="button" variant="outline" size="icon" onClick={onBack} title="Back to builds" aria-label="Back to builds"><ArrowLeft size={16} aria-hidden="true"/></Button>
       </>}/>
       {error && <div className="error-message" role="alert">{error}</div>}
       <Card className="project-card">
@@ -113,10 +114,9 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
         </CardContent>
       </Card>
       <Card className="project-card">
-        <CardHeader><CardTitle>Log</CardTitle></CardHeader>
         <CardContent>
           <BuildLogPanel api={load} logPath={`/project-pages/${encodeURIComponent(name)}/builds/${build.id}/log`}
-            build={build} onRefresh={loadBuild} showMeta={false} scrollable/>
+            build={build} onRefresh={loadBuild} showMeta={false} scrollable title="Log"/>
         </CardContent>
       </Card>
     </main>

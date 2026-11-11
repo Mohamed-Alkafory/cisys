@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, RefreshCw } from 'lucide-react';
 import { Button } from './components/ui/button';
+import { CardTitle } from './components/ui/card';
 import { duration, startedAt } from './build-format';
 
 const INLINE_LIMIT = 2 * 1024 * 1024;
@@ -17,7 +18,8 @@ const INLINE_LIMIT = 2 * 1024 * 1024;
  * The expanded details and log of one build. Used inline in the signed-in build history
  * and, without the duplicated metadata and inside a scroll box, on the dedicated build page.
  */
-export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true, scrollable = false }) {
+/** With `title`, the title and the log actions share one row. */
+export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true, scrollable = false, title }) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState('');
@@ -102,9 +104,10 @@ export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true,
         <dd><pre className="whitespace-pre-wrap">{build.command ?? 'Unknown'}</pre></dd>
       </dl>}
       {build.logTruncated && <p className="file-help" role="status">The stored output for this build is incomplete or was cut at the size limit.</p>}
-      <div className="build-log-actions">
+      <div className={title ? 'build-log-actions build-log-header' : 'build-log-actions'}>
+        {title && <CardTitle className="mr-auto">{title}</CardTitle>}
         {build.status === 'RUNNING' && <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={loading}><RefreshCw/> Refresh</Button>}
-        <Button type="button" variant="outline" size="sm" onClick={download}><Download/> Download log</Button>
+        <Button type="button" variant="outline" size="icon-sm" onClick={download} title="Download log" aria-label="Download log"><Download size={16} aria-hidden="true"/></Button>
       </div>
       {error && <p className="file-help" role="alert">{error}</p>}
       {scrollable ? (

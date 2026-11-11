@@ -147,7 +147,8 @@ body { background: var(--body-bg); color: var(--body-text); }
 }
 .build-row > summary { cursor: pointer; }
 .build-detail { display: grid; gap: .5rem; margin: .5rem 0 1rem; }
-.build-log-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.build-log-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
+.build-log-header { align-items: center; }
 /* Long logs scroll inside a fixed-height box instead of stretching the whole page. */
 .build-log-scroll { max-height: 60vh; overflow: auto; border: 1px solid var(--card-border); border-radius: .4rem; padding: .75rem; background: color-mix(in srgb, var(--body-text) 4%, var(--card-bg)); }
 .build-log-scroll pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; line-height: 1.45; }
