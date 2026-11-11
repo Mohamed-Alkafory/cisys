@@ -26,30 +26,30 @@ class ProjectResourceTest {
     @Test @TestSecurity(user = "member", roles = "member")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "member-id")})
     void memberCannotCreateProject() {
-        given().contentType("application/json").body("{\"name\":\"demo\",\"repositoryUrl\":\"https://example.com/repo.git\"}")
+        given().contentType("application/json").body("{\"name\":\"demo\",\"repositoryUrl\":\"https://github.com/repo.git\"}")
             .when().post("/api/projects").then().statusCode(403);
     }
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void leadCreatesPrivateProjectWithSubjectOwner() {
-        given().contentType("application/json").body("{\"name\":\"demo\",\"repositoryUrl\":\"https://example.com/repo.git\",\"privateRepository\":true}")
+        given().contentType("application/json").body("{\"name\":\"demo\",\"repositoryUrl\":\"https://github.com/repo.git\",\"privateRepository\":true}")
             .when().post("/api/projects").then().statusCode(201).body("ownerSubject", equalTo("lead-id"));
     }
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void rejectsDuplicateNameOrRepositoryUrl() {
-        given().contentType("application/json").body("{\"name\":\"unique-one\",\"repositoryUrl\":\"https://example.com/unique-one.git\"}")
+        given().contentType("application/json").body("{\"name\":\"unique-one\",\"repositoryUrl\":\"https://github.com/unique-one.git\"}")
             .when().post("/api/projects").then().statusCode(201);
-        given().contentType("application/json").body("{\"name\":\" Unique-One \",\"repositoryUrl\":\"https://example.com/other.git\"}")
+        given().contentType("application/json").body("{\"name\":\" Unique-One \",\"repositoryUrl\":\"https://github.com/other.git\"}")
             .when().post("/api/projects").then().statusCode(409).body("error", containsString("name"));
-        given().contentType("application/json").body("{\"name\":\"unique-two\",\"repositoryUrl\":\"https://example.com/unique-one.git\"}")
+        given().contentType("application/json").body("{\"name\":\"unique-two\",\"repositoryUrl\":\"https://github.com/unique-one.git\"}")
             .when().post("/api/projects").then().statusCode(409).body("error", containsString("repository URL"));
     }
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void rejectsInvalidNames() {
         for (String name : new String[] {"org/repo", ".", "..", ".hidden", "-x", "_x", "a b", "a?b", "a#b", "a%20b", "a\\nb", "a\\u200Bb", "c\\u0456sys", "\\u00fcn"}) {
-            given().contentType("application/json").body("{\"name\":\"" + name + "\",\"repositoryUrl\":\"https://example.com/invalid-name.git\"}")
+            given().contentType("application/json").body("{\"name\":\"" + name + "\",\"repositoryUrl\":\"https://github.com/invalid-name.git\"}")
                 .when().post("/api/projects").then().statusCode(400).body("error", equalTo(ProjectResource.NAME_RULE));
         }
     }
@@ -57,28 +57,45 @@ class ProjectResourceTest {
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void acceptsSlugNames() {
         for (String name : new String[] {"slug", "My.Project_2-x", "9lives", "a".repeat(100)}) {
-            given().contentType("application/json").body("{\"name\":\"" + name + "\",\"repositoryUrl\":\"https://example.com/slug-" + name + ".git\"}")
+            given().contentType("application/json").body("{\"name\":\"" + name + "\",\"repositoryUrl\":\"https://github.com/slug-" + name + ".git\"}")
                 .when().post("/api/projects").then().statusCode(201);
         }
         given().urlEncodingEnabled(false).when().get("/api/project-pages/My.Project_2-x").then().statusCode(200).body("project.name", equalTo("My.Project_2-x"));
-        given().contentType("application/json").body("{\"name\":\"" + "a".repeat(101) + "\",\"repositoryUrl\":\"https://example.com/too-long.git\"}")
+        given().contentType("application/json").body("{\"name\":\"" + "a".repeat(101) + "\",\"repositoryUrl\":\"https://github.com/too-long.git\"}")
             .when().post("/api/projects").then().statusCode(400);
     }
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+    void rejectsHostThatIsNotAllowed() {
+        given().contentType("application/json").body("{\"name\":\"not-allowed\",\"repositoryUrl\":\"https://example.com/repo.git\"}")
+            .when().post("/api/projects").then().statusCode(400).body(containsString("allowed host"));
+    }
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+    void rejectsHostThatResolvesToABlockedAddress() {
+        TestHostResolver.set("gitlab.com", "10.0.0.1");
+        try {
+            given().contentType("application/json").body("{\"name\":\"blocked-address\",\"repositoryUrl\":\"https://gitlab.com/group/repo.git\"}")
+                .when().post("/api/projects").then().statusCode(400).body(containsString("blocked address"));
+        } finally {
+            TestHostResolver.reset();
+        }
+    }
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void addsGitSuffix() {
-        given().contentType("application/json").body("{\"name\":\"suffix-added\",\"repositoryUrl\":\"https://example.com/org/suffix-added/\"}")
-            .when().post("/api/projects").then().statusCode(201).body("repositoryUrl", equalTo("https://example.com/org/suffix-added.git"));
-        given().contentType("application/json").body("{\"name\":\"suffix-kept\",\"repositoryUrl\":\"https://example.com/org/suffix-kept.git\"}")
-            .when().post("/api/projects").then().statusCode(201).body("repositoryUrl", equalTo("https://example.com/org/suffix-kept.git"));
+        given().contentType("application/json").body("{\"name\":\"suffix-added\",\"repositoryUrl\":\"https://github.com/org/suffix-added/\"}")
+            .when().post("/api/projects").then().statusCode(201).body("repositoryUrl", equalTo("https://github.com/org/suffix-added.git"));
+        given().contentType("application/json").body("{\"name\":\"suffix-kept\",\"repositoryUrl\":\"https://github.com/org/suffix-kept.git\"}")
+            .when().post("/api/projects").then().statusCode(201).body("repositoryUrl", equalTo("https://github.com/org/suffix-kept.git"));
         // The same repository with and without .git is a duplicate.
-        given().contentType("application/json").body("{\"name\":\"suffix-again\",\"repositoryUrl\":\"https://example.com/org/suffix-kept\"}")
+        given().contentType("application/json").body("{\"name\":\"suffix-again\",\"repositoryUrl\":\"https://github.com/org/suffix-kept\"}")
             .when().post("/api/projects").then().statusCode(409);
     }
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void rejectsUrlsWithoutRepository() {
-        for (String url : new String[] {"https://example.com/", "https://example.com", "https://example.com/.git", "https://example.com/repo.git?x=1", "https://example.com/repo#top"}) {
+        for (String url : new String[] {"https://example.com/", "https://example.com", "https://example.com/.git", "https://github.com/repo.git?x=1", "https://example.com/repo#top"}) {
             given().contentType("application/json").body("{\"name\":\"suffix\",\"repositoryUrl\":\"" + url + "\"}")
                 .when().post("/api/projects").then().statusCode(400).body("error", containsString("repository's URL"));
         }

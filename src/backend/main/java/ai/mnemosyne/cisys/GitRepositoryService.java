@@ -9,13 +9,13 @@
 package ai.mnemosyne.cisys;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.util.FileUtils;
 
 import java.io.IOException;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
@@ -30,15 +30,17 @@ import java.util.TreeSet;
 public class GitRepositoryService {
     static final int TIMEOUT_SECONDS = 10;
 
+    @Inject RepositoryUrlValidator repositoryUrls;
+
     /** Branches of the project's repository. Private projects need credentials, so they are not read. */
     public List<String> listBranches(Project project) {
         if (project.privateRepository) return List.of();
         return listBranches(project.repositoryUrl);
     }
 
-    /** Branches of an HTTPS github.com or gitlab.com repository. */
+    /** Branches of an HTTPS repository on an allowed host. */
     public List<String> listBranches(String repositoryUrl) {
-        validate(repositoryUrl);
+        repositoryUrls.validate(repositoryUrl);
         try {
             return branchNames(remoteBranchRefs(repositoryUrl));
         } catch (GitAPIException | RuntimeException e) {
@@ -74,33 +76,6 @@ public class GitRepositoryService {
                     // The temporary directory is not part of the result.
                 }
             }
-        }
-    }
-
-    /**
-     * Accepts the same repositories that builds accept: HTTPS github.com or gitlab.com without
-     * credentials, query strings, fragments or non-default ports.
-     */
-    static void validate(String repositoryUrl) {
-        if (repositoryUrl == null || repositoryUrl.isBlank() || repositoryUrl.length() > 2048) {
-            throw new IllegalArgumentException("Repository URL is required");
-        }
-        URI uri;
-        try {
-            uri = URI.create(repositoryUrl.trim());
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Use an HTTPS github.com or gitlab.com repository URL");
-        }
-        if (!"https".equals(uri.getScheme())
-                || !List.of("github.com", "gitlab.com").contains(uri.getHost())
-                || uri.getUserInfo() != null
-                || uri.getQuery() != null
-                || uri.getFragment() != null
-                || (uri.getPort() != -1 && uri.getPort() != 443)
-                || uri.getPath() == null
-                || uri.getPath().isEmpty()
-                || uri.getPath().equals("/")) {
-            throw new IllegalArgumentException("Use an HTTPS github.com or gitlab.com repository URL");
         }
     }
 

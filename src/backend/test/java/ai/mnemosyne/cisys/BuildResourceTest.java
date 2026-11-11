@@ -31,6 +31,7 @@ import java.util.List;
  @Test @TestSecurity(user="lead",roles="lead") @JwtSecurity(claims=@Claim(key="sub",value="owner-id")) void rejectInvalidBranch(){Long id=project(true);given().contentType("application/json").body(REQUEST.replace("main","branch.lock")).post("/api/projects/"+id+"/builds").then().statusCode(400);}
  @Test @TestSecurity(user="lead",roles="lead") @JwtSecurity(claims=@Claim(key="sub",value="owner-id")) void leadCannotUseGlobalCredentials(){Long id=project(true);allow("alpine:3.23");given().contentType("application/json").body(REQUEST.replace("\"command\":", "\"credentialRef\":\"CISYS_GIT_SECRET\",\"command\":" )).post("/api/projects/"+id+"/builds").then().statusCode(403);}
  @Test @TestSecurity(user="lead",roles="lead") @JwtSecurity(claims=@Claim(key="sub",value="owner-id")) void rejectImageNotAllowed(){Long id=project(true);given().contentType("application/json").body(REQUEST.replace("alpine:3.23","busybox:not-allowed")).post("/api/projects/"+id+"/builds").then().statusCode(400);}
+ @Test @TestSecurity(user="lead",roles="lead") @JwtSecurity(claims=@Claim(key="sub",value="owner-id")) void rejectHostResolvingToABlockedAddress(){Long id=project(false);allow("alpine:3.23");TestHostResolver.set("github.com","127.0.0.1");try{given().contentType("application/json").body(REQUEST).post("/api/projects/"+id+"/builds").then().statusCode(400);}finally{TestHostResolver.reset();}}
 
  @Test
  @TestSecurity(user="admin",roles="admin")

@@ -119,7 +119,7 @@ class BranchResourceTest {
         Long id = project(false, "http://example.com/octocat/Hello-World.git");
         given().get("/api/projects/" + id + "/branches").then()
                 .statusCode(400)
-                .body("error", equalTo("Use an HTTPS github.com or gitlab.com repository URL"));
+                .body("error", equalTo("Use an HTTPS repository URL without credentials"));
     }
 
     @Test

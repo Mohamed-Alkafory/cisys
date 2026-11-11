@@ -41,7 +41,7 @@ UPDATE project SET name = 'new-name' WHERE name = 'old name';
 
 The creator's Keycloak subject is stored as the owner.
 
-Registering a project accepts any HTTPS host, but builds currently accept only `github.com` and `gitlab.com` URLs; see the **Builds** chapter.
+The repository must be on an allowed host and must not resolve to a loopback, private, link-local or metadata address. By default only `github.com` and `gitlab.com` are allowed; the backend settings `cisys.git.allowed-hosts` and `cisys.git.allowed-networks` extend that list.
 
 ## Ownership
 

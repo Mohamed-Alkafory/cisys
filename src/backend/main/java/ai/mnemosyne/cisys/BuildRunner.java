@@ -33,6 +33,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 @ApplicationScoped public class BuildRunner {
  @Inject BuildLogs logs;
+ @Inject RepositoryUrlValidator repositoryUrls;
  @ConfigProperty(name="cisys.build.log-max-bytes",defaultValue="1073741824") long logMaxBytes;
  String runtime;
  /** Uses podman when it is installed, otherwise docker. */
@@ -82,6 +83,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
   Path dir=null;String name="cisys-build-"+id,revision=null,status="FAILED",digest=null;Integer exit=null;boolean truncated=false;Throwable captureError=null;BuildLogs.Writer log=null;
   try {
    log=logs.open(id);
+   // Checked again here because DNS can change after the project was saved.
+   repositoryUrls.validate(url);
    dir=Files.createTempDirectory("cisys-");
    try(Git git=Git.init().setDirectory(dir.toFile()).call()){
     var cfg=git.getRepository().getConfig();cfg.setString("http",null,"followRedirects","false");cfg.save();
@@ -103,6 +106,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
     exit=exitCode(name);
     if(exit==null)log.line("Could not read the container exit code");else status=exit==0?"PASSED":"FAILED";
    }
+  } catch(IllegalArgumentException e){
+   if(log!=null)log.line("Build failed: "+e.getMessage());else captureError=e;
   } catch(Exception e){
    if(log!=null)log.line("Build failed during checkout or container execution ("+e.getClass().getSimpleName()+"). Check the runner configuration.");
    else captureError=e;

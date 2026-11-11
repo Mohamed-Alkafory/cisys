@@ -150,6 +150,6 @@ class ProjectBranchResourceTest {
         String name = project(false, "https://example.com/octocat/Hello-World.git");
         given().get("/api/project-pages/" + name + "/branches").then()
                 .statusCode(400)
-                .body("error", equalTo("Use an HTTPS github.com or gitlab.com repository URL"));
+                .body("error", equalTo("Use a repository on an allowed host (github.com, gitlab.com)"));
     }
 }

@@ -27,6 +27,7 @@ import jakarta.persistence.PersistenceException;
 @Authenticated
 public class ProjectResource {
     @Inject SecurityIdentity identity;
+    @Inject RepositoryUrlValidator repositoryUrls;
     private JsonWebToken token() {
         if (identity.getPrincipal() instanceof JsonWebToken jwt) return jwt;
         throw new NotAuthorizedException("Bearer");
@@ -54,10 +55,14 @@ public class ProjectResource {
     @POST @Path("/projects") @Transactional public Response create(CreateProject input) {
         if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
         if (input == null || input.name() == null || input.name().isBlank() || input.name().length() > 100 || input.repositoryUrl() == null || input.repositoryUrl().length() > 2048) throw new BadRequestException("Name and repository URL are required");
-        try { URI url = URI.create(input.repositoryUrl().trim()); if (!"https".equals(url.getScheme()) || url.getHost() == null || url.getUserInfo() != null) throw new IllegalArgumentException(); } catch (IllegalArgumentException e) { throw new BadRequestException("Use an HTTPS repository URL without credentials"); }
-        String name = input.name().trim(), url = gitUrl(input.repositoryUrl().trim());
+        String name = input.name().trim();
         // The name is the project's URL path, for example /cisys/ in the UI.
         if (!NAME.matcher(name).matches()) throw badRequest(NAME_RULE);
+        String url;
+        try { url = gitUrl(input.repositoryUrl().trim()); }
+        catch (WebApplicationException e) { throw e; }
+        catch (IllegalArgumentException e) { throw new BadRequestException(RepositoryUrls.SHAPE); }
+        try { repositoryUrls.validate(url); } catch (IllegalArgumentException e) { throw badRequest(e.getMessage()); }
         // Checked across all projects, including private projects the caller cannot see.
         if (Project.count("lower(name) = ?1", name.toLowerCase(Locale.ROOT)) > 0) throw conflict("A project with this name already exists");
         if (Project.count("repositoryUrl", url) > 0) throw conflict("A project with this repository URL already exists");

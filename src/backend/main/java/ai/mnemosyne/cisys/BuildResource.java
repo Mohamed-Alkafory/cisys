@@ -16,7 +16,6 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.StreamingOutput;
 import org.eclipse.microprofile.jwt.JsonWebToken;
-import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 
@@ -25,6 +24,7 @@ public class BuildResource {
  @Inject SecurityIdentity identity;
  @Inject BuildRunner runner;
  @Inject BuildLogs logs;
+ @Inject RepositoryUrlValidator repositoryUrls;
  public record RunRequest(String branch, String image, String command, String credentialRef) {}
  public record BuildResponse(Long id, Long projectId, String requestedBy, String status,
      String revision, Instant startedAt, Instant finishedAt, String branch,
@@ -79,8 +79,7 @@ public class BuildResource {
   if(!AllowedImage.isAllowed(input.image()))throw new BadRequestException("Image is not allowed");
   if(input.credentialRef()!=null && !identity.hasRole("admin"))throw new ForbiddenException();
   if(input.credentialRef()!=null && !input.credentialRef().matches("CISYS_GIT_[A-Z0-9_]{1,80}"))throw new BadRequestException("Invalid credential reference");
-  URI uri=URI.create(p.repositoryUrl);
-  if(!"https".equals(uri.getScheme()) || !List.of("github.com","gitlab.com").contains(uri.getHost()) || uri.getUserInfo()!=null || uri.getQuery()!=null || uri.getFragment()!=null || (uri.getPort()!=-1 && uri.getPort()!=443))throw new BadRequestException("Builds require an HTTPS github.com or gitlab.com URL without credentials");
+  try{repositoryUrls.validate(p.repositoryUrl);}catch(IllegalArgumentException e){throw new BadRequestException(e.getMessage());}
   return response(runner.submit(id,((JsonWebToken)identity.getPrincipal()).getSubject(),p.repositoryUrl,input));
  }
 }

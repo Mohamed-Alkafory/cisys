@@ -55,7 +55,7 @@ The runner is always on. It lets leads and admins run code from a Git repository
 
 Controls that are in place
 
-* Only HTTPS `github.com` and `gitlab.com` repository URLs are accepted for builds and branch discovery; redirects, embedded credentials, query strings, fragments and non-default ports are rejected. Branch discovery reads the project's own repository URL, never a URL supplied by the caller.
+* Only HTTPS repositories on an allowed host are accepted for builds and branch discovery; redirects, embedded credentials, query strings, fragments and non-default ports are rejected. See [Repository addresses](#repository-addresses).
 * Branch discovery for private projects is not attempted because credentials are not stored on the project; the endpoint returns an empty list with reason `private_repository`.
 * Branch names are validated as Git references. Builds may only use images an admin has allowed; image names are validated against a restrictive pattern.
 * The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build. The `.git` directory is not copied into the container.
@@ -63,11 +63,19 @@ Controls that are in place
 * One build runs at a time and times out after ten minutes. Output is stored in full, up to the `BUILD_LOG_MAX_BYTES` safety limit (default 1 GiB); output beyond it is discarded and the build is marked truncated.
 * Builds left in the `RUNNING` state by a server restart are marked `FAILED` at startup.
 
+### Repository addresses
+
+* Only HTTPS repositories on `cisys.git.allowed-hosts` are accepted; the default is `github.com` and `gitlab.com`.
+* Every address the host resolves to is checked. Loopback, private, link-local, multicast, documentation and metadata ranges are rejected, including IPv4-mapped IPv6 forms such as `::ffff:127.0.0.1`. An administrator can allow an internal range explicitly through `cisys.git.allowed-networks`.
+* The check runs when a project is created, when a build starts, and again immediately before JGit fetches, because DNS can change after a project was saved. A host that resolves to a blocked address fails the build with `Build failed: The repository host resolves to a blocked address`.
+* Branch discovery reads the project's own repository URL, never a URL supplied by the caller.
+
 Known gaps
 
 * Repository checkout size is not bounded.
 * Runner and Podman operation on Windows/WSL has not been verified.
 * Credentials are not scoped to individual projects; only admins may reference one.
+* DNS rebinding between the address check and JGit's own connection is not fully prevented, because JGit resolves the host again when it connects.
 
 ### Git credentials
 

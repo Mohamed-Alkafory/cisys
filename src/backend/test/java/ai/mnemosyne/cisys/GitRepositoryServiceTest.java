@@ -91,40 +91,4 @@ class GitRepositoryServiceTest {
             target.stop(0);
         }
     }
-
-    @Test
-    void acceptsGithubAndGitlabHttpsUrls() {
-        GitRepositoryService.validate("https://github.com/octocat/Hello-World.git");
-        GitRepositoryService.validate("https://gitlab.com/group/project.git");
-        GitRepositoryService.validate("https://github.com:443/octocat/Hello-World.git");
-    }
-
-    @Test
-    void rejectsUnsupportedUrls() {
-        for (String url : List.of(
-                "http://github.com/octocat/Hello-World.git",
-                "https://example.com/octocat/Hello-World.git",
-                "https://user:token@github.com/octocat/Hello-World.git",
-                "https://github.com/octocat/Hello-World.git?ref=main",
-                "https://github.com/octocat/Hello-World.git#main",
-                "https://github.com:8443/octocat/Hello-World.git",
-                "https://github.com",
-                "https://github.com/",
-                " ",
-                "not a url")) {
-            assertThrows(IllegalArgumentException.class, () -> GitRepositoryService.validate(url), url);
-        }
-    }
-
-    @Test
-    void rejectsOverlongUrls() {
-        assertThrows(IllegalArgumentException.class, () -> GitRepositoryService.validate("https://github.com/" + "a".repeat(2048)));
-    }
-
-    @Test
-    void exceptionMessageExplainsTheAllowedHosts() {
-        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
-                () -> GitRepositoryService.validate("https://example.com/octocat/Hello-World.git"));
-        assertTrue(e.getMessage().contains("github.com"));
-    }
 }
