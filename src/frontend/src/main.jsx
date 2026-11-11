@@ -20,6 +20,7 @@ import AppFooter from './components/layout/AppFooter';
 import PageHeader from './components/layout/PageHeader';
 import BrandingPanel from './BrandingPanel';
 import ImagesPanel from './ImagesPanel';
+import SettingsPanel from './SettingsPanel';
 import PublicHome from './PublicHome';
 import PublicStats from './PublicStats';
 import ProjectBuilds, { projectBuildFromPath, projectNameFromPath, projectPath } from './ProjectBuilds';
@@ -231,7 +232,7 @@ function App() {
       <header className="app-header">
         <div className="header-main">
           <a className="brand" href="/" aria-label={`${branding.name} home`} onClick={(event) => { event.preventDefault(); go('home'); void loadPublicStats(); }}><img src={branding.logo || headerLogo} alt="" className={branding.logo ? 'brand-logo' : 'brand-logo brand-logo-default'}/><span>{branding.name}</span></a>
-          <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={projectName === null && page === 'projects' ? 'page' : undefined} onClick={() => go('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={projectName === null && page === 'images' ? 'page' : undefined} onClick={() => go('images')}>Images</button>}{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={projectName === null && page === 'branding' ? 'page' : undefined} onClick={() => go('branding')}>Branding</button>}</nav>
+          <nav aria-label="Primary"><button type="button" className="nav-link" aria-current={projectName === null && page === 'projects' ? 'page' : undefined} onClick={() => go('projects')}>Projects</button>{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={projectName === null && page === 'images' ? 'page' : undefined} onClick={() => go('images')}>Images</button>}{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={projectName === null && page === 'branding' ? 'page' : undefined} onClick={() => go('branding')}>Branding</button>}{user.roles.includes('admin') && <button type="button" className="nav-link" aria-current={projectName === null && page === 'settings' ? 'page' : undefined} onClick={() => go('settings')}>Settings</button>}</nav>
         </div>
         <div className="header-actions">
           <button type="button" className="theme-toggle" onClick={() => setDark(!dark)} aria-label="Toggle dark mode" aria-pressed={dark} title="Toggle dark mode">
@@ -260,7 +261,7 @@ function App() {
         <Card className="project-card">
           <CardHeader><CardTitle>{role}</CardTitle><CardDescription>Signed in as {user.username}</CardDescription></CardHeader>
         </Card>
-      </main> : page === 'images' && user.roles.includes('admin') ? <ImagesPanel api={api} onSaved={setImages}/> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : <main id="projects" className="page-container">
+      </main> : page === 'images' && user.roles.includes('admin') ? <ImagesPanel api={api} onSaved={setImages}/> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : page === 'settings' && user.roles.includes('admin') ? <SettingsPanel api={api}/> : <main id="projects" className="page-container">
         <PageHeader title="Projects" actions={<Badge variant="outline">{projects.length} {projects.length === 1 ? 'project' : 'projects'}</Badge>}/>
         {error && <div className="error-message" role="alert">{error}</div>}
         {canCreate && (

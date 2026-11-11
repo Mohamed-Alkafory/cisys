@@ -30,6 +30,7 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `PUT`/`DELETE .../builds/{id}/pin`        | no                        | own projects         | yes   |
 | `GET /api/branding`                       | yes                       | yes                  | yes   |
 | `PUT /api/branding`                       | no                        | no                   | yes   |
+| `GET`/`PUT /api/settings/retention`       | no                        | no                   | yes   |
 | `GET /api/images` (allowed images)        | yes                       | yes                  | yes   |
 | `PUT /api/images`                         | no                        | no                   | yes   |
 | `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |

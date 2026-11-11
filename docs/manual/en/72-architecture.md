@@ -8,10 +8,11 @@
 
 The sources are in `src/backend/main/java/ai/mnemosyne/cisys`.
 
-* The data model uses JPA entities backed by [Hibernate ORM Panache](https://quarkus.io/guides/hibernate-orm-panache): `Project`, `Build` and `Branding`.
-* HTTP endpoints use JAX-RS via [Quarkus REST](https://quarkus.io/guides/rest): `ProjectResource` (`/api/session`, `/api/projects`), `BuildResource` (`/api/projects/{projectId}/builds`) and `BrandingResource` (`/api/branding`).
+* The data model uses JPA entities backed by [Hibernate ORM Panache](https://quarkus.io/guides/hibernate-orm-panache): `Project`, `Build`, `Branding` and `Settings`.
+* HTTP endpoints use JAX-RS via [Quarkus REST](https://quarkus.io/guides/rest): `ProjectResource` (`/api/session`, `/api/projects`), `BuildResource` (`/api/projects/{projectId}/builds`), `BrandingResource` (`/api/branding`) and `SettingsResource` (`/api/settings`).
 * `BuildLogs` stores each build log as one PostgreSQL large object, using JDBC and the pgjdbc `LargeObjectManager` directly rather than Hibernate. Output is appended while the build runs and streamed back from `/api/projects/{projectId}/builds/{buildId}/log`, about 1 MB per short transaction, so a log is never held in memory whole. cisys supports PostgreSQL only.
 * `BuildRunner` fetches repositories with [JGit](https://www.eclipse.org/jgit/) and runs builds through the Docker or Podman command line. It runs one build at a time on a single-thread executor.
+* `BuildRetention` is a [scheduled](https://quarkus.io/guides/scheduler) job that deletes each project's expired, unpinned builds in batches with one SQL statement per batch; the `lo_manage` trigger removes their logs.
 * Authentication uses [Quarkus OIDC](https://quarkus.io/guides/security-oidc-bearer-token-authentication) in `service` mode with Keycloak realm roles.
 
 Quarkus configuration is in `src/backend/main/resources/application.properties`. The schema is managed by [Flyway](https://quarkus.io/guides/flyway) migrations in `src/backend/main/resources/db/migration`, applied at startup; Hibernate only validates it. Databases created before migrations existed are adopted automatically. Until the 1.0 release the whole schema is one repeatable migration, `R__schema.sql`, which is changed in place and must stay idempotent; Flyway reruns it whenever it changes, so existing databases never need a manual reset.
@@ -62,6 +63,12 @@ erDiagram
         STRING font_family
         TEXT logo
         TEXT background
+    }
+
+    SETTINGS {
+        BIGINT id PK
+        INTEGER retention_days
+        INTEGER retention_max_builds
     }
 
     PROJECT ||--o{ BUILD : has

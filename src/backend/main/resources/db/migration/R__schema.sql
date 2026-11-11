@@ -75,3 +75,11 @@ CREATE TABLE IF NOT EXISTS allowedimage (
     name character varying(201) NOT NULL,
     CONSTRAINT allowedimage_pkey PRIMARY KEY (name)
 );
+
+-- Settings changed by admins, a single row with id 1.
+CREATE TABLE IF NOT EXISTS settings (
+    id bigint NOT NULL,
+    retentiondays integer NOT NULL DEFAULT 30,
+    retentionmaxbuilds integer NOT NULL DEFAULT 50,
+    CONSTRAINT settings_pkey PRIMARY KEY (id)
+);

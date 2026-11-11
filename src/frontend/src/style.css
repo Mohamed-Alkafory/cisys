@@ -121,6 +121,7 @@ body { background: var(--body-bg); color: var(--body-text); }
 .color-control { display:flex; align-items:center; gap:.65rem; font-size:.875rem; }
 .color-control input { width: 3rem; height: 2.5rem; padding: 2px; border:1px solid var(--card-border); border-radius:.4rem; cursor:pointer; }
 .file-help { font-size:.8rem; color:var(--muted-foreground); }
+.settings-form { display: grid; gap: 1.25rem; max-width: 28rem; }
 .image-preview { display:flex; align-items:center; gap:1rem; }
 .image-preview img { width:6rem; height:4rem; object-fit:contain; border:1px solid var(--card-border); border-radius:.4rem; }
 .image-preview button { text-decoration:underline; text-underline-offset:3px; cursor:pointer; }

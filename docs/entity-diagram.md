@@ -40,6 +40,12 @@ erDiagram
         TEXT background
     }
 
+    SETTINGS {
+        BIGINT id PK
+        INTEGER retention_days
+        INTEGER retention_max_builds
+    }
+
     PROJECT ||--o{ BUILD : has
 ```
 
@@ -47,5 +53,5 @@ erDiagram
 * `BUILD.project_id` is a plain column, not a foreign key constraint.
 * `BUILD.logoid` (type `lo`, from the `lo` extension) references the build log, stored as one PostgreSQL large object. It is not mapped in the `Build` entity. The `lo_manage` trigger unlinks the large object when the build is deleted, so no logs are orphaned.
 * `BUILD.status` is `RUNNING`, `PASSED` or `FAILED`.
-* `BRANDING` is a singleton row with `id = 1`.
+* `BRANDING` and `SETTINGS` are singleton rows with `id = 1`. Until `SETTINGS` is first saved, its defaults apply.
 * Users, roles and credentials live in Keycloak and are not stored in the cisys database.

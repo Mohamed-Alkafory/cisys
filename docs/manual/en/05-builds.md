@@ -43,6 +43,15 @@ The complete output of the build, standard output and standard error together, i
 
 The project's creator and admins can **Pin** a build on its build page, and **Unpin** it again. A pinned build, with its log, is kept permanently; build retention cleanup skips it. Pinned builds are marked with a pin icon in the build history.
 
+## Build retention
+
+Every hour, and a minute after startup, cisys deletes old builds of each project together with their logs. A finished, unpinned build is deleted when either
+
+* it finished more than the maximum age ago (default 30 days), or
+* the project has more newer finished, unpinned builds than the maximum count (default 50).
+
+Admins change both limits under **Settings** → **Retention**; `0` turns a limit off. Running and pinned builds are never deleted, and pinned builds do not count towards the limit. Deleted builds cannot be restored, so pin a build to keep it. `BUILD_RETENTION_EVERY` (default `1h`) changes how often the cleanup runs.
+
 ## Repository URLs
 
 Only `github.com` and `gitlab.com` HTTPS URLs are accepted for builds. Redirects, embedded credentials, query strings, fragments and non-default ports are rejected.
