@@ -39,6 +39,10 @@ The complete output of the build, standard output and standard error together, i
 * A build is also marked as truncated if the log could not be stored completely. Logs from before this version were capped at 120 KB; those that reached the cap are marked as truncated.
 * The build page shows the first 2 MiB of a log. **Download log** saves the full log; in Chromium-based browsers it is written straight to the chosen file, in other browsers it is held in browser memory first. The backend never holds a whole log in memory.
 
+## Pinned builds
+
+The project's creator and admins can **Pin** a build on its build page, and **Unpin** it again. A pinned build, with its log, is kept permanently; build retention cleanup skips it. Pinned builds are marked with a pin icon in the build history.
+
 ## Repository URLs
 
 Only `github.com` and `gitlab.com` HTTPS URLs are accepted for builds. Redirects, embedded credentials, query strings, fragments and non-default ports are rejected.

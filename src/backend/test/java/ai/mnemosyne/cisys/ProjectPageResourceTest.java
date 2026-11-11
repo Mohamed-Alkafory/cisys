@@ -71,6 +71,7 @@ class ProjectPageResourceTest {
         given().get("/api/project-pages/" + name.toLowerCase()).then().statusCode(200)
                 .body("project.name", equalTo(name), "project.privateRepository", equalTo(false),
                         "builds", hasSize(1), "builds[0].status", equalTo("PASSED"), "builds[0].logTruncated", equalTo(false),
+                        "builds[0].pinned", equalTo(false), "builds[0].canPin", equalTo(false),
                         "builds[0]", not(hasKey("output")),
                         "builds[0]", not(hasKey("requestedBy")), "builds[0]", not(hasKey("credentialRef")));
     }
@@ -138,7 +139,16 @@ class ProjectPageResourceTest {
     void ownerReadsPrivateBuildPage() {
         Seeded s = seed(true);
         given().get("/api/project-pages/" + s.name().toLowerCase() + "/builds/" + s.buildId()).then().statusCode(200)
-                .body("status", equalTo("PASSED"));
+                .body("status", equalTo("PASSED"), "canPin", equalTo(true), "projectId", notNullValue());
+    }
+
+    @Test
+    @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "other-id"))
+    void otherLeadCannotPinPublicBuild() {
+        Seeded s = seed(false);
+        given().get("/api/project-pages/" + s.name() + "/builds/" + s.buildId()).then().statusCode(200)
+                .body("canPin", equalTo(false));
     }
 
     @Test
@@ -208,6 +218,6 @@ class ProjectPageResourceTest {
     @TestSecurity(user = "admin", roles = "admin")
     @JwtSecurity(claims = @Claim(key = "sub", value = "admin-id"))
     void adminSeesPrivateProject() {
-        given().get("/api/project-pages/" + project(true)).then().statusCode(200);
+        given().get("/api/project-pages/" + project(true)).then().statusCode(200).body("builds[0].canPin", equalTo(true));
     }
 }

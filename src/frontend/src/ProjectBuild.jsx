@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, FolderGit2 } from 'lucide-react';
+import { ArrowLeft, FolderGit2, Pin, PinOff } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
 import PageHeader from './components/layout/PageHeader';
@@ -20,6 +20,7 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
   // undefined while loading, null when not found.
   const [build, setBuild] = useState(undefined);
   const [error, setError] = useState('');
+  const [pinning, setPinning] = useState(false);
 
   const loadBuild = useCallback(async () => {
     try {
@@ -30,6 +31,15 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
       else setError(e.message || 'Unable to load the build.');
     }
   }, [load, name, buildId]);
+
+  async function togglePin() {
+    setPinning(true); setError('');
+    try {
+      await load(`/projects/${build.projectId}/builds/${build.id}/pin`, { method: build.pinned ? 'DELETE' : 'PUT' });
+      await loadBuild();
+    } catch (e) { setError(e.message || 'Unable to change the pin.'); }
+    finally { setPinning(false); }
+  }
 
   useEffect(() => {
     const initial = setTimeout(loadBuild, 0);
@@ -64,9 +74,12 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
 
   return (
     <main id="project-build" className="page-container">
-      <PageHeader title={`Build #${build.id}`} actions={
+      <PageHeader title={`Build #${build.id}`} actions={<>
+        {build.canPin && <Button type="button" variant="outline" onClick={togglePin} disabled={pinning}>
+          {build.pinned ? <><PinOff aria-hidden="true"/> Unpin</> : <><Pin aria-hidden="true"/> Pin</>}
+        </Button>}
         <Button type="button" variant="outline" onClick={onBack}><ArrowLeft aria-hidden="true"/> Back to builds</Button>
-      }/>
+      </>}/>
       {error && <div className="error-message" role="alert">{error}</div>}
       <Card className="project-card">
         <CardHeader>
@@ -90,6 +103,8 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
             <dd>{duration(build)}</dd>
             <dt>Exit code</dt>
             <dd>{build.exitCode ?? '—'}</dd>
+            <dt>Pinned</dt>
+            <dd>{build.pinned ? 'Yes' : 'No'}</dd>
             <dt>Image</dt>
             <dd>{build.image ?? 'Unknown'}{build.imageDigest ? ` (${build.imageDigest})` : ''}</dd>
             <dt>Command</dt>

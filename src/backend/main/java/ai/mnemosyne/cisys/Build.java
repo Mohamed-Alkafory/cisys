@@ -23,6 +23,8 @@ import java.time.Instant;
  @Column(length=300) public String imageDigest;
  public Integer exitCode;
  @Column(nullable=false) public boolean logTruncated;
+ /** Pinned builds are kept by retention cleanup. */
+ @Column(nullable=false) public boolean pinned;
  public Instant startedAt;
  public Instant finishedAt;
 }

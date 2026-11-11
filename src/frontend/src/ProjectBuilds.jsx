@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { FolderGit2, GitBranch, LockKeyhole, LockKeyholeOpen, LogIn } from 'lucide-react';
+import { FolderGit2, GitBranch, LockKeyhole, LockKeyholeOpen, LogIn, Pin } from 'lucide-react';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
@@ -188,6 +188,7 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
                               event.stopPropagation();
                               openBuild(b);
                             }}>#{b.id}</a>
+                          {b.pinned && <Pin className="build-pin" size={14} role="img" aria-label="Pinned"/>}
                         </td>
                         <td className="build-branch">{b.branch || '—'}</td>
                         <td><code className="build-commit" title={b.revision ?? undefined}>{shortRevision(b.revision)}</code></td>

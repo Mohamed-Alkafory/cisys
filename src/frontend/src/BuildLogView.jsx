@@ -125,7 +125,7 @@ export default function BuildLogView({ api, logPath, build, onRefresh }) {
     <details className="build-row" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         #{build.id} · {build.status}{build.branch ? ` · ${build.branch}` : ''} · {startedAt(build)} · {duration(build)}
-        {build.revision ? ` · ${build.revision.slice(0, 12)}` : ''}{build.exitCode != null ? ` · exit ${build.exitCode}` : ''}
+        {build.revision ? ` · ${build.revision.slice(0, 12)}` : ''}{build.exitCode != null ? ` · exit ${build.exitCode}` : ''}{build.pinned ? ' · pinned' : ''}
       </summary>
       {open && <BuildLogPanel api={api} logPath={logPath} build={build} onRefresh={onRefresh}/>}
     </details>

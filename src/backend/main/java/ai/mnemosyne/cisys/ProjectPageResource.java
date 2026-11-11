@@ -36,9 +36,9 @@ public class ProjectPageResource {
 
     public record ProjectInfo(Long id, String name, String repositoryUrl, boolean privateRepository) {}
     /** Leaves out who requested the build and any credential reference, as the page may be anonymous. */
-    public record PageBuild(Long id, String status, String revision, String branch, String image, String command,
-                            Instant startedAt, Instant finishedAt, String imageDigest, Integer exitCode,
-                            boolean logTruncated) {}
+    public record PageBuild(Long id, Long projectId, String status, String revision, String branch, String image,
+                            String command, Instant startedAt, Instant finishedAt, String imageDigest, Integer exitCode,
+                            boolean logTruncated, boolean pinned, boolean canPin) {}
     public record ProjectPage(ProjectInfo project, List<PageBuild> builds) {}
 
     @GET
@@ -48,7 +48,9 @@ public class ProjectPageResource {
         List<Build> rows = branchFilter.isEmpty()
                 ? Build.<Build>find("projectId = ?1 order by id desc", p.id).page(0, 50).list()
                 : Build.<Build>find("projectId = ?1 and branch = ?2 order by id desc", p.id, branchFilter).page(0, 50).list();
-        List<PageBuild> builds = rows.stream().map(ProjectPageResource::pageBuild).toList();
+        // Whoever may see a private project may also pin its builds.
+        boolean canPin = access.canSeePrivate(p);
+        List<PageBuild> builds = rows.stream().map(b -> pageBuild(b, canPin)).toList();
         return new ProjectPage(new ProjectInfo(p.id, p.name, p.repositoryUrl, p.privateRepository), builds);
     }
 
@@ -59,12 +61,12 @@ public class ProjectPageResource {
         Project p = access.visible(name);
         Build b = Build.findById(buildId);
         if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
-        return pageBuild(b);
+        return pageBuild(b, access.canSeePrivate(p));
     }
 
-    private static PageBuild pageBuild(Build b) {
-        return new PageBuild(b.id, b.status, b.revision, b.branch, b.image, b.command, b.startedAt, b.finishedAt,
-                b.imageDigest, b.exitCode, b.logTruncated);
+    private static PageBuild pageBuild(Build b, boolean canPin) {
+        return new PageBuild(b.id, b.projectId, b.status, b.revision, b.branch, b.image, b.command, b.startedAt,
+                b.finishedAt, b.imageDigest, b.exitCode, b.logTruncated, b.pinned, canPin);
     }
 
     @GET

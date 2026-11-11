@@ -85,6 +85,7 @@ body { background: var(--body-bg); color: var(--body-text); }
 .dark .build-status-pass { color: #4ade80; }
 .dark .build-status-fail { color: #f87171; }
 .build-link { font-weight: 600; color: var(--section-header-color); text-decoration: underline; text-underline-offset: .2rem; }
+.build-pin { display: inline; margin-left: .35rem; vertical-align: -2px; color: var(--muted-foreground); }
 .build-branch { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
 .build-commit { font-size: .8rem; }
 .build-meta { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }

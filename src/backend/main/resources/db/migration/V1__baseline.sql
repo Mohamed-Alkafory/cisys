@@ -39,6 +39,7 @@ ALTER TABLE build ADD COLUMN IF NOT EXISTS imagedigest character varying(300);
 ALTER TABLE build ADD COLUMN IF NOT EXISTS exitcode integer;
 ALTER TABLE build ADD COLUMN IF NOT EXISTS logtruncated boolean NOT NULL DEFAULT false;
 ALTER TABLE build ADD COLUMN IF NOT EXISTS logoid lo;
+ALTER TABLE build ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false;
 
 -- Moves logs from the old output column into large objects.
 DO $$

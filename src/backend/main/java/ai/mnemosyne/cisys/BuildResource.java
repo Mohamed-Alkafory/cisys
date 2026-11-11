@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.StreamingOutput;
@@ -28,13 +29,13 @@ public class BuildResource {
  public record BuildResponse(Long id, Long projectId, String requestedBy, String status,
      String revision, Instant startedAt, Instant finishedAt, String branch,
      String image, String command, @JsonInclude(JsonInclude.Include.NON_NULL) String credentialRef,
-     String imageDigest, Integer exitCode, boolean logTruncated) {}
+     String imageDigest, Integer exitCode, boolean logTruncated, boolean pinned) {}
 
  private BuildResponse response(Build build) {
   return new BuildResponse(build.id, build.projectId, build.requestedBy, build.status,
       build.revision, build.startedAt, build.finishedAt, build.branch,
       build.image, build.command, identity.hasRole("admin") ? build.credentialRef : null,
-      build.imageDigest, build.exitCode, build.logTruncated);
+      build.imageDigest, build.exitCode, build.logTruncated, build.pinned);
  }
  private Project visible(Long id) {
   if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
@@ -55,6 +56,20 @@ public class BuildResource {
  @GET @Path("/{buildId}/log") @Produces("text/plain; charset=UTF-8") public StreamingOutput log(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
   detail(id,buildId);
   return out->logs.streamTo(buildId,out);
+ }
+ @PUT @Path("/{buildId}/pin") @Transactional public BuildResponse pin(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
+  return setPinned(id,buildId,true);
+ }
+ @DELETE @Path("/{buildId}/pin") @Transactional public BuildResponse unpin(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
+  return setPinned(id,buildId,false);
+ }
+ /** Only the project's owner and admins may pin. */
+ private BuildResponse setPinned(Long id,Long buildId,boolean pinned) {
+  Project p=visible(id);
+  if(!identity.hasRole("admin") && !((JsonWebToken)identity.getPrincipal()).getSubject().equals(p.ownerSubject))throw new ForbiddenException();
+  Build b=Build.findById(buildId);if(b==null || !id.equals(b.projectId))throw new NotFoundException();
+  b.pinned=pinned;
+  return response(b);
  }
  @POST public BuildResponse start(@PathParam("projectId") Long id,RunRequest input) {
   Project p=visible(id);

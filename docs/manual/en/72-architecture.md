@@ -47,6 +47,7 @@ erDiagram
         STRING image_digest
         INTEGER exit_code
         BOOLEAN log_truncated
+        BOOLEAN pinned
         OID log_oid
         TIMESTAMP started_at
         TIMESTAMP finished_at

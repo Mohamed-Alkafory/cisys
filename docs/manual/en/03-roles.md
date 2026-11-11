@@ -10,11 +10,11 @@ The **Member** role is the standard read-only role. Members can view public proj
 
 ## Lead
 
-The **Lead** role is for people who run projects. Leads can do everything a member can, create projects, and start manual builds on projects they can see.
+The **Lead** role is for people who run projects. Leads can do everything a member can, create projects, start manual builds on projects they can see, and pin builds of the projects they created.
 
 ## Admin
 
-The **Admin** role manages the installation. Admins can see every project including private projects of other users, start builds, use credential references for private Git repositories, manage the build images, and change the branding.
+The **Admin** role manages the installation. Admins can see every project including private projects of other users, start and pin builds, use credential references for private Git repositories, manage the build images, and change the branding.
 
 ## Access summary
 
@@ -26,6 +26,7 @@ The **Admin** role manages the installation. Admins can see every project includ
 | Create a project                    | no     | yes  | yes   |
 | View build history and logs         | yes    | yes  | yes   |
 | Start a manual build                | no     | yes  | yes   |
+| Pin a build                         | no     | own  | yes   |
 | Use a Git credential reference      | no     | no   | yes   |
 | Manage build images                 | no     | no   | yes   |
 | Change branding                     | no     | no   | yes   |
