@@ -20,6 +20,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import jakarta.persistence.PersistenceException;
 
 @Path("/api") @Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
@@ -38,6 +39,8 @@ public class ProjectResource {
     private void requireCisysRole() {
         if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
     }
+    private static final Pattern NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,99}");
+    static final String NAME_RULE = "Project names use letters, digits, '.', '_' and '-', and start with a letter or digit";
     public record CreateProject(String name, String repositoryUrl, boolean privateRepository) {}
     @GET @Path("/session") public Map<String,Object> session() {
         requireCisysRole();
@@ -54,7 +57,7 @@ public class ProjectResource {
         try { URI url = URI.create(input.repositoryUrl().trim()); if (!"https".equals(url.getScheme()) || url.getHost() == null || url.getUserInfo() != null) throw new IllegalArgumentException(); } catch (IllegalArgumentException e) { throw new BadRequestException("Use an HTTPS repository URL without credentials"); }
         String name = input.name().trim(), url = gitUrl(input.repositoryUrl().trim());
         // The name is the project's URL path, for example /cisys/ in the UI.
-        if (name.contains("/")) throw new BadRequestException("Project names cannot contain /");
+        if (!NAME.matcher(name).matches()) throw badRequest(NAME_RULE);
         // Checked across all projects, including private projects the caller cannot see.
         if (Project.count("lower(name) = ?1", name.toLowerCase(Locale.ROOT)) > 0) throw conflict("A project with this name already exists");
         if (Project.count("repositoryUrl", url) > 0) throw conflict("A project with this repository URL already exists");

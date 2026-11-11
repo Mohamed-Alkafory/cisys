@@ -47,8 +47,21 @@ class ProjectResourceTest {
     }
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
-    void rejectsSlashInName() {
-        given().contentType("application/json").body("{\"name\":\"org/repo\",\"repositoryUrl\":\"https://example.com/org-repo.git\"}")
+    void rejectsInvalidNames() {
+        for (String name : new String[] {"org/repo", ".", "..", ".hidden", "-x", "_x", "a b", "a?b", "a#b", "a%20b", "a\\nb", "a\\u200Bb", "c\\u0456sys", "\\u00fcn"}) {
+            given().contentType("application/json").body("{\"name\":\"" + name + "\",\"repositoryUrl\":\"https://example.com/invalid-name.git\"}")
+                .when().post("/api/projects").then().statusCode(400).body("error", equalTo(ProjectResource.NAME_RULE));
+        }
+    }
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+    void acceptsSlugNames() {
+        for (String name : new String[] {"slug", "My.Project_2-x", "9lives", "a".repeat(100)}) {
+            given().contentType("application/json").body("{\"name\":\"" + name + "\",\"repositoryUrl\":\"https://example.com/slug-" + name + ".git\"}")
+                .when().post("/api/projects").then().statusCode(201);
+        }
+        given().urlEncodingEnabled(false).when().get("/api/project-pages/My.Project_2-x").then().statusCode(200).body("project.name", equalTo("My.Project_2-x"));
+        given().contentType("application/json").body("{\"name\":\"" + "a".repeat(101) + "\",\"repositoryUrl\":\"https://example.com/too-long.git\"}")
             .when().post("/api/projects").then().statusCode(400);
     }
     @Test @TestSecurity(user = "lead", roles = "lead")

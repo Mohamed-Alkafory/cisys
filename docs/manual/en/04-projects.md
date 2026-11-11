@@ -29,9 +29,15 @@ Private projects use the same page once you sign in as their owner or an adminis
 
 Leads and admins can create projects. Enter
 
-* **Name**: up to 100 characters
+* **Name**: up to 100 letters, digits, `.`, `_` and `-`, starting with a letter or digit, for example `my-project`. The name is the project's URL, `/<name>/`
 * **Repository URL**: an HTTPS URL without embedded credentials, up to 2048 characters
 * **Private**: whether the project is private
+
+Projects created before this naming rule keep working. An administrator can rename one in the database; its builds follow, because they reference the project's id:
+
+```sql
+UPDATE project SET name = 'new-name' WHERE name = 'old name';
+```
 
 The creator's Keycloak subject is stored as the owner.
 

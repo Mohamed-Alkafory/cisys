@@ -269,7 +269,7 @@ function App() {
             <CardHeader><CardTitle>Add a project</CardTitle></CardHeader>
             <CardContent>
               <form className="project-grid project-add" onSubmit={create}>
-                <div className="form-field"><Label htmlFor="project-name">Project name</Label><Input id="project-name" required maxLength="100" pattern="[^/]+" title="Project names cannot contain /" value={name} onChange={(e) => setName(e.target.value)} placeholder="My project"/></div>
+                <div className="form-field"><Label htmlFor="project-name">Project name</Label><Input id="project-name" required maxLength="100" pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" title="Project names use letters, digits, '.', '_' and '-', and start with a letter or digit" value={name} onChange={(e) => setName(e.target.value)} placeholder="my-project"/></div>
                 <div className="form-field"><Label htmlFor="repository-url">Repository URL</Label><Input id="repository-url" required type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/org/repo.git"/></div>
                 <div className="form-field"><Label htmlFor="project-private" className="whitespace-nowrap">Private project</Label><span className="private-choice"><input id="project-private" type="checkbox" checked={priv} onChange={(e) => setPriv(e.target.checked)}/></span></div>
                 <Button type="submit" size="icon" className="h-10 w-10 justify-self-end" disabled={submitting} title="Add project" aria-label="Add project"><Plus size={16} aria-hidden="true"/></Button>
