@@ -9,6 +9,7 @@
 package ai.mnemosyne.cisys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,6 +82,18 @@ class GitRepositoryServiceTest {
     assertEquals("branch-00", names.get(0));
     assertTrue(names.contains("branch-59"));
     assertEquals("master", names.get(60));
+  }
+
+  @Test
+  void onlySkipsCertificateVerificationWhenAsked() throws Exception {
+    try (Git git = Git.init().setDirectory(temp.resolve("transport").toFile()).call()) {
+      var cfg = git.getRepository().getConfig();
+      GitRepositoryService.configureTransport(cfg, true);
+      assertEquals("false", cfg.getString("http", null, "followRedirects"));
+      assertNull(cfg.getString("http", null, "sslVerify"));
+      GitRepositoryService.configureTransport(cfg, false);
+      assertEquals("false", cfg.getString("http", null, "sslVerify"));
+    }
   }
 
   @Test

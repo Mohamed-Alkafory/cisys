@@ -21,9 +21,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Branches of a project page. Public projects read the repository. Private projects use the
- * branches that already have builds, because reading a private repository needs credentials;
- * anonymous callers and users without access get a 404, just like the rest of the private page.
+ * Branches of a project page. Public projects read the repository. Private projects read it too
+ * when the project has a credential reference; otherwise they use the branches that already have
+ * builds. Anonymous callers and users without access get a 404, just like the rest of the private
+ * page.
  */
 @Path("/api/project-pages/{name}/branches")
 @Produces(MediaType.APPLICATION_JSON)
@@ -39,7 +40,7 @@ public class ProjectBranchResource {
   @GET
   public Response list(@PathParam("name") String name) {
     Project project = access.visible(name);
-    if (project.privateRepository) {
+    if (project.privateRepository && project.credentialRef == null) {
       return Response.ok(new Branches(buildBranches(project), null)).build();
     }
     try {

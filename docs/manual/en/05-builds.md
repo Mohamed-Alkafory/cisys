@@ -67,7 +67,7 @@ Admins change both limits under **Settings** → **Retention**; `0` turns a limi
 
 ## Repository URLs
 
-Only `github.com` and `gitlab.com` HTTPS URLs are accepted for builds. Redirects, embedded credentials, query strings, fragments and non-default ports are rejected.
+Only HTTPS repositories on an allowed host are accepted for builds. Redirects, embedded credentials, query strings and fragments are rejected. Hosts, ports and private networks are configured by an administrator; see the **Projects** chapter.
 
 ## Private Git repositories
 

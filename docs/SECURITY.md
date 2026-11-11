@@ -104,7 +104,9 @@ Residual risk
 ### Repository addresses
 
 * Only HTTPS repositories on `cisys.git.allowed-hosts` are accepted; the default is `github.com` and `gitlab.com`.
+* Only ports listed in `cisys.git.allowed-ports` are accepted; the default is `443`, and a URL without a port counts as `443`.
 * Every address the host resolves to is checked. Loopback, private, link-local, multicast, documentation and metadata ranges are rejected, including IPv4-mapped IPv6 forms such as `::ffff:127.0.0.1`. An administrator can allow an internal range explicitly through `cisys.git.allowed-networks`.
+* A host listed in `cisys.git.insecure-tls-hosts` is fetched without certificate verification, for a local server with a self-signed certificate. Prefer adding the certificate to the JVM truststore instead; the list turns verification off for that host only, and the host must still be on the allowlist and pass the address check.
 * The check runs when a project is created, when a build starts, and again immediately before JGit fetches, because DNS can change after a project was saved. A host that resolves to a blocked address fails the build with `Build failed: The repository host resolves to a blocked address`.
 * Branch discovery reads the project's own repository URL, never a URL supplied by the caller.
 
@@ -116,7 +118,13 @@ Known gaps
 
 ### Git credentials
 
-For private repositories set an environment variable named `CISYS_GIT_<NAME>` to a read-only provider token in the backend environment before starting it, then enter the variable name in the build form as an admin. The value is never stored in the database. Only the backend's JGit fetch uses it; the image build does not receive it, so it is not in the image and steps cannot read it. Never place secrets in workflow files or build output; each build stores its workflow file.
+For private repositories set an environment variable named `CISYS_GIT_<NAME>` to a read-only provider token in the backend environment before starting it. The value is never stored in the database. Only the backend's JGit fetch uses it; the image build does not receive it, so it is not in the image and steps cannot read it. Never place secrets in workflow files or build output; each build stores its workflow file.
+
+* An admin can store the **variable name** on a private project when creating it, and change or clear it later on the project edit form (`PUT /api/projects/{id}`) or through `PUT /api/projects/{id}/credential`. Only the name is stored; it is returned to admins and left out for everyone else.
+* Branch discovery uses that credential for the project page. Without one, a private project keeps showing only the branches that already have builds.
+* The credential belongs to the repository. When a lead changes the repository URL, the credential is cleared, so it is never sent to a new host. Admins may change the URL and the credential in the same request.
+* Builds keep using the per-build credential reference from the build form. A project credential is not used for builds.
+* A credential cannot be set on a public project, and the name must match `CISYS_GIT_[A-Z0-9_]{1,80}`.
 
 ## Public access limits
 

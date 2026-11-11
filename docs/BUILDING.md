@@ -119,6 +119,10 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | `DB_USER`           | `cisys`                                  | Database user                                        |
 | `DB_PASSWORD`       | `cisys`                                  | Database password                                    |
 | `CISYS_GIT_*`       | not set                                  | Read-only Git provider tokens, referenced by name from the build form |
+| `CISYS_GIT_ALLOWED_HOSTS` | `github.com,gitlab.com`            | HTTPS hosts that may be cloned                       |
+| `CISYS_GIT_ALLOWED_PORTS` | `443`                              | Ports that may be used; keep `443` in the list       |
+| `CISYS_GIT_ALLOWED_NETWORKS` | not set                        | Private CIDR ranges that may be fetched, for a local server |
+| `CISYS_GIT_INSECURE_TLS_HOSTS` | not set                     | Hosts whose self-signed certificate is accepted      |
 
 The runner executes repository-controlled code. Read the **Builds** chapter of the manual and [SECURITY.md](SECURITY.md) before using it.
 

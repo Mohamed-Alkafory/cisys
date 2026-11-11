@@ -19,6 +19,8 @@ import java.util.TreeSet;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.StoredConfig;
+import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.jgit.util.FileUtils;
 
 /**
@@ -32,18 +34,26 @@ public class GitRepositoryService {
   @Inject RepositoryUrlValidator repositoryUrls;
 
   /**
-   * Branches of the project's repository. Private projects need credentials, so they are not read.
+   * Branches of the project's repository. Private projects need a credential, so they are not read
+   * without one.
    */
   public List<String> listBranches(Project project) {
-    if (project.privateRepository) return List.of();
-    return listBranches(project.repositoryUrl);
+    if (project.privateRepository && project.credentialRef == null) return List.of();
+    return listBranches(project.repositoryUrl, project.credentialRef);
   }
 
   /** Branches of an HTTPS repository on an allowed host. */
   public List<String> listBranches(String repositoryUrl) {
+    return listBranches(repositoryUrl, null);
+  }
+
+  /** Branches of an HTTPS repository on an allowed host, with the given credential reference. */
+  public List<String> listBranches(String repositoryUrl, String credentialRef) {
     repositoryUrls.validate(repositoryUrl);
     try {
-      return branchNames(remoteBranchRefs(repositoryUrl));
+      return branchNames(remoteBranchRefs(repositoryUrl, credentialRef));
+    } catch (BranchLookupException e) {
+      throw e;
     } catch (GitAPIException | RuntimeException e) {
       throw new BranchLookupException("Unable to read branches from the repository", e);
     }
@@ -53,22 +63,24 @@ public class GitRepositoryService {
    * The remote refs used for branch discovery. Overridden in tests so they never reach the network.
    */
   protected Collection<String> remoteBranchRefs(String repositoryUrl) throws GitAPIException {
+    return remoteBranchRefs(repositoryUrl, null);
+  }
+
+  /** The remote refs used for branch discovery, using the credential reference when one is set. */
+  protected Collection<String> remoteBranchRefs(String repositoryUrl, String credentialRef)
+      throws GitAPIException {
+    String token = token(credentialRef);
     Path dir = null;
     try {
       dir = Files.createTempDirectory("cisys-branches-");
       try (Git git = Git.init().setDirectory(dir.toFile()).call()) {
-        var cfg = git.getRepository().getConfig();
-        cfg.setString("http", null, "followRedirects", "false");
-        cfg.save();
-        return git
-            .lsRemote()
-            .setRemote(repositoryUrl)
-            .setHeads(true)
-            .setTimeout(TIMEOUT_SECONDS)
-            .call()
-            .stream()
-            .map(Ref::getName)
-            .toList();
+        boolean verifyTls = repositoryUrls == null || repositoryUrls.verifyTls(repositoryUrl);
+        configureTransport(git.getRepository().getConfig(), verifyTls);
+        var command =
+            git.lsRemote().setRemote(repositoryUrl).setHeads(true).setTimeout(TIMEOUT_SECONDS);
+        if (token != null)
+          command.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", token));
+        return command.call().stream().map(Ref::getName).toList();
       }
     } catch (IOException e) {
       throw new GitAPIException("Unable to prepare the repository", e) {};
@@ -81,6 +93,24 @@ public class GitRepositoryService {
         }
       }
     }
+  }
+
+  /**
+   * The token of a credential reference, or null when the project has none. Overridden in tests.
+   */
+  protected String token(String credentialRef) {
+    if (credentialRef == null) return null;
+    String token = System.getenv(credentialRef);
+    if (token == null || token.isBlank())
+      throw new BranchLookupException("Missing Git credential", null);
+    return token;
+  }
+
+  /** Never follow redirects; certificate verification is off only for hosts an admin allowed. */
+  static void configureTransport(StoredConfig cfg, boolean verifyTls) throws IOException {
+    cfg.setString("http", null, "followRedirects", "false");
+    if (!verifyTls) cfg.setString("http", null, "sslVerify", "false");
+    cfg.save();
   }
 
   /** Keeps only local branch refs, without duplicates, sorted. */

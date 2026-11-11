@@ -51,10 +51,11 @@ final class Checkout {
       String url,
       String branch,
       CredentialsProvider credentials,
+      boolean verifyTls,
       int maxMib,
       int maxFiles)
       throws Exception {
-    return fetch(dir, url, branch, credentials, maxMib, maxFiles, () -> false);
+    return fetch(dir, url, branch, credentials, verifyTls, maxMib, maxFiles, () -> false);
   }
 
   /**
@@ -66,6 +67,7 @@ final class Checkout {
       String url,
       String branch,
       CredentialsProvider credentials,
+      boolean verifyTls,
       int maxMib,
       int maxFiles,
       BooleanSupplier cancelled)
@@ -77,12 +79,11 @@ final class Checkout {
         Git git = Git.wrap(repo)) {
       repo.create();
       var cfg = repo.getConfig();
-      cfg.setString("http", null, "followRedirects", "false");
       cfg.setString("remote", "origin", "url", url);
       cfg.setString("remote", "origin", "fetch", "+refs/heads/*:refs/remotes/origin/*");
       cfg.setString("branch", branch, "remote", "origin");
       cfg.setString("branch", branch, "merge", Constants.R_HEADS + branch);
-      cfg.save();
+      GitRepositoryService.configureTransport(cfg, verifyTls);
       var fetch =
           git.fetch()
               .setRemote(url)

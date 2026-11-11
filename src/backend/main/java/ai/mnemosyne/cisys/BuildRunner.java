@@ -596,6 +596,7 @@ public class BuildRunner {
               url,
               request.branch(),
               credentials,
+              repositoryUrls.verifyTls(url),
               limits[0],
               limits[1],
               () -> handle.cancelled);
