@@ -7,8 +7,8 @@
  */
 
 import React, { useState } from 'react';
-import { Moon, Sun, LogIn } from 'lucide-react';
-import { Button } from './components/ui/button';
+import { ChevronDown, CircleUserRound, LogIn, Moon, Sun } from 'lucide-react';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './components/ui/dropdown-menu';
 import AppFooter from './components/layout/AppFooter';
 import PublicStats from './PublicStats';
 import headerLogo from './assets/logo-header.svg';
@@ -31,7 +31,17 @@ export default function PublicHome({ branding, stats, statsError, logoUrl, onSig
           <button type="button" className="theme-toggle" onClick={() => setDark(!dark)} aria-label="Toggle dark mode" aria-pressed={dark} title="Toggle dark mode">
             <Sun size={15} aria-hidden="true"/><Moon size={15} aria-hidden="true"/><span className="theme-knob"/>
           </button>
-          <Button type="button" onClick={onSignIn}><LogIn aria-hidden="true"/> Sign in</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="user-menu-trigger" aria-label="Account menu" title="Account menu">
+                <CircleUserRound size={22} aria-hidden="true"/>
+                <ChevronDown size={14} aria-hidden="true"/>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={onSignIn}><LogIn aria-hidden="true"/> Sign in</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
       {children || <main id="public-home" className="page-container">
