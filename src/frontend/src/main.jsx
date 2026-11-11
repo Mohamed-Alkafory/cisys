@@ -57,14 +57,12 @@ async function api(path, opts = {}) {
     const body = await response.json().catch(() => null);
     if (body?.error) throw Object.assign(new Error(body.error), { status: response.status });
   }
-  if (!response.ok) throw Object.assign(new Error(response.status === 429 ? 'The build queue is full. Try again later.' : `Request failed (${response.status}). Check the branch, image and project access.`), { status: response.status });
+  if (!response.ok) throw Object.assign(new Error(response.status === 429 ? 'The build queue is full. Try again later.' : `Request failed (${response.status}). Check the branch and project access.`), { status: response.status });
   if (opts.raw) return response;
   if (response.status === 204) return null;
   return response.json();
 }
 
-// Command used by the Build button on a project page's branch list.
-const DEFAULT_BUILD_COMMAND = 'echo Hello from Cisys; ls';
 
 function App() {
   // 'loading' until Keycloak answers, then 'public' for anonymous visitors or 'app' for signed-in users.
@@ -79,7 +77,6 @@ function App() {
   const [url, setUrl] = useState('');
   const [priv, setPriv] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [images, setImages] = useState([]);
   const [branding, setBranding] = useState(null);
   const [page, setPage] = useState('projects');
   // Set when the URL is a project page such as /cisys/ or a build such as /cisys/master/build/51.
@@ -138,7 +135,6 @@ function App() {
         setUser(await api('/session'));
         setBranding(await api('/branding'));
         setProjects(await api('/projects'));
-        setImages(await api('/images'));
         setReady(true);
       } catch (e) {
         setError(e.message || 'Unable to load Cisys');
@@ -210,10 +206,9 @@ function App() {
     }
   }
 
-  // Starts a build from a project page's branch list with the first allowed image and the default command.
+  // Starts a build from a project page's branch list; the branch's .cisys/workflows/ci.yml chooses the image and the steps.
   async function startBranchBuild(projectId, buildBranch) {
-    if (!images[0]) throw new Error('No images are allowed for builds yet.');
-    await api(`/projects/${projectId}/builds`, { method: 'POST', body: JSON.stringify({ branch: buildBranch, image: images[0], command: DEFAULT_BUILD_COMMAND }) });
+    await api(`/projects/${projectId}/builds`, { method: 'POST', body: JSON.stringify({ branch: buildBranch }) });
   }
 
   if (mode === 'public') return <PublicHome branding={branding || DEFAULT_BRANDING} stats={stats} statsError={statsError} logoUrl={API + '/branding/logo'} onSignIn={() => keycloak.login()} dark={dark} setDark={setDark}>
@@ -261,7 +256,7 @@ function App() {
         <Card className="project-card">
           <CardHeader><CardTitle>{role}</CardTitle><CardDescription>Signed in as {user.username}</CardDescription></CardHeader>
         </Card>
-      </main> : page === 'images' && user.roles.includes('admin') ? <ImagesPanel api={api} onSaved={setImages}/> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : page === 'settings' && user.roles.includes('admin') ? <SettingsPanel api={api}/> : <main id="projects" className="page-container">
+      </main> : page === 'images' && user.roles.includes('admin') ? <ImagesPanel api={api}/> : page === 'branding' && user.roles.includes('admin') ? <BrandingPanel branding={branding} save={async (value) => { const saved = await api('/branding', { method: 'PUT', body: JSON.stringify(value) }); setBranding(saved); return saved; }}/> : page === 'settings' && user.roles.includes('admin') ? <SettingsPanel api={api}/> : <main id="projects" className="page-container">
         <PageHeader title="Projects" actions={<Badge variant="outline">{projects.length} {projects.length === 1 ? 'project' : 'projects'}</Badge>}/>
         {error && <div className="error-message" role="alert">{error}</div>}
         {canCreate && (

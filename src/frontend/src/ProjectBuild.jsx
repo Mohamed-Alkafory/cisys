@@ -108,8 +108,8 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
             <dd>{build.pinned ? 'Yes' : 'No'}</dd>
             <dt>Image</dt>
             <dd>{build.image ?? 'Unknown'}{build.imageDigest ? ` (${build.imageDigest})` : ''}</dd>
-            <dt>Command</dt>
-            <dd><pre className="whitespace-pre-wrap">{build.command ?? 'Unknown'}</pre></dd>
+            <dt>Workflow</dt>
+            <dd>{build.workflow ? <pre className="whitespace-pre-wrap">{build.workflow}</pre> : build.status === 'QUEUED' ? 'Not read yet' : 'None'}</dd>
           </dl>
         </CardContent>
       </Card>

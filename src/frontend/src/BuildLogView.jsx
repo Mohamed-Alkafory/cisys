@@ -100,8 +100,6 @@ export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true,
         <dd>{build.revision ?? 'Unknown'}</dd>
         <dt>Image</dt>
         <dd>{build.image ?? 'Unknown'}{build.imageDigest ? ` (${build.imageDigest})` : ''}</dd>
-        <dt>Command</dt>
-        <dd><pre className="whitespace-pre-wrap">{build.command ?? 'Unknown'}</pre></dd>
       </dl>}
       {build.logTruncated && <p className="file-help" role="status">The stored output for this build is incomplete or was cut at the size limit.</p>}
       <div className={title ? 'build-log-actions build-log-header' : 'build-log-actions'}>

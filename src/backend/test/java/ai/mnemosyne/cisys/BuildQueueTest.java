@@ -26,7 +26,7 @@ class BuildQueueTest {
  @Inject BuildLogs logs;
  @Inject BuildRetention retention;
  Long project;
- final BuildResource.RunRequest request=new BuildResource.RunRequest("main","alpine:3.23","echo queued","CISYS_GIT_TEST");
+ final BuildResource.RunRequest request=new BuildResource.RunRequest("main","CISYS_GIT_TEST");
  @BeforeEach void setup(){
   runner=io.quarkus.arc.ClientProxy.unwrap(runner);
   QuarkusTransaction.requiringNew().run(()->{Build.deleteAll();Project.deleteAll();});
@@ -47,8 +47,8 @@ class BuildQueueTest {
   finish(second.id);assertEquals(third.id,runner.claim().id);assertNull(runner.claim());
   Build stored=read(third.id);assertNotNull(stored.startedAt);
   assertEquals("https://github.com/example/original.git",stored.repositoryUrl);
-  assertEquals(request.branch(),stored.branch);assertEquals(request.command(),stored.command);
-  assertEquals(request.image(),stored.image);assertEquals(request.credentialRef(),stored.credentialRef);
+  assertEquals(request.branch(),stored.branch);assertEquals(request.credentialRef(),stored.credentialRef);
+  assertNull(stored.image);assertNull(stored.workflow);
  }
  @Test void concurrentClaimsNeverDuplicateOrExceedCapacity()throws Exception{
   runner.concurrency=3;for(int i=0;i<10;i++)submit();
@@ -159,6 +159,7 @@ class BuildQueueTest {
   restarted.commands=(args,timeout,limit)->{
    calls.add(List.copyOf(args));
    if(args.get(1).equals("ps"))return new BuildRunner.Result(0,false,"cisys-build-1\ncisys-build-2\nunrelated\n");
+   if(args.get(1).equals("images"))return new BuildRunner.Result(0,false,"localhost/cisys-build-3\ndocker.io/library/alpine\nlocalhost/cisys-build-x\n");
    return new BuildRunner.Result(0,false,"");
   };
   restarted.logs=logs;restarted.concurrency=1;restarted.queueLimit=100;
@@ -167,7 +168,9 @@ class BuildQueueTest {
    assertEquals(List.of(
        List.of("podman","ps","-a","--format","{{.Names}}"),
        List.of("podman","rm","-f","cisys-build-1"),
-       List.of("podman","rm","-f","cisys-build-2")),calls);
+       List.of("podman","rm","-f","cisys-build-2"),
+       List.of("podman","images","--format","{{.Repository}}"),
+       List.of("podman","rmi","-f","localhost/cisys-build-3")),calls);
    assertFalse(Files.exists(stale),"the stale checkout is removed");
    assertTrue(Files.exists(keep),"unrelated directories are kept");
    assertEquals(Build.Status.FAILED,read(interrupted.id).status);

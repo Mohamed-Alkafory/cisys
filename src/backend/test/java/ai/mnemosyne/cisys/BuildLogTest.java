@@ -135,12 +135,12 @@ import java.util.concurrent.TimeUnit;
   Long project=project();
   logs.failWrites(true);
   try{
-   Build created=runner.submit(project,"owner-id","file:///nonexistent/cisys-"+project,new BuildResource.RunRequest("main","alpine:3.23","true",null));
+   Build created=runner.submit(project,"owner-id","file:///nonexistent/cisys-"+project,new BuildResource.RunRequest("main",null));
    runner.dispatch();
    long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(60);Build b;
    do{Thread.sleep(100);b=QuarkusTransaction.requiringNew().call(()->Build.findById(created.id));}while((b.status==Build.Status.RUNNING || b.status==Build.Status.QUEUED)&&System.nanoTime()<deadline);
    assertEquals(Build.Status.FAILED,b.status);assertNotNull(b.finishedAt);assertTrue(b.logTruncated);assertNull(b.exitCode);
-   assertEquals("main",b.branch);assertEquals("alpine:3.23",b.image);
+   assertEquals("main",b.branch);assertNull(b.image);
    while(runner.hasPendingBuilds()&&System.nanoTime()<deadline)Thread.sleep(50);
    assertFalse(runner.hasPendingBuilds(),"the runner is released");
   }finally{logs.failWrites(false);}

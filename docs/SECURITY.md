@@ -70,10 +70,10 @@ Controls that are in place
 * Only HTTPS repositories on an allowed host are accepted for builds and branch discovery; redirects, embedded credentials, query strings, fragments and non-default ports are rejected. See [Repository addresses](#repository-addresses).
 * Branch discovery for private projects is not attempted because credentials are not stored on the project; the endpoint returns an empty list with reason `private_repository`.
 * Branch names are validated as Git references. Builds may only use images an admin has allowed; image names are validated against a restrictive pattern.
-* The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build. The `.git` directory is not copied into the container.
-* The container runs with no network, no capabilities, `no-new-privileges`, a PID limit of 256, 1 GiB of memory, one CPU, and as the unprivileged user `65534:65534`.
+* The branch is fetched afresh with JGit at depth 1 to read its workflow file and commit ID. The build then builds an image from the workflow: it installs `git` as root if needed, clones the branch at that commit as `65534:65534`, and runs the steps as `65534:65534` without network. These two setup steps have network access.
+* The image build runs with `no-new-privileges`, 1 GiB of memory and one CPU under Podman; Docker applies neither limit. The image is removed when the build ends.
 * Builds run up to the concurrency limit (default 1, at most 16 when set by an admin); further requests wait in a bounded queue. Each build times out after ten minutes. Output is stored in full, up to the `BUILD_LOG_MAX_BYTES` safety limit (default 1 GiB); output beyond it is discarded and the build is marked truncated.
-* Builds left in the `RUNNING` state by a server restart are marked `FAILED` at startup. Startup also removes leftover `cisys-build-*` containers and `cisys-*` checkout directories from an unclean stop; a cleanup failure is logged and does not stop startup.
+* Builds left in the `RUNNING` state by a server restart are marked `FAILED` at startup. Startup also removes leftover `cisys-build-*` containers and images and `cisys-*` checkout directories from an unclean stop; a cleanup failure is logged and does not stop startup.
 
 ### Repository addresses
 
@@ -91,7 +91,7 @@ Known gaps
 
 ### Git credentials
 
-For private repositories set an environment variable named `CISYS_GIT_<NAME>` to a read-only provider token in the backend environment before starting it, then enter the variable name in the build form as an admin. The value is never stored in the database or passed to the build container. Never place secrets in build commands or output.
+For private repositories set an environment variable named `CISYS_GIT_<NAME>` to a read-only provider token in the backend environment before starting it, then enter the variable name in the build form as an admin. The value is never stored in the database. The image build receives it as a build secret mounted for the clone step only; it is not stored in the image and later steps cannot read it. Never place secrets in workflow files or build output; each build stores its workflow file.
 
 ## TLS
 

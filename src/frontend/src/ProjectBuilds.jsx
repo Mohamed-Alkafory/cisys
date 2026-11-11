@@ -160,7 +160,7 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, onBui
                   <li key={branch} className="branch-item">
                     <button type="button" className="branch-option" aria-current={activeBranch === branch ? 'page' : undefined}
                       onClick={() => setSelectedBranch(branch)}>{branch}</button>
-                    {onBuild && <button type="button" className="branch-build" title="Build" aria-label={`Build ${branch}`}
+                    {onBuild && <button type="button" className="branch-build" title={`Build ${branch} with .cisys/workflows/ci.yml`} aria-label={`Build ${branch}`}
                       disabled={startingBranch !== null} onClick={() => void startBuild(branch)}>
                       <Hammer size={14} aria-hidden="true"/>
                     </button>}

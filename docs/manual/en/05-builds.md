@@ -2,38 +2,39 @@
 
 # Builds
 
-A **build** fetches a branch of a project's repository and runs a command inside a disposable container on the backend host.
+A **build** runs a branch's workflow, `.cisys/workflows/ci.yml`, by building a container image from it on the backend host. The **Workflows** chapter describes the file and the image build.
 
 ![Manual build configuration](images/builds.png){ width=100% }
 
 ## Start a build
 
-Leads and admins open **Build history** on a visible project and start a manual build by entering
+Leads and admins select **Build** next to a branch on a project page. That runs the branch's workflow. The **Build history** form starts a build by entering
 
 * **Branch**: the branch to fetch
-* **Image**: one of the images an admin has allowed on the **Images** page
-* **Command**: the shell command to run
 * **Credential reference** (admins only, optional): see below
 
 Members can view build history and logs for the projects they can access. Private projects and their logs are visible only to their creator and admins.
 
 ## How a build runs
 
-1. The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build.
-2. The commit ID is recorded.
-3. The checkout, without its `.git` directory, is copied into a container created without networking, with all capabilities dropped, `no-new-privileges`, a PID limit of 256, 1 GiB of memory and one CPU, running as the unprivileged user `65534:65534`.
-4. The command runs in a writable copy of the checkout under `/tmp/build`.
-5. The status is `PASSED` when the exit code is 0, otherwise `FAILED`. A build that exceeds ten minutes is killed and reported as timed out.
+1. The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build, and its commit ID is recorded.
+2. The branch's `.cisys/workflows/ci.yml` is read and stored with the build, then validated. A branch without the file, an invalid file, or an `environment.base` image that an admin has not allowed fails the build with a message in the log.
+3. The workflow becomes a Containerfile. Podman builds it with `no-new-privileges`, 1 GiB of memory, one CPU and no layer cache. The image installs `git` if it is missing, clones the branch at the recorded commit, and runs the steps as `65534:65534` without network. See **Workflows**.
+4. The status is `PASSED` when the image build succeeds, otherwise `FAILED` with the exit code of the failing step. A build that exceeds ten minutes is stopped and reported as timed out. The image is removed afterwards.
 
-Build requests are stored as `QUEUED` and claimed in request order. By default one build runs at a time. Set `BUILD_CONCURRENCY` (`cisys.build.concurrency`) to change the number of concurrent builds and `BUILD_QUEUE_LIMIT` (`cisys.build.queue-limit`, default 100) to limit waiting requests. Both limits must be positive. Admins can change both under **Settings** → **Queue** (1–16 concurrent builds, 1–1000 queued builds); saved values replace the configured ones. A full queue returns HTTP 429 with a clear error. Requests keep their repository URL, branch, image, command and credential reference; credentials themselves are read from the environment when execution begins.
+Build requests are stored as `QUEUED` and claimed in request order. By default one build runs at a time. Set `BUILD_CONCURRENCY` (`cisys.build.concurrency`) to change the number of concurrent builds and `BUILD_QUEUE_LIMIT` (`cisys.build.queue-limit`, default 100) to limit waiting requests. Both limits must be positive. Admins can change both under **Settings** → **Queue** (1–16 concurrent builds, 1–1000 queued builds); saved values replace the configured ones. A full queue returns HTTP 429 with a clear error. Requests keep their repository URL, branch and credential reference; credentials themselves are read from the environment when execution begins.
 
 If saving a completed result fails, the runner retains it in memory and retries on each dispatcher tick without rerunning the build. Its slot stays reserved until the result is saved.
 
-On restart, interrupted `RUNNING` builds become `FAILED` and retain their partial logs. `QUEUED` builds remain queued and run when a slot is available. Startup also removes leftover `cisys-build-*` containers and `cisys-*` checkout directories from an unclean stop; a cleanup failure is logged and does not stop startup. Queued and running builds are protected from retention cleanup and prevent project deletion. This runner supports one backend instance; startup recovery assumes the previous instance has stopped.
+On restart, interrupted `RUNNING` builds become `FAILED` and retain their partial logs. `QUEUED` builds remain queued and run when a slot is available. Startup also removes leftover `cisys-build-*` containers and images and `cisys-*` checkout directories from an unclean stop; a cleanup failure is logged and does not stop startup. Queued and running builds are protected from retention cleanup and prevent project deletion. This runner supports one backend instance; startup recovery assumes the previous instance has stopped.
+
+## Workflow file
+
+The workflow file format, how the image is built, and its limits are described in the **Workflows** chapter.
 
 ## What a build records
 
-Each build stores the requested branch, image reference and command, the credential reference name if one was used (shown to admins only), the image digest when the container runtime reports one, the commit ID, the container exit code (none when the build timed out or never ran), who started it, and when it started and finished; the duration is derived from these times.
+Each build stores the requested branch, the text of the workflow file it read (shown on the build page), the image reference from the workflow, the credential reference name if one was used (shown to admins only), the base image digest when the container runtime reports one, the commit ID, the exit code of the image build, which is that of the failing step (none when the build timed out or never ran), who started it, and when it started and finished; the duration is derived from these times.
 
 ## Build logs
 
@@ -64,9 +65,9 @@ Only `github.com` and `gitlab.com` HTTPS URLs are accepted for builds. Redirects
 
 Set an environment variable whose name starts with `CISYS_GIT_`, for example `CISYS_GIT_PROJECT`, to a read-only provider token in the backend environment before starting it. Then, as an admin, enter that variable name in the build form.
 
-* The value is never stored in the project database and is not passed to the build container.
+* The value is never stored in the project database. The image build receives it as a build secret for the clone step only; it is not stored in the image and later steps cannot read it.
 * Only admins can use credential references until credentials are scoped to individual projects.
-* Never include secrets in build commands or output.
+* Never include secrets in workflow files or build output.
 
 ## Images
 
@@ -82,8 +83,8 @@ An image that is allowed but no longer present locally is listed separately, whe
 
 The runner is always on. It uses Podman when it is installed and Docker otherwise.
 
-**Trust boundary:** the runner allows trusted leads and admins to execute code through the local container daemon. Docker socket access grants host-level control to the backend. These limits are not a hostile-code sandbox. Use a dedicated machine, disk quotas and trusted repositories, and do not expose this setup to the Internet. Repository checkout sizes are not bounded.
+**Trust boundary:** the runner allows trusted leads and admins to execute code through the local container daemon. Docker socket access grants host-level control to the backend. These limits are not a hostile-code sandbox. Use a dedicated machine, disk quotas and trusted repositories, and do not expose this setup to the Internet. Repository checkout sizes are not bounded. Installing `git` and cloning the branch happen with network access, as root and as `65534:65534` respectively; the workflow's steps run without network.
 
 ## Verification status
 
-The build path was verified with Docker on Linux, including a public repository fetched with JGit and an Alpine container. It has not been verified end-to-end with a real private Git provider, Podman, or Windows/WSL.
+The image build was verified with Podman 5.8 on Linux with `alpine:3.23` and `debian:13-slim` base images and a public GitHub repository. With Docker it needs BuildKit, and the memory and CPU limits are not applied. It has not been verified end-to-end with a real private Git provider, Docker, or Windows/WSL.

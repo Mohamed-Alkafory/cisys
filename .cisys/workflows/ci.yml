@@ -1,0 +1,10 @@
+name: main
+
+environment:
+  base: alpine:3.23
+
+jobs:
+  - job: Test
+    steps:
+      - name: Test
+        run: make test

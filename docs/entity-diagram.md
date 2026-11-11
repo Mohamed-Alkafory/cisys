@@ -20,6 +20,7 @@ erDiagram
         STRING revision
         STRING branch
         STRING image
+        STRING workflow
         STRING image_digest
         INTEGER exit_code
         BOOLEAN log_truncated

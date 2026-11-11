@@ -25,19 +25,22 @@ public class BuildResource {
  @Inject BuildRunner runner;
  @Inject BuildLogs logs;
  @Inject RepositoryUrlValidator repositoryUrls;
- public record RunRequest(String branch, String image, String command, String credentialRef) {}
- /** Who requested the build and the credential reference are returned to admins only. */
+ /** The image and the commands come from the branch's {@value Workflow#PATH}. */
+ public record RunRequest(String branch, String credentialRef) {}
+ /** Who requested the build and the credential reference are returned to admins only; the workflow file only for a single build. */
  public record BuildResponse(Long id, Long projectId, @JsonInclude(JsonInclude.Include.NON_NULL) String requestedBy, Build.Status status,
      String revision, Instant startedAt, Instant finishedAt, String branch,
-     String image, String command, @JsonInclude(JsonInclude.Include.NON_NULL) String credentialRef,
-     String imageDigest, Integer exitCode, boolean logTruncated, boolean pinned) {}
+     String image, @JsonInclude(JsonInclude.Include.NON_NULL) String credentialRef,
+     String imageDigest, Integer exitCode, boolean logTruncated, boolean pinned,
+     @JsonInclude(JsonInclude.Include.NON_NULL) String workflow) {}
 
- private BuildResponse response(Build build) {
+ private BuildResponse response(Build build) {return response(build,false);}
+ private BuildResponse response(Build build,boolean withWorkflow) {
   boolean admin = identity.hasRole("admin");
   return new BuildResponse(build.id, build.projectId, admin ? build.requestedBy : null, build.status,
       build.revision, build.startedAt, build.finishedAt, build.branch,
-      build.image, build.command, admin ? build.credentialRef : null,
-      build.imageDigest, build.exitCode, build.logTruncated, build.pinned);
+      build.image, admin ? build.credentialRef : null,
+      build.imageDigest, build.exitCode, build.logTruncated, build.pinned, withWorkflow ? build.workflow : null);
  }
  private Project visible(Long id) {
   if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
@@ -52,7 +55,7 @@ public class BuildResource {
       .stream().map(this::response).toList();
  }
  @GET @Path("/{buildId}") public BuildResponse detail(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
-  visible(id); Build b=Build.findById(buildId);if(b==null || !id.equals(b.projectId))throw new NotFoundException();return response(b);
+  visible(id); Build b=Build.findById(buildId);if(b==null || !id.equals(b.projectId))throw new NotFoundException();return response(b,true);
  }
  /** A running build returns what is stored so far. */
  @GET @Path("/{buildId}/log") @Produces("text/plain; charset=UTF-8") public StreamingOutput log(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
@@ -71,14 +74,12 @@ public class BuildResource {
   if(!identity.hasRole("admin") && !((JsonWebToken)identity.getPrincipal()).getSubject().equals(p.ownerSubject))throw new ForbiddenException();
   Build b=Build.findById(buildId);if(b==null || !id.equals(b.projectId))throw new NotFoundException();
   b.pinned=pinned;
-  return response(b);
+  return response(b,true);
  }
  @POST public BuildResponse start(@PathParam("projectId") Long id,RunRequest input) {
   Project p=visible(id);
   if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
   if(input==null || input.branch()==null || !org.eclipse.jgit.lib.Repository.isValidRefName("refs/heads/"+input.branch()) || input.branch().startsWith("-") || input.branch().length()>150)throw new BadRequestException("Invalid branch");
-  if(input.image()==null || !input.image().matches(AllowedImage.PATTERN) || input.command()==null || input.command().isBlank() || input.command().length()>4000)throw new BadRequestException("Image and command are required");
-  if(!AllowedImage.isAllowed(input.image()))throw new BadRequestException("Image is not allowed");
   if(input.credentialRef()!=null && !identity.hasRole("admin"))throw new ForbiddenException();
   if(input.credentialRef()!=null && !input.credentialRef().matches("CISYS_GIT_[A-Z0-9_]{1,80}"))throw new BadRequestException("Invalid credential reference");
   try{repositoryUrls.validate(p.repositoryUrl);}catch(IllegalArgumentException e){throw new BadRequestException(e.getMessage());}

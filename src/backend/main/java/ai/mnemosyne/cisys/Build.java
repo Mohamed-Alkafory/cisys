@@ -20,8 +20,10 @@ import java.time.Instant;
  @Column(length=2048) public String repositoryUrl;
  public String revision;
  public String branch;
+ /** Set from the workflow's environment.base once the build has read it. */
  public String image;
- @Column(length=4000) public String command;
+ /** The text of the branch's {@value Workflow#PATH}, as the build read it. */
+ @Column(length=Workflow.MAX_BYTES) public String workflow;
  public String credentialRef;
  @Column(length=300) public String imageDigest;
  public Integer exitCode;

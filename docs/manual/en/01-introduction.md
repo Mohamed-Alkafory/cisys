@@ -40,5 +40,5 @@ Each build keeps
 * The requester and the status (`RUNNING`, `PASSED`, `FAILED`)
 * The commit ID that was built
 * Start and finish times
-* The requested branch, image and command, the image digest and the container exit code
+* The requested branch, the workflow file it ran, the image, the image digest and the container exit code
 * The complete output, stored as a PostgreSQL large object

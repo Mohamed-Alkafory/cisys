@@ -21,7 +21,6 @@ import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -116,6 +115,25 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    throw new IllegalStateException("Could not remove container "+name,e);
   }
  }
+ /** Images of builds a previous runner process did not get to remove. */
+ List<String> staleImages(){
+  if(runtime==null)return List.of();
+  try{
+   Result r=commands.run(List.of(runtime,"images","--format","{{.Repository}}"),15,1_000_000);
+   if(r.timeout() || r.code()!=0)throw new IllegalStateException("Image listing failed");
+   return r.output().lines().map(String::strip).filter(n->n.matches("(localhost/)?cisys-build-[0-9]+")).distinct().toList();
+  }catch(Exception e){
+   throw new IllegalStateException("Could not list images",e);
+  }
+ }
+ void removeImage(String name){
+  try{
+   Result r=commands.run(List.of(runtime,"rmi","-f",name),60,4096);
+   if(r.timeout() || r.code()!=0)throw new IllegalStateException("Image command failed");
+  }catch(Exception e){
+   throw new IllegalStateException("Could not remove image "+name,e);
+  }
+ }
  /** Root of the checkout directories created by {@link #run}. */
  Path checkoutRoot(){
   return Path.of(System.getProperty("java.io.tmpdir"));
@@ -136,6 +154,14 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    }
   }catch(RuntimeException e){
    Log.warn("Could not list orphaned build containers",e);
+  }
+  try{
+   for(String image:staleImages()){
+    try{removeImage(image);Log.infof("Removed orphaned build image %s",image);}
+    catch(Exception e){Log.warnf(e,"Could not remove orphaned build image %s",image);}
+   }
+  }catch(RuntimeException e){
+   Log.warn("Could not list orphaned build images",e);
   }
   Path root=checkoutRoot();
   if(!Files.isDirectory(root))return;
@@ -159,7 +185,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    Build b=new Build();
    b.projectId=projectId;b.requestedBy=actor;b.status=Build.Status.QUEUED;
    b.requestedAt=Instant.now();b.repositoryUrl=url;
-   b.branch=request.branch();b.image=request.image();b.command=request.command();b.credentialRef=request.credentialRef();
+   b.branch=request.branch();b.credentialRef=request.credentialRef();
    b.persist();return b;
   });
  }
@@ -195,7 +221,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  }
  /** Hands a claimed build to the executor. Overridden in tests to simulate a rejected schedule. */
  void schedule(Runnable task){executor.submit(task);}
- void execute(Build b){run(b.id,b.repositoryUrl,new BuildResource.RunRequest(b.branch,b.image,b.command,b.credentialRef));}
+ void execute(Build b){run(b.id,b.repositoryUrl,new BuildResource.RunRequest(b.branch,b.credentialRef));}
  /** For tests waiting for the queue to drain. */
  boolean hasPendingBuilds(){return QuarkusTransaction.requiringNew().call(()->Build.count("status in ?1",List.of(Build.Status.QUEUED,Build.Status.RUNNING))>0);}
  private void run(Long id,String url,BuildResource.RunRequest request){
@@ -211,19 +237,37 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
     if(request.credentialRef()!=null){String token=System.getenv(request.credentialRef());if(token==null || token.isBlank())throw new IllegalStateException("Missing Git credential");fetch.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2",token));}
     fetch.call();git.checkout().setName("build").setCreateBranch(true).setStartPoint("refs/remotes/origin/build").call();revision=git.getRepository().resolve("HEAD").name();
    }
-   delete(dir.resolve(".git"));
-   try(var paths=Files.walk(dir)){for(Path path:paths.toList()){if(path.equals(dir)||Files.isSymbolicLink(path))continue;Files.setPosixFilePermissions(path,PosixFilePermissions.fromString(Files.isDirectory(path)||Files.isExecutable(path)?"rwxr-xr-x":"rw-r--r--"));}}
-   checked(List.of(runtime,"create","--name",name,"--network=none","--log-driver=none","--cap-drop=ALL","--security-opt=no-new-privileges","--pids-limit=256","--memory=1g","--cpus=1","--user=65534:65534","--workdir=/workspace",request.image(),"sh","-c","cp -R /workspace/. /tmp/build && cd /tmp/build && exec sh -c \"$1\"","cisys",request.command()),120);
-   checked(List.of(runtime,"cp",dir.toString()+"/.",name+":/workspace"),60);
-   digest=digest(request.image());
-   Streamed result=stream(List.of(runtime,"start","--attach",name),600,log,logMaxBytes);
+   // The workflow on the fetched branch describes the image. This checkout is only read for the workflow file;
+   // the image clones the branch itself.
+   String text=Workflow.read(dir);
+   delete(dir);dir=null;
+   if(text==null)throw new IllegalArgumentException("The branch has no "+Workflow.PATH);
+   // Stored before parsing, so a build keeps the file that it ran or that failed validation.
+   QuarkusTransaction.requiringNew().run(()->Build.update("workflow = ?1 where id = ?2",text,id));
+   Workflow workflow=Workflow.parse(text);
+   String base=workflow.environment().base();
+   QuarkusTransaction.requiringNew().run(()->Build.update("image = ?1 where id = ?2",base,id));
+   if(!QuarkusTransaction.requiringNew().call(()->AllowedImage.isAllowed(base)))throw new IllegalArgumentException("Image "+base+" is not allowed");
+   String containerfile=workflow.containerfile(url,request.branch(),revision,request.credentialRef()!=null);
+   log.line("Workflow "+workflow.name()+" on "+workflow.baseReference());
+   dir=Files.createTempDirectory(checkoutRoot(),"cisys-");
+   Path context=Files.createDirectory(dir.resolve("context"));
+   Path file=Files.writeString(dir.resolve("Containerfile"),containerfile);
+   List<String> build=new ArrayList<>(List.of(runtime,"build","--no-cache","--pull=missing","-f",file.toString(),"-t",name));
+   if(runtime.equals("podman"))build.addAll(List.of("--layers=false","--security-opt=no-new-privileges","--memory=1g","--cpu-period=100000","--cpu-quota=100000"));
+   else build.add("--progress=plain");
+   // The runtime reads the token from its environment, so it never appears in an argument or in the image.
+   if(request.credentialRef()!=null)build.add("--secret=id="+Workflow.GIT_SECRET+",env="+request.credentialRef());
+   build.add(context.toString());
+   Streamed result=stream(build,600,log,logMaxBytes);
    captureError=result.readerError();
    if(result.truncated()){truncated=true;log.line("[output truncated after "+logMaxBytes+" bytes; "+(result.totalBytes()-logMaxBytes)+" further bytes discarded]");}
-   if(result.timeout()){try{checked(List.of(runtime,"kill",name),15);}catch(Exception ignored){}log.line("Build timed out");}
+   digest=digest(workflow.baseReference());
+   if(result.timeout())log.line("Build timed out");
    else {
-    // The container's exit code, not the attach client's.
-    exit=exitCode(name);
-    if(exit==null)log.line("Could not read the container exit code");else status=exit==0?"PASSED":"FAILED";
+    // The image build stops at the first failing RUN and exits with its exit code.
+    exit=result.code();
+    status=exit==0?"PASSED":"FAILED";
    }
   } catch(IllegalArgumentException e){
    if(log!=null)log.line("Build failed: "+e.getMessage());else captureError=e;
@@ -232,7 +276,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    else captureError=e;
   }
   finally {
-   try{checked(List.of(runtime,"rm","-f",name),15);}catch(Exception ignored){}
+   // The image only exists to run the workflow.
+   try{command(List.of(runtime,"rmi","-f",name),60,4096);}catch(Exception ignored){}
    if(dir!=null)try{delete(dir);}catch(Exception ignored){}
    // A log failure must not stop the status update.
    try{
@@ -275,10 +320,6 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  static String checked(List<String> args,int timeout)throws Exception{Result r=command(args,timeout,4096);if(r.timeout()||r.code()!=0)throw new IllegalStateException("Container command failed");return r.output();}
  String digest(String image){
   try{String d=checked(List.of(runtime,"image","inspect","--format","{{index .RepoDigests 0}}",image),15).trim();return d.length()<=300&&d.matches("\\S+@sha256:[0-9a-f]{64}")?d:null;}
-  catch(Exception e){return null;}
- }
- Integer exitCode(String name){
-  try{return Integer.valueOf(checked(List.of(runtime,"inspect","--format={{.State.ExitCode}}",name),15).trim());}
   catch(Exception e){return null;}
  }
 

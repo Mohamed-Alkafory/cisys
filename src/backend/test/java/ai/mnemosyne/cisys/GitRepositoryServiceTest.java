@@ -43,7 +43,7 @@ class GitRepositoryServiceTest {
     void listsMoreThanFiftyBranchesFromLocalBareRepository() throws Exception {
         Path work = Files.createDirectory(temp.resolve("work"));
         Path bare = temp.resolve("bare");
-        try (Git git = Git.init().setDirectory(work.toFile()).call()) {
+        try (Git git = Git.init().setDirectory(work.toFile()).setInitialBranch("master").call()) {
             Files.writeString(work.resolve("README.md"), "test");
             git.add().addFilepattern(".").call();
             git.commit().setMessage("initial").setAuthor("Test", "test@example.com").setCommitter("Test", "test@example.com").call();

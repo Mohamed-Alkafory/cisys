@@ -33,7 +33,6 @@ CREATE SEQUENCE IF NOT EXISTS build_seq START WITH 1 INCREMENT BY 50;
 -- Added separately so that existing databases gain the columns.
 ALTER TABLE build ADD COLUMN IF NOT EXISTS branch character varying(255);
 ALTER TABLE build ADD COLUMN IF NOT EXISTS image character varying(255);
-ALTER TABLE build ADD COLUMN IF NOT EXISTS command character varying(4000);
 ALTER TABLE build ADD COLUMN IF NOT EXISTS credentialref character varying(255);
 ALTER TABLE build ADD COLUMN IF NOT EXISTS imagedigest character varying(300);
 ALTER TABLE build ADD COLUMN IF NOT EXISTS exitcode integer;
@@ -88,6 +87,11 @@ CREATE TABLE IF NOT EXISTS settings (
 ALTER TABLE build ADD COLUMN IF NOT EXISTS requestedat timestamp(6) with time zone;
 ALTER TABLE build ADD COLUMN IF NOT EXISTS repositoryurl character varying(2048);
 CREATE INDEX IF NOT EXISTS build_queue_order ON build (requestedat, id) WHERE status = 'QUEUED';
+
+-- Builds run the repository's workflow file, so they no longer store a command.
+ALTER TABLE build DROP COLUMN IF EXISTS command;
+-- The workflow file each build read, kept with the build.
+ALTER TABLE build ADD COLUMN IF NOT EXISTS workflow character varying(65536);
 
 -- Null uses the configured queue limits.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxconcurrentbuilds integer;
