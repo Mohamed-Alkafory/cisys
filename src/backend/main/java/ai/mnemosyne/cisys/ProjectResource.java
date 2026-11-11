@@ -52,7 +52,7 @@ public class ProjectResource {
         if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
         if (input == null || input.name() == null || input.name().isBlank() || input.name().length() > 100 || input.repositoryUrl() == null || input.repositoryUrl().length() > 2048) throw new BadRequestException("Name and repository URL are required");
         try { URI url = URI.create(input.repositoryUrl().trim()); if (!"https".equals(url.getScheme()) || url.getHost() == null || url.getUserInfo() != null) throw new IllegalArgumentException(); } catch (IllegalArgumentException e) { throw new BadRequestException("Use an HTTPS repository URL without credentials"); }
-        String name = input.name().trim(), url = input.repositoryUrl().trim();
+        String name = input.name().trim(), url = gitUrl(input.repositoryUrl().trim());
         // The name is the project's URL path, for example /cisys/ in the UI.
         if (name.contains("/")) throw new BadRequestException("Project names cannot contain /");
         // Checked across all projects, including private projects the caller cannot see.
@@ -76,6 +76,18 @@ public class ProjectResource {
         Build.delete("projectId", id);
         p.delete();
         return Response.noContent().build();
+    }
+    /** Repository URLs name the Git repository itself: https://github.com/org/repo becomes https://github.com/org/repo.git. */
+    static String gitUrl(String url) {
+        String trimmed = url.replaceAll("/+$", "");
+        URI parsed = URI.create(trimmed);
+        String path = parsed.getPath();
+        if (parsed.getQuery() != null || parsed.getFragment() != null || path == null || path.isEmpty() || path.endsWith("/.git"))
+            throw badRequest("Use the repository's URL, for example https://github.com/org/repo.git");
+        return path.endsWith(".git") ? trimmed : trimmed + ".git";
+    }
+    private static WebApplicationException badRequest(String message) {
+        return new WebApplicationException(Response.status(400).type(MediaType.APPLICATION_JSON).entity(Map.of("error", message)).build());
     }
     private static WebApplicationException conflict(String message) {
         return new WebApplicationException(Response.status(409).type(MediaType.APPLICATION_JSON).entity(Map.of("error", message)).build());
