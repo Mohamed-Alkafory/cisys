@@ -20,18 +20,36 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 @ApplicationScoped
 public class TestGitRepositoryService extends GitRepositoryService {
   private static final AtomicInteger CALLS = new AtomicInteger();
+  private static final java.util.concurrent.atomic.AtomicReference<String> CREDENTIAL =
+      new java.util.concurrent.atomic.AtomicReference<>();
 
   static void resetCalls() {
     CALLS.set(0);
+    CREDENTIAL.set(null);
   }
 
   static int calls() {
     return CALLS.get();
   }
 
+  static String credential() {
+    return CREDENTIAL.get();
+  }
+
   @Override
-  protected Collection<String> remoteBranchRefs(String repositoryUrl) throws GitAPIException {
+  protected String token(String credentialRef) {
+    // The test alternative never reads the environment.
+    if ("CISYS_GIT_MISSING".equals(credentialRef))
+      throw new BranchLookupException("Missing Git credential", null);
+    return credentialRef == null ? null : "test-token";
+  }
+
+  @Override
+  protected Collection<String> remoteBranchRefs(String repositoryUrl, String credentialRef)
+      throws GitAPIException {
     CALLS.incrementAndGet();
+    token(credentialRef);
+    CREDENTIAL.set(credentialRef);
     if (repositoryUrl.contains("unreachable")) throw new GitAPIException("unreachable") {};
     return List.of("refs/heads/main", "refs/heads/dev", "refs/tags/v1", "refs/heads/dev");
   }

@@ -18,6 +18,7 @@ import {
   LogOut,
   ChevronDown,
   CircleUserRound,
+  Pencil,
   Plus,
   Trash2,
   UserRound,
@@ -51,6 +52,10 @@ import ProjectBuilds, {
   projectPath,
 } from "./ProjectBuilds";
 import ProjectBuild from "./ProjectBuild";
+import ProjectSettings, {
+  projectSettingsFromPath,
+  projectSettingsPath,
+} from "./ProjectSettings";
 import { buildPath } from "./build-format";
 import headerLogo from "./assets/logo-header.svg";
 import "./style.css";
@@ -140,13 +145,16 @@ function App() {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [priv, setPriv] = useState(false);
+  const [credential, setCredential] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [branding, setBranding] = useState(null);
   const [page, setPage] = useState("projects");
-  // Set when the URL is a project page such as /cisys/ or a build such as /cisys/master/build/51.
+  // Set when the URL is a project page such as /cisys/, a build such as /cisys/master/build/51,
+  // or the project's settings page /cisys/settings.
   const [projectName, setProjectName] = useState(
     () =>
       projectBuildFromPath(window.location.pathname)?.name ??
+      projectSettingsFromPath(window.location.pathname)?.name ??
       projectNameFromPath(window.location.pathname),
   );
   const [projectBranch, setProjectBranch] = useState(
@@ -154,6 +162,9 @@ function App() {
   );
   const [buildId, setBuildId] = useState(
     () => projectBuildFromPath(window.location.pathname)?.buildId ?? null,
+  );
+  const [projectSettings, setProjectSettings] = useState(
+    () => projectSettingsFromPath(window.location.pathname) !== null,
   );
   const [dark, setDark] = useState(
     () => localStorage.getItem("cisys-theme") === "dark",
@@ -236,10 +247,16 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       const build = projectBuildFromPath(window.location.pathname);
+      const settings = projectSettingsFromPath(window.location.pathname);
       setBuildId(build ? build.buildId : null);
       setProjectBranch(build ? build.branch : "");
+      setProjectSettings(settings !== null);
       setProjectName(
-        build ? build.name : projectNameFromPath(window.location.pathname),
+        settings
+          ? settings.name
+          : build
+            ? build.name
+            : projectNameFromPath(window.location.pathname),
       );
     };
     window.addEventListener("popstate", onPopState);
@@ -248,11 +265,13 @@ function App() {
 
   // Switches to an in-app page, leaving any project URL behind.
   function go(target, replace = false) {
+    if (submitting) return;
     if (window.location.pathname !== "/")
       window.history[replace ? "replaceState" : "pushState"](null, "", "/");
     setProjectName(null);
     setProjectBranch("");
     setBuildId(null);
+    setProjectSettings(false);
     setPage(target);
   }
 
@@ -267,10 +286,12 @@ function App() {
   }, [projectName, buildId, showFrontPage]);
 
   function openProject(name, branch = "") {
+    if (submitting) return;
     window.history.pushState(null, "", projectPath(name));
     setProjectName(name);
     setProjectBranch(branch);
     setBuildId(null);
+    setProjectSettings(false);
   }
 
   function openBuild(name, branch, id) {
@@ -278,25 +299,42 @@ function App() {
     setProjectName(name);
     setProjectBranch(branch);
     setBuildId(id);
+    setProjectSettings(false);
   }
 
-  async function create(event) {
+  function openProjectSettings(name) {
+    if (submitting) return;
+    window.history.pushState(null, "", projectSettingsPath(name));
+    setProjectName(name);
+    setProjectBranch("");
+    setBuildId(null);
+    setProjectSettings(true);
+  }
+
+  function resetProjectForm() {
+    setName("");
+    setUrl("");
+    setPriv(false);
+    setCredential("");
+  }
+
+  async function submitProject(event) {
     event.preventDefault();
+    if (submitting) return;
     setError("");
     setSubmitting(true);
     try {
+      const body = { name, repositoryUrl: url, privateRepository: priv };
+      // Only admins may set or clear a project credential; a lead's project has none.
+      if (user.roles.includes("admin"))
+        body.credentialRef =
+          priv && credential.trim() ? credential.trim() : null;
       await api("/projects", {
         method: "POST",
-        body: JSON.stringify({
-          name,
-          repositoryUrl: url,
-          privateRepository: priv,
-        }),
+        body: JSON.stringify(body),
       });
-      setName("");
-      setUrl("");
-      setPriv(false);
       setProjects(await api("/projects"));
+      resetProjectForm();
     } catch (e) {
       setError(e.message);
     } finally {
@@ -305,6 +343,7 @@ function App() {
   }
 
   async function deleteProject(project) {
+    if (submitting) return;
     if (
       !window.confirm(
         `Delete ${project.name} and all of its builds? This cannot be undone.`,
@@ -328,6 +367,35 @@ function App() {
     });
   }
 
+  const settingsProject =
+    projectSettings && projectName !== null
+      ? projects.find((p) => p.name === projectName)
+      : null;
+  const canEditSettings =
+    settingsProject != null &&
+    user != null &&
+    (user.roles.includes("admin") ||
+      (user.roles.includes("lead") && settingsProject.owned));
+
+  // The settings page is for the project's owner or an admin, like the pencil button.
+  useEffect(() => {
+    if (
+      mode === "app" &&
+      ready &&
+      projectSettings &&
+      projectName !== null &&
+      !canEditSettings
+    )
+      showFrontPage();
+  }, [
+    mode,
+    ready,
+    projectSettings,
+    projectName,
+    canEditSettings,
+    showFrontPage,
+  ]);
+
   if (mode === "public")
     return (
       <PublicHome
@@ -340,6 +408,7 @@ function App() {
         setDark={setDark}
       >
         {projectName !== null &&
+          !projectSettings &&
           (buildId !== null ? (
             <ProjectBuild
               key={`${projectName}-${projectBranch}-${buildId}`}
@@ -373,6 +442,11 @@ function App() {
   const canDelete = (project) =>
     user.roles.includes("admin") ||
     (user.roles.includes("lead") && project.owned);
+  const canEdit = (project) =>
+    user.roles.includes("admin") ||
+    (user.roles.includes("lead") && project.owned);
+  // Only admins can set a project credential, and only a private project can have one.
+  const showCredential = user.roles.includes("admin") && priv;
   const role = user.roles.includes("admin")
     ? "Admin"
     : user.roles.includes("lead")
@@ -493,7 +567,21 @@ function App() {
         </div>
       </header>
       {projectName !== null ? (
-        buildId !== null ? (
+        projectSettings ? (
+          canEditSettings ? (
+            <ProjectSettings
+              key={settingsProject.id}
+              project={settingsProject}
+              api={api}
+              isAdmin={user.roles.includes("admin")}
+              onSaved={async (saved) => {
+                setProjects(await api("/projects"));
+                openProject(saved.name);
+              }}
+              onCancel={() => openProject(settingsProject.name)}
+            />
+          ) : null
+        ) : buildId !== null ? (
           <ProjectBuild
             key={`${projectName}-${projectBranch}-${buildId}`}
             name={projectName}
@@ -565,7 +653,10 @@ function App() {
                 <CardTitle>Add a project</CardTitle>
               </CardHeader>
               <CardContent>
-                <form className="project-grid project-add" onSubmit={create}>
+                <form
+                  className={`project-grid project-add${showCredential ? " has-credential" : ""}`}
+                  onSubmit={submitProject}
+                >
                   <div className="form-field">
                     <Label htmlFor="project-name">Project name</Label>
                     <Input
@@ -606,6 +697,22 @@ function App() {
                       />
                     </span>
                   </div>
+                  {showCredential && (
+                    <div className="form-field">
+                      <Label htmlFor="repository-credential">
+                        Credential reference
+                      </Label>
+                      <Input
+                        id="repository-credential"
+                        maxLength="90"
+                        pattern="CISYS_GIT_[A-Z0-9_]{1,80}"
+                        title="An environment variable named CISYS_GIT_..."
+                        value={credential}
+                        onChange={(e) => setCredential(e.target.value)}
+                        placeholder="CISYS_GIT_PROJECT"
+                      />
+                    </div>
+                  )}
                   <Button
                     type="submit"
                     size="icon"
@@ -662,18 +769,32 @@ function App() {
                       )}
                       {project.privateRepository ? "Private" : "Public"}
                     </Badge>
-                    {canDelete(project) && (
-                      <Button
-                        type="button"
-                        size="icon"
-                        className="h-10 w-10 justify-self-end"
-                        title="Delete project"
-                        aria-label={`Delete project ${project.name}`}
-                        onClick={() => void deleteProject(project)}
-                      >
-                        <Trash2 size={16} aria-hidden="true" />
-                      </Button>
-                    )}
+                    <div className="project-actions">
+                      {canEdit(project) && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          disabled={submitting}
+                          title="Edit project"
+                          aria-label={`Edit project ${project.name}`}
+                          onClick={() => openProjectSettings(project.name)}
+                        >
+                          <Pencil size={16} aria-hidden="true" />
+                        </Button>
+                      )}
+                      {canDelete(project) && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          disabled={submitting}
+                          title="Delete project"
+                          aria-label={`Delete project ${project.name}`}
+                          onClick={() => void deleteProject(project)}
+                        >
+                          <Trash2 size={16} aria-hidden="true" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))
               )}

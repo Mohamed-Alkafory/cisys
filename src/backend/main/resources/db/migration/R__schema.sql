@@ -10,10 +10,13 @@ CREATE TABLE IF NOT EXISTS project (
     ownersubject character varying(255) NOT NULL,
     privaterepository boolean NOT NULL,
     repositoryurl character varying(2048) NOT NULL,
+    credentialref character varying(100),
     CONSTRAINT project_pkey PRIMARY KEY (id),
     CONSTRAINT uk_project_name UNIQUE (name),
     CONSTRAINT uk_project_repositoryurl UNIQUE (repositoryurl)
 );
+
+ALTER TABLE project ADD COLUMN IF NOT EXISTS credentialref character varying(100);
 
 CREATE SEQUENCE IF NOT EXISTS project_seq START WITH 1 INCREMENT BY 50;
 

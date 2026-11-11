@@ -25,6 +25,7 @@ import java.util.Set;
 final class RepositoryUrls {
   static final String REQUIRED = "Repository URL is required";
   static final String SHAPE = "Use an HTTPS repository URL without credentials";
+  static final String PORT = "The repository host must use an allowed port";
   static final String BLOCKED = "The repository host resolves to a blocked address";
   static final String UNKNOWN = "The repository host could not be resolved";
 
@@ -59,6 +60,7 @@ final class RepositoryUrls {
   static void validate(
       String repositoryUrl,
       Set<String> allowedHosts,
+      Set<Integer> allowedPorts,
       List<Cidr> allowedNetworks,
       HostResolver resolver) {
     if (repositoryUrl == null || repositoryUrl.isBlank() || repositoryUrl.length() > 2048) {
@@ -74,16 +76,15 @@ final class RepositoryUrls {
         || uri.getUserInfo() != null
         || uri.getQuery() != null
         || uri.getFragment() != null
-        || (uri.getPort() != -1 && uri.getPort() != 443)
         || uri.getPath() == null
         || uri.getPath().isEmpty()
         || uri.getPath().equals("/")) {
       throw new IllegalArgumentException(SHAPE);
     }
-    String host = uri.getHost();
+    String host = host(uri);
     if (host == null) throw new IllegalArgumentException(SHAPE);
-    host = host.toLowerCase(Locale.ROOT);
-    if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
+    if (!allowedPorts.contains(uri.getPort() == -1 ? 443 : uri.getPort()))
+      throw new IllegalArgumentException(portMessage(allowedPorts));
     if (!allowedHosts.contains(host)) throw new IllegalArgumentException(hostMessage(allowedHosts));
     InetAddress[] addresses;
     try {
@@ -105,6 +106,53 @@ final class RepositoryUrls {
     return allowedHosts.isEmpty()
         ? "Use a repository on an allowed host"
         : "Use a repository on an allowed host (" + String.join(", ", allowedHosts) + ")";
+  }
+
+  static String portMessage(Set<Integer> allowedPorts) {
+    return allowedPorts.isEmpty()
+        ? PORT
+        : PORT
+            + " ("
+            + String.join(", ", allowedPorts.stream().map(String::valueOf).toList())
+            + ")";
+  }
+
+  /** The lower-case host of an absolute URL, without IPv6 brackets, or null when there is none. */
+  static String host(String repositoryUrl) {
+    if (repositoryUrl == null) return null;
+    try {
+      return host(URI.create(repositoryUrl.trim()));
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
+  }
+
+  private static String host(URI uri) {
+    String host = uri.getHost();
+    if (host == null) return null;
+    host = host.toLowerCase(Locale.ROOT);
+    if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
+    return host;
+  }
+
+  static Set<Integer> parsePorts(String value) {
+    Set<Integer> ports = new LinkedHashSet<>();
+    if (value != null) {
+      for (String port : value.split(",")) {
+        String trimmed = port.trim();
+        if (trimmed.isEmpty()) continue;
+        int number;
+        try {
+          number = Integer.parseInt(trimmed);
+        } catch (NumberFormatException e) {
+          throw new IllegalArgumentException("Invalid port: " + trimmed);
+        }
+        if (number < 1 || number > 65535)
+          throw new IllegalArgumentException("Invalid port: " + trimmed);
+        ports.add(number);
+      }
+    }
+    return java.util.Collections.unmodifiableSet(ports);
   }
 
   static Set<String> parseHosts(String value) {

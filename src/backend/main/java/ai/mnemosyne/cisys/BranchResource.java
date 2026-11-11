@@ -49,7 +49,7 @@ public class BranchResource {
   @GET
   public Response list(@PathParam("projectId") Long projectId) {
     Project project = visible(projectId);
-    if (project.privateRepository) {
+    if (project.privateRepository && project.credentialRef == null) {
       return Response.ok(new Branches(List.of(), "private_repository")).build();
     }
     try {

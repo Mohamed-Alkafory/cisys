@@ -267,6 +267,383 @@ class ProjectResourceTest {
   }
 
   @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void adminCreatesPrivateProjectWithCredential() {
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"cred-project\",\"repositoryUrl\":\"https://github.com/org/cred.git\",\"privateRepository\":true,\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .post("/api/projects")
+        .then()
+        .statusCode(201)
+        .body("credentialRef", equalTo("CISYS_GIT_TEST"));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void leadCannotSetACredential() {
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"lead-cred\",\"repositoryUrl\":\"https://github.com/org/lead-cred.git\",\"privateRepository\":true,\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .post("/api/projects")
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void credentialNeedsAPrivateProjectAndAnEnvironmentVariableName() {
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"public-cred\",\"repositoryUrl\":\"https://github.com/org/public-cred.git\",\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .post("/api/projects")
+        .then()
+        .statusCode(400)
+        .body("error", containsString("Only private projects"));
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"bad-cred\",\"repositoryUrl\":\"https://github.com/org/bad-cred.git\",\"privateRepository\":true,\"credentialRef\":\"TOKEN\"}")
+        .when()
+        .post("/api/projects")
+        .then()
+        .statusCode(400)
+        .body("error", equalTo("Invalid credential reference"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void configurationVariablesAreNotCredentials() {
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"config-cred\",\"repositoryUrl\":\"https://github.com/org/config-cred.git\",\"privateRepository\":true,\"credentialRef\":\"CISYS_GIT_ALLOWED_PORTS\"}")
+        .when()
+        .post("/api/projects")
+        .then()
+        .statusCode(400)
+        .body("error", containsString("configures the server"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void adminChangesAndClearsTheCredential() {
+    int id =
+        given()
+            .contentType("application/json")
+            .body(
+                "{\"name\":\"change-cred\",\"repositoryUrl\":\"https://github.com/org/change-cred.git\",\"privateRepository\":true}")
+            .when()
+            .post("/api/projects")
+            .then()
+            .statusCode(201)
+            .extract()
+            .path("id");
+    given()
+        .contentType("application/json")
+        .body("{\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .put("/api/projects/" + id + "/credential")
+        .then()
+        .statusCode(200)
+        .body("credentialRef", equalTo("CISYS_GIT_TEST"));
+    given()
+        .contentType("application/json")
+        .body("{\"credentialRef\":null}")
+        .when()
+        .put("/api/projects/" + id + "/credential")
+        .then()
+        .statusCode(200)
+        .body("credentialRef", nullValue());
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void leadCannotChangeACredential() {
+    int id =
+        given()
+            .contentType("application/json")
+            .body(
+                "{\"name\":\"lead-change\",\"repositoryUrl\":\"https://github.com/org/lead-change.git\",\"privateRepository\":true}")
+            .when()
+            .post("/api/projects")
+            .then()
+            .statusCode(201)
+            .extract()
+            .path("id");
+    given()
+        .contentType("application/json")
+        .body("{\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .put("/api/projects/" + id + "/credential")
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void leadKeepsTheCredentialWhenEditingOwnProjectWithoutChangingTheRepository() {
+    Long id = project("lead-id", true);
+    String url = "https://github.com/org/lead-keeps-" + java.util.UUID.randomUUID() + ".git";
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Project p = Project.findById(id);
+          p.repositoryUrl = url;
+          p.credentialRef = "CISYS_GIT_TEST";
+        });
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"lead-keeps\",\"repositoryUrl\":\""
+                + url
+                + "\",\"privateRepository\":true}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        // The reference is for admins, so a lead's GET-then-PUT round trip has nothing to reject.
+        .body("credentialRef", nullValue());
+    QuarkusTransaction.requiringNew()
+        .run(() -> assertEquals("CISYS_GIT_TEST", Project.<Project>findById(id).credentialRef));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void leadChangingTheRepositoryDropsTheCredential() {
+    Long id = project("lead-id", true);
+    String url = "https://github.com/org/lead-moves-" + java.util.UUID.randomUUID() + ".git";
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Project p = Project.findById(id);
+          p.credentialRef = "CISYS_GIT_TEST";
+        });
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"lead-moves\",\"repositoryUrl\":\""
+                + url
+                + "\",\"privateRepository\":true}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("credentialRef", nullValue());
+    QuarkusTransaction.requiringNew()
+        .run(() -> assertNull(Project.<Project>findById(id).credentialRef));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void ownerUpdatesOwnProject() {
+    Long id = project("lead-id", false);
+    String name = "updated-" + java.util.UUID.randomUUID();
+    String updatedUrl = "https://github.com/updated/" + java.util.UUID.randomUUID() + ".git";
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\""
+                + name
+                + "\",\"repositoryUrl\":\""
+                + updatedUrl
+                + "\",\"privateRepository\":true}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body(
+            "name",
+            equalTo(name),
+            "repositoryUrl",
+            equalTo(updatedUrl),
+            "privateRepository",
+            equalTo(true));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void leadCannotUpdateOthersProjects() {
+    Long open = project("other-id", false), hidden = project("other-id", true);
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"hijacked\",\"repositoryUrl\":\"https://github.com/other/repository.git\",\"privateRepository\":false}")
+        .when()
+        .put("/api/projects/" + open)
+        .then()
+        .statusCode(403);
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"hijacked\",\"repositoryUrl\":\"https://github.com/other/repository.git\",\"privateRepository\":false}")
+        .when()
+        .put("/api/projects/" + hidden)
+        .then()
+        .statusCode(404);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void adminSetsAndClearsCredentialThroughUpdate() {
+    Long id = project("other-id", true);
+    String name = "cred-update-" + java.util.UUID.randomUUID();
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\""
+                + name
+                + "\",\"repositoryUrl\":\"https://github.com/org/cred-update.git\",\"privateRepository\":true,\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("credentialRef", equalTo("CISYS_GIT_TEST"));
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\""
+                + name
+                + "\",\"repositoryUrl\":\"https://github.com/org/cred-update.git\",\"privateRepository\":true,\"credentialRef\":null}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("credentialRef", nullValue());
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void cannotSetCredentialOnPublicProjectThroughUpdate() {
+    Long id = project("other-id", false);
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"public-update\",\"repositoryUrl\":\"https://github.com/org/public-update-"
+                + java.util.UUID.randomUUID()
+                + ".git\",\"privateRepository\":false,\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(400)
+        .body("error", containsString("Only private projects"));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void leadCannotSetCredentialThroughUpdate() {
+    Long id = project("lead-id", true);
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\"lead-update-cred\",\"repositoryUrl\":\"https://github.com/org/lead-update-cred.git\",\"privateRepository\":true,\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void updateDoesNotRetargetQueuedOrRunningBuilds() {
+    Long id = project("lead-id", false);
+    Long queued = build(id, "QUEUED");
+    Long running = build(id, "RUNNING");
+    String originalUrl = "https://github.com/original/" + java.util.UUID.randomUUID() + ".git";
+    String updatedUrl = "https://github.com/updated/" + java.util.UUID.randomUUID() + ".git";
+    String updatedName = "updated-" + java.util.UUID.randomUUID();
+    try {
+      QuarkusTransaction.requiringNew()
+          .run(() -> {
+            Project p = Project.findById(id);
+            p.repositoryUrl = originalUrl;
+            Build.<Build>findById(queued).repositoryUrl = originalUrl;
+            Build.<Build>findById(running).repositoryUrl = originalUrl;
+          });
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"name\":\""
+                  + updatedName
+                  + "\",\"repositoryUrl\":\""
+                  + updatedUrl
+                  + "\",\"privateRepository\":true}")
+          .when()
+          .put("/api/projects/" + id)
+          .then()
+          .statusCode(200)
+          .body("name", equalTo(updatedName), "repositoryUrl", equalTo(updatedUrl));
+      QuarkusTransaction.requiringNew()
+          .run(() -> {
+            assertEquals(updatedUrl, Project.<Project>findById(id).repositoryUrl);
+            assertEquals(originalUrl, Build.<Build>findById(queued).repositoryUrl);
+            assertEquals(originalUrl, Build.<Build>findById(running).repositoryUrl);
+          });
+    } finally {
+      QuarkusTransaction.requiringNew()
+          .run(() -> {
+            Build.deleteById(queued);
+            Build.deleteById(running);
+            Project.deleteById(id);
+          });
+    }
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void duplicateUpdateLeavesProjectUnchanged() {
+    Long originalId = project("lead-id", false);
+    Long duplicateId = project("lead-id", false);
+    Project before = QuarkusTransaction.requiringNew().call(() -> Project.findById(originalId));
+    String duplicateName =
+        QuarkusTransaction.requiringNew().call(() -> Project.<Project>findById(duplicateId).name);
+    try {
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"name\":\""
+                  + duplicateName
+                  + "\",\"repositoryUrl\":\"https://github.com/unique/repository.git\",\"privateRepository\":true}")
+          .when()
+          .put("/api/projects/" + originalId)
+          .then()
+          .statusCode(409)
+          .body("error", containsString("name"));
+      QuarkusTransaction.requiringNew()
+          .run(() -> {
+            Project unchanged = Project.findById(originalId);
+            assertEquals(before.name, unchanged.name);
+            assertEquals(before.repositoryUrl, unchanged.repositoryUrl);
+            assertFalse(unchanged.privateRepository);
+          });
+    } finally {
+      QuarkusTransaction.requiringNew()
+          .run(() -> {
+            Project.deleteById(originalId);
+            Project.deleteById(duplicateId);
+          });
+    }
+  }
+
+  @Test
   @TestSecurity(user = "lead", roles = "lead")
   @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
   void addsGitSuffix() {

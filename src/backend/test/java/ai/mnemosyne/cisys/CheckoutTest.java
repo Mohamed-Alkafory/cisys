@@ -47,7 +47,7 @@ class CheckoutTest {
   }
 
   private String fetch(int maxMib, int maxFiles) throws Exception {
-    return Checkout.fetch(dir(), source.toUri().toString(), "main", null, maxMib, maxFiles);
+    return Checkout.fetch(dir(), source.toUri().toString(), "main", null, true, maxMib, maxFiles);
   }
 
   private void assertRejected(String message, int maxMib, int maxFiles) throws Exception {

@@ -38,6 +38,10 @@ class ProjectBranchResourceTest {
   }
 
   private String project(boolean priv, String repositoryUrl) {
+    return project(priv, repositoryUrl, null);
+  }
+
+  private String project(boolean priv, String repositoryUrl, String credentialRef) {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           String name = "Public-Page-" + UUID.randomUUID();
@@ -46,6 +50,7 @@ class ProjectBranchResourceTest {
           p.repositoryUrl = repositoryUrl;
           p.ownerSubject = "owner-id";
           p.privateRepository = priv;
+          p.credentialRef = credentialRef;
           p.persist();
           return name;
         });
@@ -126,6 +131,89 @@ class ProjectBranchResourceTest {
         .statusCode(200)
         .body("branches", hasSize(1))
         .body("branches", contains("release"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "admin-id"))
+  void adminSetsAndClearsTheCredentialOnTheProjectForm() {
+    String repositoryUrl = github();
+    String name = project(true, repositoryUrl);
+    build(name, "main");
+    Long id =
+        QuarkusTransaction.requiringNew()
+            .call(() -> Project.<Project>find("name = ?1", name).firstResult().id);
+
+    // Without a credential the page shows only the branches that already have builds.
+    TestGitRepositoryService.resetCalls();
+    given()
+        .get("/api/project-pages/" + name + "/branches")
+        .then()
+        .statusCode(200)
+        .body("branches", contains("main"));
+    assertEquals(0, TestGitRepositoryService.calls());
+
+    // Saving the edit form with a credential switches the page to the repository's real branches.
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\""
+                + name
+                + "\",\"repositoryUrl\":\""
+                + repositoryUrl
+                + "\",\"privateRepository\":true,\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("credentialRef", equalTo("CISYS_GIT_TEST"));
+    TestGitRepositoryService.resetCalls();
+    given()
+        .get("/api/project-pages/" + name + "/branches")
+        .then()
+        .statusCode(200)
+        .body("branches", contains("dev", "main"));
+    assertEquals(1, TestGitRepositoryService.calls());
+    assertEquals("CISYS_GIT_TEST", TestGitRepositoryService.credential());
+
+    // Clearing it falls back to the branches that already have builds.
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\""
+                + name
+                + "\",\"repositoryUrl\":\""
+                + repositoryUrl
+                + "\",\"privateRepository\":true,\"credentialRef\":null}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("credentialRef", nullValue());
+    TestGitRepositoryService.resetCalls();
+    given()
+        .get("/api/project-pages/" + name + "/branches")
+        .then()
+        .statusCode(200)
+        .body("branches", contains("main"));
+    assertEquals(0, TestGitRepositoryService.calls());
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
+  void ownerOfPrivateProjectWithCredentialGetsRemoteBranches() {
+    String name = project(true, github(), "CISYS_GIT_TEST");
+    TestGitRepositoryService.resetCalls();
+    given()
+        .get("/api/project-pages/" + name + "/branches")
+        .then()
+        .statusCode(200)
+        .body("branches", hasSize(2))
+        .body("branches", contains("dev", "main"))
+        .body("reason", nullValue());
+    assertEquals(1, TestGitRepositoryService.calls());
+    assertEquals("CISYS_GIT_TEST", TestGitRepositoryService.credential());
   }
 
   @Test

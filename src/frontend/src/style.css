@@ -155,11 +155,27 @@ body {
 /* "Add a project" and the "Repositories" rows share these columns so they line up. */
 .project-grid {
   display: grid;
-  grid-template-columns: minmax(10rem, 1fr) minmax(14rem, 1.6fr) 8rem 9rem;
+  grid-template-columns: minmax(10rem, 1fr) minmax(14rem, 1.6fr) 8rem minmax(
+      9rem,
+      auto
+    );
   gap: 1rem;
+}
+/* The form gains a credential column for an admin's private project; keep the submit button on the same row. */
+.project-add.has-credential {
+  grid-template-columns:
+    minmax(10rem, 1fr) minmax(14rem, 1.6fr) 8rem minmax(11rem, 1fr)
+    auto;
 }
 .project-add {
   align-items: end;
+}
+.project-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: 0;
 }
 .project-form {
   display: grid;
@@ -467,8 +483,9 @@ body {
 }
 @media (max-width: 800px) {
   .project-form,
-  .project-grid {
-    grid-template-columns: 1fr 1fr;
+  .project-grid,
+  .project-add.has-credential {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 @media (max-width: 520px) {
@@ -480,8 +497,9 @@ body {
   }
   .project-form,
   .project-grid,
+  .project-add.has-credential,
   .stats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .page-container {
     padding: 1.5rem 1rem 2rem;
