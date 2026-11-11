@@ -7,10 +7,10 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { FolderGit2, GitBranch, LockKeyhole, LockKeyholeOpen, LogIn, Pin } from 'lucide-react';
+import { FolderGit2, GitBranch, Hammer, LockKeyhole, LockKeyholeOpen, LogIn, Pin } from 'lucide-react';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
+import { Card, CardContent } from './components/ui/card';
 import PageHeader from './components/layout/PageHeader';
 import BuildStatus from './BuildStatus';
 import { branchFromSegment, buildPath, duration, shortRevision, startedAt } from './build-format';
@@ -43,8 +43,9 @@ export function projectPath(name) {
  * Builds of one project, addressed by name. `load(path)` fetches JSON from the API, with or without a token.
  * The API answers 404 both for unknown projects and for private projects the visitor may not see,
  * so anonymous visitors are offered to sign in. Render it with `key={name}` so state resets per project.
+ * `onBuild(projectId, branch)` starts a build; without it no Build buttons are shown.
  */
-export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initialBranch = '' }) {
+export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, onBuild, initialBranch = '' }) {
   // undefined while loading, null when not found.
   const [page, setPage] = useState(undefined);
   const [error, setError] = useState('');
@@ -52,6 +53,8 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
   const [branchesError, setBranchesError] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState(initialBranch);
   const [buildsBranch, setBuildsBranch] = useState('');
+  const [startingBranch, setStartingBranch] = useState(null);
+  const [reload, setReload] = useState(0);
   const projectId = page?.project?.id;
   // main is the default branch; older repositories still use master. There is no "all branches" view.
   const branchNames = branches || [];
@@ -75,7 +78,7 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
     void fetchPage();
     const timer = setInterval(fetchPage, 5000);
     return () => { active = false; clearInterval(timer); };
-  }, [name, load, activeBranch]);
+  }, [name, load, activeBranch, reload]);
 
   // Branches are loaded once per project, not on every build refresh. Public projects read the
   // repository; private projects list the branches that already have builds.
@@ -121,16 +124,30 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
   // While the branches load, or while a branch-filtered fetch is in flight, do not show the previous
   // unfiltered builds. Otherwise a build from another branch flashes on screen and then disappears.
   const buildsReady = branches !== null && buildsBranch === activeBranch;
+  const startBuild = async (branch) => {
+    setStartingBranch(branch);
+    try {
+      await onBuild(project.id, branch);
+      setError('');
+      setSelectedBranch(branch);
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError(e.message || 'Unable to start the build.');
+    } finally {
+      setStartingBranch(null);
+    }
+  };
   const openBuild = (build) => onOpenBuild?.(project.name, build.branch || activeBranch, build.id);
 
   return (
     <main id="project-builds" className="page-container">
-      <PageHeader title={project.name} actions={
+      <PageHeader className="mb-2" title={project.name} actions={
         <Badge variant="outline">{project.privateRepository
           ? <LockKeyhole size={12} className="text-red-600 dark:text-red-400" aria-hidden="true"/>
           : <LockKeyholeOpen size={12} className="text-green-600 dark:text-green-400" aria-hidden="true"/>}
         {project.privateRepository ? 'Private' : 'Public'}</Badge>
       }/>
+      <p className="project-url project-repository">{project.repositoryUrl}</p>
       {error && <div className="error-message" role="alert">{error}</div>}
       <div className="project-layout">
         <aside className="branch-panel" aria-label="Branches">
@@ -140,9 +157,13 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
             : (
               <ul className="branch-list">
                 {branchNames.map((branch) => (
-                  <li key={branch}>
+                  <li key={branch} className="branch-item">
                     <button type="button" className="branch-option" aria-current={activeBranch === branch ? 'page' : undefined}
                       onClick={() => setSelectedBranch(branch)}>{branch}</button>
+                    {onBuild && <button type="button" className="branch-build" title="Build" aria-label={`Build ${branch}`}
+                      disabled={startingBranch !== null} onClick={() => void startBuild(branch)}>
+                      <Hammer size={14} aria-hidden="true"/>
+                    </button>}
                   </li>
                 ))}
               </ul>
@@ -150,17 +171,11 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, initi
           {branchesError && <p className="branch-panel-note">Branches unavailable</p>}
         </aside>
         <Card className="project-card builds-panel">
-          <CardHeader>
-            <CardTitle>Builds</CardTitle>
-            <CardDescription className="project-url">
-              {activeBranch ? `${activeBranch} · ` : ''}newest first · {project.repositoryUrl}
-            </CardDescription>
-          </CardHeader>
           <CardContent>
             {!buildsReady ? (
               <p className="loading-state" role="status">Loading builds…</p>
             ) : builds.length === 0 ? (
-              <p>{activeBranch ? `No builds for ${activeBranch} yet.` : 'No builds yet.'}</p>
+              <p>No builds</p>
             ) : (
               <div className="builds-table-wrap">
                 <table className="builds-table">

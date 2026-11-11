@@ -63,6 +63,20 @@ public class ProjectResource {
         catch (PersistenceException e) { throw conflict("A project with this name or repository URL already exists"); }
         return Response.status(201).entity(p).build();
     }
+    /** Deletes a project and its builds; the database unlinks their logs. Admins, or the lead who owns it. */
+    @DELETE @Path("/projects/{id}") @Transactional public Response delete(@PathParam("id") Long id) {
+        if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
+        Project p = Project.findById(id);
+        boolean admin = identity.hasRole("admin");
+        boolean owner = p != null && subject().equals(p.ownerSubject);
+        // Private projects the caller cannot see answer 404, as everywhere else.
+        if (p == null || (p.privateRepository && !admin && !owner)) throw new NotFoundException();
+        if (!admin && !owner) throw new ForbiddenException();
+        if (Build.count("projectId = ?1 and status = 'RUNNING'", id) > 0) throw conflict("A build is running. Delete the project when it finishes.");
+        Build.delete("projectId", id);
+        p.delete();
+        return Response.noContent().build();
+    }
     private static WebApplicationException conflict(String message) {
         return new WebApplicationException(Response.status(409).type(MediaType.APPLICATION_JSON).entity(Map.of("error", message)).build());
     }

@@ -8,6 +8,7 @@
 
 package ai.mnemosyne.cisys;
 
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.quarkus.test.security.jwt.Claim;
@@ -15,6 +16,7 @@ import io.quarkus.test.security.jwt.JwtSecurity;
 import org.junit.jupiter.api.Test;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
 class ProjectResourceTest {
@@ -53,5 +55,58 @@ class ProjectResourceTest {
     @JwtSecurity(claims = {@Claim(key = "sub", value = "outsider-id")})
     void unrelatedRoleCannotReadProjects() {
         given().when().get("/api/projects").then().statusCode(403);
+    }
+    private static Long project(String owner, boolean priv) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Project p = new Project(); String n = java.util.UUID.randomUUID().toString();
+            p.name = "delete-" + n; p.repositoryUrl = "https://example.com/delete-" + n; p.ownerSubject = owner; p.privateRepository = priv;
+            p.persist(); return p.id;
+        });
+    }
+    private static Long build(Long project, String status) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Build b = new Build(); b.projectId = project; b.requestedBy = "lead-id"; b.status = status; b.branch = "main";
+            b.persist(); return b.id;
+        });
+    }
+    private static boolean exists(Long project) {
+        return QuarkusTransaction.requiringNew().call(() -> Project.findById(project) != null);
+    }
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+    void ownerDeletesProjectAndItsBuilds() {
+        Long id = project("lead-id", false);
+        Long b = build(id, "PASSED");
+        given().when().delete("/api/projects/" + id).then().statusCode(204);
+        assertFalse(exists(id));
+        assertNull(QuarkusTransaction.requiringNew().call(() -> Build.findById(b)));
+    }
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+    void leadCannotDeleteOthersProjects() {
+        Long open = project("other-id", false), hidden = project("other-id", true);
+        given().when().delete("/api/projects/" + open).then().statusCode(403);
+        given().when().delete("/api/projects/" + hidden).then().statusCode(404);
+        assertTrue(exists(open));
+        assertTrue(exists(hidden));
+    }
+    @Test @TestSecurity(user = "member", roles = "member")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "member-id")})
+    void memberCannotDeleteProject() {
+        Long id = project("member-id", false);
+        given().when().delete("/api/projects/" + id).then().statusCode(403);
+        assertTrue(exists(id));
+    }
+    @Test @TestSecurity(user = "admin", roles = "admin")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+    void adminDeletesAnyProjectButNotWhileBuilding() {
+        Long id = project("other-id", true);
+        Long running = build(id, "RUNNING");
+        given().when().delete("/api/projects/" + id).then().statusCode(409).body("error", containsString("running"));
+        assertTrue(exists(id));
+        QuarkusTransaction.requiringNew().run(() -> Build.<Build>findById(running).status = "PASSED");
+        given().when().delete("/api/projects/" + id).then().statusCode(204);
+        assertFalse(exists(id));
+        given().when().delete("/api/projects/" + id).then().statusCode(404);
     }
 }
