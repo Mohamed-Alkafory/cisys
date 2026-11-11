@@ -1,6 +1,6 @@
--- Baseline: the schema Hibernate generated before migrations were introduced.
--- Every statement is idempotent so it can run on fresh databases and on existing
--- ones created by schema-management=update (those are baselined at version 0).
+-- The whole schema, as one repeatable migration: Flyway reruns it whenever this file changes.
+-- Every statement must stay idempotent, as it runs on fresh databases, on existing ones and on
+-- databases created by schema-management=update before migrations existed (baselined at version 0).
 
 CREATE EXTENSION IF NOT EXISTS lo;
 
