@@ -8,6 +8,7 @@
 
 package ai.mnemosyne.cisys;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.quarkus.security.Authenticated;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -43,14 +44,22 @@ public class ProjectResource {
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,99}");
     static final String NAME_RULE = "Project names use letters, digits, '.', '_' and '-', and start with a letter or digit";
     public record CreateProject(String name, String repositoryUrl, boolean privateRepository) {}
+    /** The owner's subject is for admins only; everyone else gets {@code owned}. */
+    public record ProjectResponse(Long id, String name, String repositoryUrl, boolean privateRepository, boolean owned,
+                                  @JsonInclude(JsonInclude.Include.NON_NULL) String ownerSubject) {}
+    private ProjectResponse response(Project p) {
+        return new ProjectResponse(p.id, p.name, p.repositoryUrl, p.privateRepository, subject().equals(p.ownerSubject),
+                identity.hasRole("admin") ? p.ownerSubject : null);
+    }
     @GET @Path("/session") public Map<String,Object> session() {
         requireCisysRole();
         return Map.of("username", token().getClaim("preferred_username") == null ? subject() : token().getClaim("preferred_username"), "subject", subject(), "roles", identity.getRoles());
     }
-    @GET @Path("/projects") public List<Project> list() {
+    @GET @Path("/projects") public List<ProjectResponse> list() {
         requireCisysRole();
-        if (identity.hasRole("admin")) return Project.listAll();
-        return Project.list("privateRepository = false or ownerSubject = ?1", subject());
+        List<Project> projects = identity.hasRole("admin") ? Project.listAll()
+                : Project.list("privateRepository = false or ownerSubject = ?1", subject());
+        return projects.stream().map(this::response).toList();
     }
     @POST @Path("/projects") @Transactional public Response create(CreateProject input) {
         if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
@@ -69,7 +78,7 @@ public class ProjectResource {
         Project p = new Project(); p.name = name; p.repositoryUrl = url; p.privateRepository = input.privateRepository(); p.ownerSubject = subject();
         try { p.persistAndFlush(); }
         catch (PersistenceException e) { throw conflict("A project with this name or repository URL already exists"); }
-        return Response.status(201).entity(p).build();
+        return Response.status(201).entity(response(p)).build();
     }
     /** Deletes a project and its builds; the database unlinks their logs. Admins, or the lead who owns it. */
     @DELETE @Path("/projects/{id}") @Transactional public Response delete(@PathParam("id") Long id) {

@@ -224,7 +224,7 @@ function App() {
   if (!ready) return <main className="loading-state" role={error ? 'alert' : 'status'}>{error || 'Connecting to Cisys…'}</main>;
   const canCreate = user.roles.includes('lead') || user.roles.includes('admin');
   // Admins may delete any project; leads only the projects they own.
-  const canDelete = (project) => user.roles.includes('admin') || (user.roles.includes('lead') && project.ownerSubject === user.subject);
+  const canDelete = (project) => user.roles.includes('admin') || (user.roles.includes('lead') && project.owned);
   const role = user.roles.includes('admin') ? 'Admin' : user.roles.includes('lead') ? 'Lead' : 'Member';
 
   return (

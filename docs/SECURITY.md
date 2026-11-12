@@ -39,6 +39,17 @@ Without signing in, `GET /api/branding/public`, `GET /api/branding/logo`, `GET /
 
 Private projects (and their build history and logs) are visible only to their creator and admins. Ownership is recorded with the immutable Keycloak subject (`sub`), not the user name. A project that is not visible to the caller is reported as `404 Not Found`.
 
+User subjects are returned to admins only:
+
+| Field                                         | Member | Lead | Admin |
+| :-------------------------------------------- | :----- | :--- | :---- |
+| Project `owned` (the caller owns the project) | yes    | yes  | yes   |
+| Project `ownerSubject`                        | no     | no   | yes   |
+| Build `requestedBy`                           | no     | no   | yes   |
+| Build `credentialRef`                         | no     | no   | yes   |
+
+The public project page and the public statistics never include them.
+
 The private flag controls visibility inside cisys; it does not grant or restrict Git access.
 
 ## Authentication

@@ -104,4 +104,11 @@ import java.util.List;
  @Test @TestSecurity(user="lead",roles="lead") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void otherLeadCannotPin(){Long id=project(false);Long b=build(id,"PASSED");given().contentType("application/json").put("/api/projects/"+id+"/builds/"+b+"/pin").then().statusCode(403);assertFalse(pinned(b));}
  @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void memberCannotPinOrSeePrivate(){Long pub=project(false),priv=project(true);Long b=build(pub,"PASSED"),hidden=build(priv,"PASSED");given().contentType("application/json").put("/api/projects/"+pub+"/builds/"+b+"/pin").then().statusCode(403);given().contentType("application/json").put("/api/projects/"+priv+"/builds/"+hidden+"/pin").then().statusCode(404);assertFalse(pinned(b));assertFalse(pinned(hidden));}
  @Test @TestSecurity(user="lead",roles="lead") @JwtSecurity(claims=@Claim(key="sub",value="owner-id")) void pinOfBuildInOtherProjectIs404(){Long id=project(false),other=project(false);Long b=build(other,"PASSED");given().contentType("application/json").put("/api/projects/"+id+"/builds/"+b+"/pin").then().statusCode(404);assertFalse(pinned(b));}
+
+ private void requesterVisible(boolean visible){Long id=project(false);Long b=build(id,"PASSED");String path="/api/projects/"+id+"/builds";
+  if(visible){given().get(path).then().statusCode(200).body("[0].requestedBy",equalTo("owner-id"));given().get(path+"/"+b).then().statusCode(200).body("requestedBy",equalTo("owner-id"));}
+  else{given().get(path).then().statusCode(200).body("[0]",not(hasKey("requestedBy")));given().get(path+"/"+b).then().statusCode(200).body("$",not(hasKey("requestedBy")));}}
+ @Test @TestSecurity(user="member",roles="member") @JwtSecurity(claims=@Claim(key="sub",value="other-id")) void memberDoesNotSeeRequester(){requesterVisible(false);}
+ @Test @TestSecurity(user="lead",roles="lead") @JwtSecurity(claims=@Claim(key="sub",value="owner-id")) void leadDoesNotSeeRequester(){requesterVisible(false);}
+ @Test @TestSecurity(user="admin",roles="admin") @JwtSecurity(claims=@Claim(key="sub",value="admin-id")) void adminSeesRequester(){requesterVisible(true);}
 }

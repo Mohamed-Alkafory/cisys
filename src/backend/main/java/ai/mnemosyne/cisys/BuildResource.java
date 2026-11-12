@@ -26,15 +26,17 @@ public class BuildResource {
  @Inject BuildLogs logs;
  @Inject RepositoryUrlValidator repositoryUrls;
  public record RunRequest(String branch, String image, String command, String credentialRef) {}
- public record BuildResponse(Long id, Long projectId, String requestedBy, String status,
+ /** Who requested the build and the credential reference are returned to admins only. */
+ public record BuildResponse(Long id, Long projectId, @JsonInclude(JsonInclude.Include.NON_NULL) String requestedBy, String status,
      String revision, Instant startedAt, Instant finishedAt, String branch,
      String image, String command, @JsonInclude(JsonInclude.Include.NON_NULL) String credentialRef,
      String imageDigest, Integer exitCode, boolean logTruncated, boolean pinned) {}
 
  private BuildResponse response(Build build) {
-  return new BuildResponse(build.id, build.projectId, build.requestedBy, build.status,
+  boolean admin = identity.hasRole("admin");
+  return new BuildResponse(build.id, build.projectId, admin ? build.requestedBy : null, build.status,
       build.revision, build.startedAt, build.finishedAt, build.branch,
-      build.image, build.command, identity.hasRole("admin") ? build.credentialRef : null,
+      build.image, build.command, admin ? build.credentialRef : null,
       build.imageDigest, build.exitCode, build.logTruncated, build.pinned);
  }
  private Project visible(Long id) {

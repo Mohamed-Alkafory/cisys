@@ -33,7 +33,36 @@ class ProjectResourceTest {
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
     void leadCreatesPrivateProjectWithSubjectOwner() {
         given().contentType("application/json").body("{\"name\":\"demo\",\"repositoryUrl\":\"https://github.com/repo.git\",\"privateRepository\":true}")
-            .when().post("/api/projects").then().statusCode(201).body("ownerSubject", equalTo("lead-id"));
+            .when().post("/api/projects").then().statusCode(201)
+            .body("owned", equalTo(true), "privateRepository", equalTo(true), "$", not(hasKey("ownerSubject")));
+        assertEquals("lead-id", QuarkusTransaction.requiringNew().call(() -> Project.<Project>find("name", "demo").firstResult().ownerSubject));
+    }
+    @Test @TestSecurity(user = "member", roles = "member")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "member-id")})
+    void memberListHidesOwnerSubject() {
+        Long id = project("lead-id", false);
+        given().when().get("/api/projects").then().statusCode(200)
+            .body(inList(id) + ".owned", equalTo(false), inList(id), not(hasKey("ownerSubject")), "ownerSubject", everyItem(nullValue()));
+    }
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+    void leadListMarksOwnProjects() {
+        Long own = project("lead-id", true), other = project("other-id", false);
+        given().when().get("/api/projects").then().statusCode(200)
+            .body(inList(own) + ".owned", equalTo(true), inList(other) + ".owned", equalTo(false),
+                  "ownerSubject", everyItem(nullValue()));
+    }
+    @Test @TestSecurity(user = "admin", roles = "admin")
+    @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+    void adminSeesOwnerSubject() {
+        Long id = project("lead-id", true);
+        given().when().get("/api/projects").then().statusCode(200)
+            .body(inList(id) + ".ownerSubject", equalTo("lead-id"), inList(id) + ".owned", equalTo(false));
+        given().contentType("application/json").body("{\"name\":\"admin-owned\",\"repositoryUrl\":\"https://github.com/admin-owned.git\"}")
+            .when().post("/api/projects").then().statusCode(201).body("ownerSubject", equalTo("admin-id"), "owned", equalTo(true));
+    }
+    private static String inList(Long id) {
+        return "find { it.id == " + id + " }";
     }
     @Test @TestSecurity(user = "lead", roles = "lead")
     @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
