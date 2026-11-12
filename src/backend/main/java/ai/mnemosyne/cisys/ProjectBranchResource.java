@@ -29,6 +29,7 @@ import java.util.Map;
 @Path("/api/project-pages/{name}/branches")
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
+@PublicRateLimited
 public class ProjectBranchResource {
     @Inject ProjectAccess access;
     @Inject GitRepositoryService repositories;

@@ -87,17 +87,70 @@ public class BuildLogs {
     }
 
     public void streamTo(long buildId, OutputStream out) throws IOException {
+        streamTo(buildId, out, 0, -1);
+    }
+
+    /**
+     * Streams the stored bytes from {@code offset}, at most {@code limit} of them. A negative
+     * limit means no limit. Used by the log endpoints to support partial and tail reads.
+     */
+    public void streamTo(long buildId, OutputStream out, long offset, long limit) throws IOException {
+        if (offset < 0) throw new IllegalArgumentException("offset must not be negative");
+        if (limit == 0) return;
         Long oid = logOid(buildId);
         if (oid == null) return;
-        for (long offset = 0; ; ) {
-            byte[] part = read(oid, offset, READ_BYTES);
-            if (part.length > 0) {
-                out.write(part);
-                out.flush();
-                offset += part.length;
-            }
-            if (part.length < READ_BYTES) return;
+        long written = 0;
+        for (long at = offset; limit < 0 || written < limit; ) {
+            int want = (int) Math.min(READ_BYTES, limit < 0 ? READ_BYTES : limit - written);
+            byte[] part = read(oid, at, want);
+            if (part.length == 0) return;
+            out.write(part);
+            out.flush();
+            at += part.length;
+            written += part.length;
         }
+    }
+
+    /** Total number of bytes stored for a build, or zero when it has no log yet. */
+    public long size(long buildId) {
+        Long oid = logOid(buildId);
+        if (oid == null) return 0;
+        return QuarkusTransaction.requiringNew().call(() -> {
+            try (Connection c = dataSource.getConnection()) {
+                LargeObject lo = largeObjects(c).open(oid, LargeObjectManager.READ);
+                try {
+                    return lo.size64();
+                } finally {
+                    lo.close();
+                }
+            }
+        });
+    }
+
+    /** A resolved byte range of one log. */
+    public record Range(long offset, long length) {}
+
+    /**
+     * Resolves the optional {@code offset}, {@code limit} and {@code tail} query values against
+     * the stored size. {@code tail} wins over {@code offset}; {@code maxBytes} clamps the result
+     * when it is not negative. A null limit means "everything that remains". A {@code tail} larger
+     * than {@code maxBytes} is reduced to the maximum, so the caller still gets the end of the log.
+     */
+    public static Range range(long size, Long offset, Long limit, Long tail, long maxBytes) {
+        if (offset != null && offset < 0) throw new IllegalArgumentException("offset must not be negative");
+        if (limit != null && limit < 0) throw new IllegalArgumentException("limit must not be negative");
+        if (tail != null && tail < 0) throw new IllegalArgumentException("tail must not be negative");
+        long start;
+        if (tail != null) {
+            long wanted = maxBytes >= 0 ? Math.min(tail, maxBytes) : tail;
+            start = Math.max(0, size - wanted);
+        } else {
+            start = offset == null ? 0 : offset;
+        }
+        long available = Math.max(0, size - start);
+        long length = limit == null ? available : Math.min(limit, available);
+        if (maxBytes >= 0) length = Math.min(length, maxBytes);
+        return new Range(start, length);
     }
 
     /** For tests. */

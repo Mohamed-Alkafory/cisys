@@ -111,6 +111,10 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | `KEYCLOAK_ADMIN_CLIENT_ID` | `cisys-backend` | Keycloak service account used to sign users out |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | `cisys` | Secret of that service account |
 | `STATS_CACHE_SECONDS` | `30` | How long the public front-page statistics are cached on the server |
+| `PUBLIC_LOG_MAX_BYTES` | `2097152` | Maximum log bytes returned to an anonymous request |
+| `PUBLIC_RATE_LIMIT_REQUESTS` | `120` | Anonymous requests per client per window; `0` disables the limiter |
+| `PUBLIC_RATE_LIMIT_WINDOW_SECONDS` | `60` | Length of the anonymous rate-limit window |
+| `PUBLIC_RATE_LIMIT_MAX_CLIENTS` | `10000` | Upper bound on tracked client addresses |
 | `DB_URL`            | `jdbc:postgresql://localhost:5432/cisys` | JDBC URL                                             |
 | `DB_USER`           | `cisys`                                  | Database user                                        |
 | `DB_PASSWORD`       | `cisys`                                  | Database password                                    |

@@ -38,7 +38,7 @@ public class StatsResource {
     private record Cached(PublicStats stats, Instant expires) {}
     private volatile Cached cached;
 
-    @GET @Path("/public") @PermitAll
+    @GET @Path("/public") @PermitAll @PublicRateLimited
     public Response publicStats() {
         Cached current = cached;
         if (current == null || !Instant.now().isBefore(current.expires())) {
