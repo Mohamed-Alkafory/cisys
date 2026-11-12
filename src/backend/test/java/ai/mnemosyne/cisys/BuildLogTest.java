@@ -89,7 +89,36 @@ import java.util.concurrent.TimeUnit;
  }
  @Test void buildWithoutLogStreamsNothing()throws Exception{
   long id=newBuild();assertNull(logs.logOid(id));
+  assertEquals(0,logs.size(id));
   ByteArrayOutputStream out=new ByteArrayOutputStream();logs.streamTo(id,out);assertEquals(0,out.size());
+ }
+ @Test void sizeAndPartialReadsUseStoredBytes()throws Exception{
+  long id=newBuild();try(var w=logs.open(id)){w.line("0123456789");}
+  assertEquals(11,logs.size(id));
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+  logs.streamTo(id,out,2,4);
+  assertEquals("2345",out.toString(StandardCharsets.UTF_8));
+ }
+ @Test void offsetPastTheEndStreamsNothing()throws Exception{
+  long id=newBuild();try(var w=logs.open(id)){w.line("abc");}
+  ByteArrayOutputStream out=new ByteArrayOutputStream();
+  logs.streamTo(id,out,100,10);
+  assertEquals(0,out.size());
+ }
+ @Test void rangeResolvesOffsetLimitTailAndCap(){
+  assertEquals(new BuildLogs.Range(10,20),BuildLogs.range(100,10L,20L,null,50));
+  assertEquals(new BuildLogs.Range(70,30),BuildLogs.range(100,null,null,30L,50));
+  assertEquals(new BuildLogs.Range(0,50),BuildLogs.range(100,null,null,null,50));
+  assertEquals(new BuildLogs.Range(90,10),BuildLogs.range(100,90L,null,null,50));
+  assertEquals(new BuildLogs.Range(0,50),BuildLogs.range(100,null,200L,null,50));
+  assertEquals(new BuildLogs.Range(0,0),BuildLogs.range(0,null,null,null,50));
+  assertEquals(new BuildLogs.Range(0,100),BuildLogs.range(100,null,null,null,-1));
+  assertEquals(new BuildLogs.Range(50,50),BuildLogs.range(100,null,null,80L,50));
+ }
+ @Test void rangeRejectsNegativeValues(){
+  assertThrows(IllegalArgumentException.class,()->BuildLogs.range(100,-1L,null,null,-1));
+  assertThrows(IllegalArgumentException.class,()->BuildLogs.range(100,null,-1L,null,-1));
+  assertThrows(IllegalArgumentException.class,()->BuildLogs.range(100,null,null,-1L,-1));
  }
  @Test void periodicFlushStoresQuietOutput()throws Exception{
   long id=newBuild();logs.flushInterval(200);

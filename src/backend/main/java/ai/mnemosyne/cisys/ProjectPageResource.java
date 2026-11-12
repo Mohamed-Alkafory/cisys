@@ -8,8 +8,10 @@
 
 package ai.mnemosyne.cisys;
 
+import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.Path;
@@ -17,9 +19,10 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.StreamingOutput;
+import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 import java.util.List;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * The page of a single project, addressed by its name (for example /cisys/ in the UI).
@@ -30,9 +33,13 @@ import java.util.List;
 @Path("/api/project-pages/{name}")
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
+@PublicRateLimited
 public class ProjectPageResource {
     @Inject ProjectAccess access;
     @Inject BuildLogs logs;
+    @Inject SecurityIdentity identity;
+    /** Anonymous callers may read at most this many bytes of one log in one response. */
+    @ConfigProperty(name = "cisys.public.log-max-bytes", defaultValue = "2097152") long publicLogMaxBytes;
 
     public record ProjectInfo(Long id, String name, String repositoryUrl, boolean privateRepository) {}
     /** Leaves out who requested the build and any credential reference, as the page may be anonymous. */
@@ -72,13 +79,30 @@ public class ProjectPageResource {
                 withWorkflow ? b.workflow : null);
     }
 
+    /**
+     * Streams a public build log. Anonymous callers are capped at {@code cisys.public.log-max-bytes}
+     * per response; use {@code offset}, {@code limit} or {@code tail} to page through a larger log.
+     * The headers expose the total size and the returned range so a client can continue.
+     */
     @GET
     @Path("/builds/{buildId}/log")
     @Produces("text/plain; charset=UTF-8")
-    public StreamingOutput log(@PathParam("name") String name, @PathParam("buildId") Long buildId) {
+    public Response log(@PathParam("name") String name, @PathParam("buildId") Long buildId,
+                        @QueryParam("offset") Long offset, @QueryParam("limit") Long limit,
+                        @QueryParam("tail") Long tail) {
         Project p = access.visible(name);
         Build b = Build.findById(buildId);
         if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
-        return out -> logs.streamTo(buildId, out);
+        long size = logs.size(buildId);
+        // The size and range are a snapshot; a running build may append while this response streams.
+        // Signed-in visitors, including the owner on a private project, still get the whole log.
+        long maxBytes = identity.isAnonymous() ? publicLogMaxBytes : -1;
+        BuildLogs.Range range;
+        try {
+            range = BuildLogs.range(size, offset, limit, tail, maxBytes);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException(e.getMessage());
+        }
+        return LogResponses.stream(logs, buildId, size, range);
     }
 }

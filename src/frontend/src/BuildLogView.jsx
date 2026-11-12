@@ -13,6 +13,47 @@ import { CardTitle } from './components/ui/card';
 import { duration, startedAt } from './build-format';
 
 const INLINE_LIMIT = 2 * 1024 * 1024;
+/** A rate-limited page is retried after Retry-After; enough retries for a 1 GiB log over 2 MiB pages. */
+const MAX_RATE_LIMIT_RETRIES = 6;
+const RETRY_FALLBACK_SECONDS = 5;
+
+function sleep(millis) {
+  return new Promise((resolve) => setTimeout(resolve, millis));
+}
+
+/**
+ * Reads the whole log in pages. The public endpoint caps each response, so keep requesting
+ * from the next offset until one comes back empty. A rate-limited page is retried from the
+ * same offset after Retry-After, so a large anonymous download completes across windows.
+ */
+export async function copyLog(api, logPath, sink, wait = sleep) {
+  let offset = 0;
+  let retries = 0;
+  for (;;) {
+    let response;
+    try {
+      response = await api(`${logPath}?offset=${offset}`, { raw: true });
+    } catch (e) {
+      if (e.status !== 429 || retries >= MAX_RATE_LIMIT_RETRIES) throw e;
+      retries += 1;
+      const seconds = Number(e.retryAfter);
+      await wait((Number.isFinite(seconds) && seconds > 0 ? seconds : RETRY_FALLBACK_SECONDS) * 1000);
+      continue;
+    }
+    const reader = response.body.getReader();
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+      await sink.write(value);
+    }
+    offset += received;
+    if (received === 0) return;
+    // A successful page proves the download is making progress; only bound consecutive 429s.
+    retries = 0;
+  }
+}
 
 /**
  * The expanded details and log of one build. Used inline in the signed-in build history
@@ -24,38 +65,72 @@ export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true,
   const [loading, setLoading] = useState(false);
   const [text, setText] = useState('');
   const [more, setMore] = useState(false);
+  const [tail, setTail] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
   // Follow the end of a running log, unless the visitor has scrolled up to read earlier output.
   const stickToBottom = useRef(true);
+  // Bytes already shown inline; a refresh asks only for what came after them.
+  const offsetRef = useRef(0);
+  // Identifies the latest request. A status change can start a load while an earlier one is still
+  // pending; only the latest may append text or move the offset, so the next refresh resumes from
+  // the accepted response instead of skipping output.
+  const requestRef = useRef(0);
+  // Kept across appends so a character split at a page boundary is completed by the next page.
+  const decoderRef = useRef(new TextDecoder('utf-8'));
+  // Mirrors `tail` for the status-change effect, which must not restart from the beginning.
+  const tailRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ reset = true, running = false } = {}) => {
+    const request = ++requestRef.current;
+    const current = () => request === requestRef.current;
     setLoading(true); setError('');
+    if (reset) { offsetRef.current = 0; decoderRef.current = new TextDecoder('utf-8'); tailRef.current = false; setTail(false); }
+    const startOffset = offsetRef.current;
+    // Once the inline view has filled up, a running build switches to the tail so new output stays visible.
+    const showTail = !reset && running && startOffset >= INLINE_LIMIT;
+    const remaining = INLINE_LIMIT - startOffset;
+    if (!showTail && remaining <= 0) { setMore(true); setLoaded(true); setLoading(false); return; }
     try {
-      const response = await api(logPath, { raw: true });
+      const params = showTail
+        ? new URLSearchParams({ tail: String(INLINE_LIMIT) })
+        : new URLSearchParams({ offset: String(startOffset), limit: String(remaining) });
+      const response = await api(`${logPath}?${params.toString()}`, { raw: true });
+      if (!current()) { await response.body?.cancel().catch(() => {}); return; }
+      const size = Number(response.headers.get('X-Log-Size') || 0);
       const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let received = 0, out = '', cut = false;
+      const decoder = showTail ? new TextDecoder('utf-8') : decoderRef.current;
+      let received = 0, out = '';
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) { out += decoder.decode(); break; }
-        const room = INLINE_LIMIT - received;
-        if (value.length > room) {
-          // No final decode, so a character cut at the limit is dropped instead of shown as a replacement character.
-          out += decoder.decode(value.subarray(0, room), { stream: true });
-          cut = true;
-          await reader.cancel();
-          break;
-        }
+        if (done) break;
+        if (!current()) { await reader.cancel().catch(() => {}); return; }
         received += value.length;
         out += decoder.decode(value, { stream: true });
       }
-      setText(out); setMore(cut); setLoaded(true);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+      if (!current()) return;
+      if (showTail) {
+        offsetRef.current = Math.max(startOffset, size);
+        setText(out);
+        tailRef.current = true;
+        setTail(true);
+        setMore(false);
+      } else {
+        // Only the accepted response moves the offset; a superseded one must not skip output.
+        offsetRef.current = startOffset + received;
+        setText((previous) => (reset ? out : previous + out));
+        setMore(size > offsetRef.current);
+      }
+      setLoaded(true);
+    } catch (e) { if (current()) setError(e.message); }
+    finally { if (current()) setLoading(false); }
   }, [api, logPath]);
 
-  useEffect(() => { void load(); }, [load, build.status]);
+  useEffect(() => {
+    // When a build finishes while the view follows the tail, keep showing the end of the log.
+    if (tailRef.current) void load({ reset: false, running: true });
+    else void load();
+  }, [load, build.status]);
 
   useEffect(() => {
     if (!scrollable || build.status !== 'RUNNING' || !stickToBottom.current) return;
@@ -77,19 +152,30 @@ export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true,
         let handle;
         try { handle = await window.showSaveFilePicker({ suggestedName: name }); }
         catch (e) { if (e.name === 'AbortError') return; throw e; }
-        const response = await api(logPath, { raw: true });
-        await response.body.pipeTo(await handle.createWritable());
+        const writable = await handle.createWritable();
+        try {
+          await copyLog(api, logPath, writable);
+          await writable.close();
+        } catch (e) {
+          // Do not leave a truncated file behind when a page fails, for example on a 429.
+          await writable.abort().catch(() => {});
+          throw e;
+        }
         return;
       }
-      const response = await api(logPath, { raw: true });
-      const url = URL.createObjectURL(await response.blob());
+      const chunks = [];
+      await copyLog(api, logPath, { write: async (chunk) => { chunks.push(chunk); } });
+      const url = URL.createObjectURL(new Blob(chunks, { type: 'text/plain' }));
       const a = document.createElement('a');
       a.href = url; a.download = name; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e) { setError(e.message); }
   }
 
-  async function refresh() { if (onRefresh) await onRefresh(); await load(); }
+  async function refresh() {
+    await load({ reset: false, running: build.status === 'RUNNING' });
+    if (onRefresh) await onRefresh();
+  }
 
   return (
     <div className="build-detail">
@@ -114,7 +200,8 @@ export function BuildLogPanel({ api, logPath, build, onRefresh, showMeta = true,
         </div>
       ) : loading && !loaded ? <p className="file-help">Loading log…</p>
         : <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</pre>}
-      {more && <p className="file-help">Showing the first 2 MiB; download the full log.</p>}
+      {tail ? <p className="file-help">Showing the latest 2 MiB; download the full log.</p>
+        : more && <p className="file-help">Showing the first 2 MiB; download the full log.</p>}
     </div>
   );
 }

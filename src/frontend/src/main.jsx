@@ -35,7 +35,11 @@ const DEFAULT_BRANDING = { name: 'cisys', headerColor: '#176a4a', headingColor: 
 
 async function publicJson(path, opts = {}) {
   const response = await fetch(API + path);
-  if (!response.ok) throw Object.assign(new Error(`Request failed (${response.status})`), { status: response.status });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const message = body?.error || (response.status === 429 ? 'Too many requests. Try again later.' : `Request failed (${response.status})`);
+    throw Object.assign(new Error(message), { status: response.status, retryAfter: Number(response.headers.get('Retry-After')) || null });
+  }
   if (opts.raw) return response;
   return response.json();
 }
@@ -54,9 +58,9 @@ async function api(path, opts = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    if (body?.error) throw Object.assign(new Error(body.error), { status: response.status });
+    if (body?.error) throw Object.assign(new Error(body.error), { status: response.status, retryAfter: Number(response.headers.get('Retry-After')) || null });
   }
-  if (!response.ok) throw Object.assign(new Error(response.status === 429 ? 'The build queue is full. Try again later.' : `Request failed (${response.status}). Check the branch and project access.`), { status: response.status });
+  if (!response.ok) throw Object.assign(new Error(response.status === 429 ? 'The build queue is full. Try again later.' : `Request failed (${response.status}). Check the branch and project access.`), { status: response.status, retryAfter: Number(response.headers.get('Retry-After')) || null });
   if (opts.raw) return response;
   if (response.status === 204) return null;
   return response.json();

@@ -14,7 +14,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.StreamingOutput;
+import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import java.time.Instant;
 import java.util.List;
@@ -57,10 +57,17 @@ public class BuildResource {
  @GET @Path("/{buildId}") public BuildResponse detail(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
   visible(id); Build b=Build.findById(buildId);if(b==null || !id.equals(b.projectId))throw new NotFoundException();return response(b,true);
  }
- /** A running build returns what is stored so far. */
- @GET @Path("/{buildId}/log") @Produces("text/plain; charset=UTF-8") public StreamingOutput log(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
+ /**
+  * A running build returns what is stored so far. Authenticated callers get the whole log by
+  * default; {@code offset}, {@code limit} and {@code tail} allow partial reads without a cap.
+  */
+ @GET @Path("/{buildId}/log") @Produces("text/plain; charset=UTF-8") public Response log(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId,
+     @QueryParam("offset") Long offset,@QueryParam("limit") Long limit,@QueryParam("tail") Long tail) {
   detail(id,buildId);
-  return out->logs.streamTo(buildId,out);
+  long size=logs.size(buildId);
+  BuildLogs.Range range;
+  try{range=BuildLogs.range(size,offset,limit,tail,-1);}catch(IllegalArgumentException e){throw new BadRequestException(e.getMessage());}
+  return LogResponses.stream(logs,buildId,size,range);
  }
  @PUT @Path("/{buildId}/pin") @Transactional public BuildResponse pin(@PathParam("projectId") Long id,@PathParam("buildId") Long buildId) {
   return setPinned(id,buildId,true);

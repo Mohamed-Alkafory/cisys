@@ -23,6 +23,7 @@ import static org.hamcrest.Matchers.*;
 @QuarkusTest
 class ProjectPageResourceTest {
     @Inject BuildLogs logs;
+    @Inject ProjectPageResource pages;
 
     record Seeded(String name, long buildId) {}
 
@@ -32,6 +33,10 @@ class ProjectPageResourceTest {
     }
 
     private Seeded seed(boolean priv) {
+        return seed(priv, "hello");
+    }
+
+    private Seeded seed(boolean priv, String logText) {
         Seeded seeded = QuarkusTransaction.requiringNew().call(() -> {
             String n = UUID.randomUUID().toString();
             Project p = new Project();
@@ -49,7 +54,7 @@ class ProjectPageResourceTest {
             b.persist();
             return new Seeded(p.name, b.id);
         });
-        byte[] log = "hello".getBytes(StandardCharsets.UTF_8);
+        byte[] log = logText.getBytes(StandardCharsets.UTF_8);
         try (var w = logs.open(seeded.buildId())) { w.append(log, 0, log.length); }
         return seeded;
     }
@@ -167,6 +172,65 @@ class ProjectPageResourceTest {
         Seeded s = seed(false);
         given().get("/api/project-pages/" + s.name() + "/builds/" + s.buildId() + "/log").then().statusCode(200)
                 .contentType(startsWith("text/plain")).body(equalTo("hello"));
+    }
+
+    @Test
+    void anonymousLogReadIsCappedAndCanContinue() {
+        Seeded s = seed(false, "0123456789");
+        ProjectPageResource resource = io.quarkus.arc.ClientProxy.unwrap(pages);
+        long original = resource.publicLogMaxBytes;
+        resource.publicLogMaxBytes = 5;
+        try {
+            String url = "/api/project-pages/" + s.name() + "/builds/" + s.buildId() + "/log";
+            given().get(url).then().statusCode(200)
+                    .header("X-Log-Size", "10")
+                    .header("X-Log-Offset", "0").header("X-Log-Length", "5")
+                    .body(equalTo("01234"));
+            given().queryParam("offset", 5).get(url).then().statusCode(200)
+                    .header("X-Log-Offset", "5").header("X-Log-Length", "5")
+                    .body(equalTo("56789"));
+            // A tail larger than the cap still returns the end of the log, not a chunk from the middle.
+            given().queryParam("tail", 50).get(url).then().statusCode(200)
+                    .header("X-Log-Offset", "5").header("X-Log-Length", "5")
+                    .body(equalTo("56789"));
+        } finally {
+            resource.publicLogMaxBytes = original;
+        }
+    }
+
+    @Test
+    void anonymousLogSupportsOffsetLimitAndTail() {
+        Seeded s = seed(false, "0123456789");
+        String url = "/api/project-pages/" + s.name() + "/builds/" + s.buildId() + "/log";
+        given().queryParam("offset", 2).queryParam("limit", 3).get(url).then().statusCode(200)
+                .header("X-Log-Offset", "2").header("X-Log-Length", "3").body(equalTo("234"));
+        given().queryParam("tail", 4).get(url).then().statusCode(200)
+                .header("X-Log-Offset", "6").header("X-Log-Length", "4").body(equalTo("6789"));
+    }
+
+    @Test
+    void negativeLogRangeIsRejected() {
+        Seeded s = seed(false);
+        String url = "/api/project-pages/" + s.name() + "/builds/" + s.buildId() + "/log";
+        given().queryParam("offset", -1).get(url).then().statusCode(400);
+        given().queryParam("limit", -1).get(url).then().statusCode(400);
+        given().queryParam("tail", -1).get(url).then().statusCode(400);
+    }
+
+    @Test
+    @TestSecurity(user = "lead", roles = "lead")
+    @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
+    void signedInLogReadIsNotCapped() {
+        Seeded s = seed(true, "0123456789");
+        ProjectPageResource resource = io.quarkus.arc.ClientProxy.unwrap(pages);
+        long original = resource.publicLogMaxBytes;
+        resource.publicLogMaxBytes = 5;
+        try {
+            given().get("/api/project-pages/" + s.name() + "/builds/" + s.buildId() + "/log").then().statusCode(200)
+                    .header("X-Log-Size", "10").body(equalTo("0123456789"));
+        } finally {
+            resource.publicLogMaxBytes = original;
+        }
     }
 
     @Test

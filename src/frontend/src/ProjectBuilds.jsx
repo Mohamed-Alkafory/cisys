@@ -6,7 +6,7 @@
  *   OF THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GitBranch, Hammer, LockKeyhole, LockKeyholeOpen, Pin } from 'lucide-react';
 import { Badge } from './components/ui/badge';
 import { Card, CardContent } from './components/ui/card';
@@ -55,6 +55,8 @@ export default function ProjectBuilds({ name, load, onOpenBuild, onBuild, onNotF
   const [startingBranch, setStartingBranch] = useState(null);
   const [reload, setReload] = useState(0);
   const projectId = page?.project?.id;
+  // Latest page, so the polling loop can decide whether a build is still active without restarting.
+  const pageRef = useRef(undefined);
   // main is the default branch; older repositories still use master. There is no "all branches" view.
   const branchNames = branches || [];
   const defaultBranch = branchNames.includes('main') ? 'main'
@@ -63,20 +65,34 @@ export default function ProjectBuilds({ name, load, onOpenBuild, onBuild, onNotF
 
   useEffect(() => {
     let active = true;
+    let lastFetch = 0;
     const branchQuery = activeBranch ? `?branch=${encodeURIComponent(activeBranch)}` : '';
     const fetchPage = async () => {
+      lastFetch = Date.now();
       try {
         const data = await load(`/project-pages/${encodeURIComponent(name)}${branchQuery}`);
-        if (active) { setPage(data); setBuildsBranch(activeBranch); setError(''); }
+        if (active) { pageRef.current = data; setPage(data); setBuildsBranch(activeBranch); setError(''); }
       } catch (e) {
         if (!active) return;
-        if (e.status === 404) onNotFound();
+        if (e.status === 404) { pageRef.current = null; setPage(null); onNotFound(); }
         else setError(e.message || 'Unable to load the project.');
       }
     };
     void fetchPage();
-    const timer = setInterval(fetchPage, 5000);
-    return () => { active = false; clearInterval(timer); };
+    // Poll only while the tab is visible, and back off when no build is running.
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      const builds = pageRef.current?.builds ?? [];
+      const activeBuild = builds.some((b) => b.status === 'RUNNING' || b.status === 'QUEUED');
+      if (activeBuild || Date.now() - lastFetch >= 30000) void fetchPage();
+    }, 5000);
+    const onVisibility = () => { if (!document.hidden) void fetchPage(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [name, load, activeBranch, reload, onNotFound]);
 
   // Branches are loaded once per project, not on every build refresh. Public projects read the

@@ -42,7 +42,9 @@ The complete output of the build, standard output and standard error together, i
 
 * `BUILD_LOG_MAX_BYTES` (default 1 GiB) is a safety limit per build, not a normal cap. Output beyond it is read and discarded, a marker line is added, and the build is marked as truncated. The limit is exact in bytes, so if it falls inside a multi-byte character, the last character shown may be incomplete.
 * A build is also marked as truncated if the log could not be stored completely. Logs from before this version were capped at 120 KB; those that reached the cap are marked as truncated.
-* The build page shows the first 2 MiB of a log. **Download log** saves the full log; in Chromium-based browsers it is written straight to the chosen file, in other browsers it is held in browser memory first. The backend never holds a whole log in memory.
+* The build page shows the first 2 MiB of a log. For a running build, **Refresh** appends only the new output instead of downloading the log from the start; once 2 MiB are shown, it switches to the latest 2 MiB so new output stays visible. **Download log** saves the full log; in Chromium-based browsers it is written straight to the chosen file, in other browsers it is held in browser memory first. The backend never holds a whole log in memory.
+* A visitor who is not signed in can read at most `PUBLIC_LOG_MAX_BYTES` (2 MiB by default) of a log in one response. The page requests the log in chunks and retries a rate-limited page after `Retry-After` from the same offset, so **Download log** can save a log larger than the limit, even across rate-limit windows. Signed-in users, including the owner of a private project, are not capped.
+* Public pages pause their refresh while the tab is hidden and refresh less often when no build is running. Anonymous requests to a public page, its branches, its logs and the public statistics are also rate limited; a client that sends too many requests is told to wait and retry.
 
 ## Pinned builds
 
