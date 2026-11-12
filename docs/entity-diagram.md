@@ -44,6 +44,8 @@ erDiagram
         BIGINT id PK
         INTEGER retention_days
         INTEGER retention_max_builds
+        INTEGER max_concurrent_builds
+        INTEGER max_queued_builds
     }
 
     PROJECT ||--o{ BUILD : has

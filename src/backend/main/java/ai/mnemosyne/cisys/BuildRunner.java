@@ -48,6 +48,9 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  }
  @ConfigProperty(name="cisys.build.concurrency",defaultValue="1") int concurrency;
  @ConfigProperty(name="cisys.build.queue-limit",defaultValue="100") int queueLimit;
+ /** An admin's setting replaces the configured limit. */
+ int concurrency(){Integer v=Settings.current().maxConcurrentBuilds;return v!=null?v:concurrency;}
+ int queueLimit(){Integer v=Settings.current().maxQueuedBuilds;return v!=null?v:queueLimit;}
  private final ExecutorService executor=Executors.newCachedThreadPool();
  private final Map<Long,Completion> completions=new ConcurrentHashMap<>();
  record Completion(Long id,Build.Status status,String revision,Integer exitCode,String imageDigest,
@@ -93,7 +96,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
   return QuarkusTransaction.requiringNew().call(()->{
    lockQueue();
    if(Project.findById(projectId)==null)throw new jakarta.ws.rs.NotFoundException();
-   if(Build.count("status",Build.Status.QUEUED)>=queueLimit)throw new WebApplicationException(jakarta.ws.rs.core.Response.status(429).type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON).entity(Map.of("error","Build queue is full. Try again later.")).build());
+   if(Build.count("status",Build.Status.QUEUED)>=queueLimit())throw new WebApplicationException(jakarta.ws.rs.core.Response.status(429).type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON).entity(Map.of("error","Build queue is full. Try again later.")).build());
    Build b=new Build();
    b.projectId=projectId;b.requestedBy=actor;b.status=Build.Status.QUEUED;
    b.requestedAt=Instant.now();b.repositoryUrl=url;
@@ -105,7 +108,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  Build claim(){
   return QuarkusTransaction.requiringNew().call(()->{
    lockQueue();
-   if(Build.count("status",Build.Status.RUNNING)>=concurrency)return null;
+   if(Build.count("status",Build.Status.RUNNING)>=concurrency())return null;
    Build b=Build.<Build>find("status = ?1 order by requestedAt, id",Build.Status.QUEUED).firstResult();
    if(b==null)return null;
    int changed=Build.update("status = ?1, startedAt = ?2 where id = ?3 and status = ?4",

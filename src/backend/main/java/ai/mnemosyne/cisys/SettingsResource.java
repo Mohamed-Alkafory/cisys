@@ -27,12 +27,15 @@ import jakarta.ws.rs.core.MediaType;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class SettingsResource {
-    static final int MAX_DAYS = 3650, MAX_BUILDS = 10000;
+    static final int MAX_DAYS = 3650, MAX_BUILDS = 10000, MAX_CONCURRENT = 16, MAX_QUEUED = 1000;
 
     @Inject SecurityIdentity identity;
+    @Inject BuildRunner runner;
 
     /** 0 turns a limit off. */
     public record Retention(Integer maxAgeDays, Integer maxBuilds) {}
+
+    public record Queue(Integer maxConcurrent, Integer maxQueued) {}
 
     @GET @Path("/retention") public Retention retention() {
         requireAdmin();
@@ -51,6 +54,24 @@ public class SettingsResource {
         s.retentionDays = input.maxAgeDays();
         s.retentionMaxBuilds = input.maxBuilds();
         return new Retention(s.retentionDays, s.retentionMaxBuilds);
+    }
+
+    @GET @Path("/queue") public Queue queue() {
+        requireAdmin();
+        return new Queue(runner.concurrency(), runner.queueLimit());
+    }
+
+    @PUT @Path("/queue") @Transactional public Queue updateQueue(Queue input) {
+        requireAdmin();
+        if (input == null || input.maxConcurrent() == null || input.maxConcurrent() < 1 || input.maxConcurrent() > MAX_CONCURRENT)
+            throw new BadRequestException("Concurrent builds must be between 1 and " + MAX_CONCURRENT);
+        if (input.maxQueued() == null || input.maxQueued() < 1 || input.maxQueued() > MAX_QUEUED)
+            throw new BadRequestException("Queued builds must be between 1 and " + MAX_QUEUED);
+        Settings s = Settings.findById(1L);
+        if (s == null) { s = new Settings(); s.persist(); }
+        s.maxConcurrentBuilds = input.maxConcurrent();
+        s.maxQueuedBuilds = input.maxQueued();
+        return new Queue(s.maxConcurrentBuilds, s.maxQueuedBuilds);
     }
 
     private void requireAdmin() {

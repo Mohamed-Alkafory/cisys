@@ -21,6 +21,10 @@ public class Settings extends PanacheEntityBase {
     @Column(nullable = false) public int retentionDays = 30;
     /** 0 turns the count limit off. */
     @Column(nullable = false) public int retentionMaxBuilds = 50;
+    /** Null uses cisys.build.concurrency. */
+    public Integer maxConcurrentBuilds;
+    /** Null uses cisys.build.queue-limit. */
+    public Integer maxQueuedBuilds;
 
     public static Settings current() {
         Settings s = findById(1L);

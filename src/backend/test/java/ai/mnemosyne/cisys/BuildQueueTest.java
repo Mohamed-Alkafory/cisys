@@ -32,7 +32,7 @@ class BuildQueueTest {
    Project p=new Project();p.name="queue-test";p.ownerSubject="owner";p.repositoryUrl="https://github.com/example/test.git";p.persist();return p.id;
   });
  }
- @AfterEach void cleanup(){runner.concurrency=1;runner.queueLimit=100;QuarkusTransaction.requiringNew().run(()->{Build.deleteAll();Project.deleteAll();});}
+ @AfterEach void cleanup(){runner.concurrency=1;runner.queueLimit=100;SettingsResourceTest.clearQueue();QuarkusTransaction.requiringNew().run(()->{Build.deleteAll();Project.deleteAll();});}
  Build submit(){return runner.submit(project,"owner","https://github.com/example/original.git",request);}
  Build read(Long id){return QuarkusTransaction.requiringNew().call(()->Build.findById(id));}
  void finish(Long id){QuarkusTransaction.requiringNew().run(()->{Build b=Build.findById(id);b.status=Build.Status.PASSED;b.finishedAt=java.time.Instant.now();});}
@@ -134,6 +134,12 @@ class BuildQueueTest {
    assertEquals(Build.Status.PASSED,read(second.id).status);
    worker.dispatch();assertEquals(List.of(first.id,second.id),executions);
   }finally{worker.stop();}
+ }
+ @Test void adminSettingsReplaceConfiguredLimits(){
+  QuarkusTransaction.requiringNew().run(()->{Settings s=Settings.findById(1L);if(s==null){s=new Settings();s.persist();}s.maxConcurrentBuilds=2;s.maxQueuedBuilds=3;});
+  Build first=submit(),second=submit();submit();
+  WebApplicationException full=assertThrows(WebApplicationException.class,this::submit);assertEquals(429,full.getResponse().getStatus());
+  assertEquals(first.id,runner.claim().id);assertEquals(second.id,runner.claim().id);assertNull(runner.claim());
  }
  @Test void retentionProtectsQueuedBuilds(){
   Build waiting=submit();

@@ -20,7 +20,8 @@ export default function SettingsPanel({ api }) {
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
-    api('/settings/retention').then(setDraft).catch((e) => setError(e.message));
+    Promise.all([api('/settings/retention'), api('/settings/queue')])
+      .then(([retention, queue]) => setDraft({ ...retention, ...queue })).catch((e) => setError(e.message));
   }, [api]);
 
   function change(key, value) { setDraft((d) => ({ ...d, [key]: value })); setNotice(''); }
@@ -28,8 +29,13 @@ export default function SettingsPanel({ api }) {
   async function submit(e) {
     e.preventDefault(); setBusy(true); setError(''); setNotice('');
     try {
-      const body = { maxAgeDays: Number(draft.maxAgeDays), maxBuilds: Number(draft.maxBuilds) };
-      setDraft(await api('/settings/retention', { method: 'PUT', body: JSON.stringify(body) }));
+      const retention = { maxAgeDays: Number(draft.maxAgeDays), maxBuilds: Number(draft.maxBuilds) };
+      const queue = { maxConcurrent: Number(draft.maxConcurrent), maxQueued: Number(draft.maxQueued) };
+      const saved = await Promise.all([
+        api('/settings/retention', { method: 'PUT', body: JSON.stringify(retention) }),
+        api('/settings/queue', { method: 'PUT', body: JSON.stringify(queue) }),
+      ]);
+      setDraft({ ...saved[0], ...saved[1] });
       setNotice('Settings saved.');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
@@ -50,6 +56,21 @@ export default function SettingsPanel({ api }) {
             <div className="form-field">
               <Label htmlFor="retention-builds">Keep at most (builds per project)</Label>
               <Input id="retention-builds" type="number" min="0" max="10000" step="1" required value={draft.maxBuilds} onChange={(e) => change('maxBuilds', e.target.value)}/>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="project-card">
+        <CardHeader><CardTitle>Queue</CardTitle></CardHeader>
+        <CardContent>
+          <div className="settings-form">
+            <div className="form-field">
+              <Label htmlFor="queue-concurrent">Concurrent builds</Label>
+              <Input id="queue-concurrent" type="number" min="1" max="16" step="1" required value={draft.maxConcurrent} onChange={(e) => change('maxConcurrent', e.target.value)}/>
+            </div>
+            <div className="form-field">
+              <Label htmlFor="queue-queued">Queued builds</Label>
+              <Input id="queue-queued" type="number" min="1" max="1000" step="1" required value={draft.maxQueued} onChange={(e) => change('maxQueued', e.target.value)}/>
             </div>
           </div>
         </CardContent>

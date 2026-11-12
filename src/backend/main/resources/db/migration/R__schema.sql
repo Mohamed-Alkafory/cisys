@@ -88,3 +88,7 @@ CREATE TABLE IF NOT EXISTS settings (
 ALTER TABLE build ADD COLUMN IF NOT EXISTS requestedat timestamp(6) with time zone;
 ALTER TABLE build ADD COLUMN IF NOT EXISTS repositoryurl character varying(2048);
 CREATE INDEX IF NOT EXISTS build_queue_order ON build (requestedat, id) WHERE status = 'QUEUED';
+
+-- Null uses the configured queue limits.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxconcurrentbuilds integer;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxqueuedbuilds integer;

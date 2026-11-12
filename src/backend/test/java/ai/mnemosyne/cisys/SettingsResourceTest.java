@@ -8,6 +8,7 @@
 
 package ai.mnemosyne.cisys;
 
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,40 @@ class SettingsResourceTest {
         for (String body : new String[] {"{\"maxAgeDays\":-1,\"maxBuilds\":50}", "{\"maxAgeDays\":30,\"maxBuilds\":-1}",
                 "{\"maxAgeDays\":3651,\"maxBuilds\":50}", "{\"maxAgeDays\":30,\"maxBuilds\":10001}", "{\"maxAgeDays\":30}", "{}"}) {
             given().contentType("application/json").body(body).put(PATH).then().statusCode(400);
+        }
+    }
+
+    private static final String QUEUE = "/api/settings/queue";
+
+    static void clearQueue() {
+        QuarkusTransaction.requiringNew().run(() -> Settings.update("maxConcurrentBuilds = null, maxQueuedBuilds = null where id = 1"));
+    }
+
+    @Test void anonymousCannotReadQueue() { given().get(QUEUE).then().statusCode(401); }
+
+    @Test @TestSecurity(user = "lead", roles = "lead")
+    void leadCannotReadOrUpdateQueue() {
+        given().get(QUEUE).then().statusCode(403);
+        given().contentType("application/json").body("{\"maxConcurrent\":2,\"maxQueued\":10}").put(QUEUE).then().statusCode(403);
+    }
+
+    @Test @TestSecurity(user = "admin", roles = "admin")
+    void adminSavesQueueOverConfiguredDefaults() {
+        given().get(QUEUE).then().statusCode(200).body("maxConcurrent", equalTo(1), "maxQueued", equalTo(100));
+        try {
+            given().contentType("application/json").body("{\"maxConcurrent\":4,\"maxQueued\":10}").put(QUEUE).then().statusCode(200)
+                    .body("maxConcurrent", equalTo(4), "maxQueued", equalTo(10));
+            given().get(QUEUE).then().statusCode(200).body("maxConcurrent", equalTo(4), "maxQueued", equalTo(10));
+        } finally {
+            clearQueue();
+        }
+    }
+
+    @Test @TestSecurity(user = "admin", roles = "admin")
+    void rejectsInvalidQueue() {
+        for (String body : new String[] {"{\"maxConcurrent\":0,\"maxQueued\":10}", "{\"maxConcurrent\":17,\"maxQueued\":10}",
+                "{\"maxConcurrent\":1,\"maxQueued\":0}", "{\"maxConcurrent\":1,\"maxQueued\":1001}", "{\"maxConcurrent\":1}", "{}"}) {
+            given().contentType("application/json").body(body).put(QUEUE).then().statusCode(400);
         }
     }
 }

@@ -31,6 +31,7 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `GET /api/branding`                       | yes                       | yes                  | yes   |
 | `PUT /api/branding`                       | no                        | no                   | yes   |
 | `GET`/`PUT /api/settings/retention`       | no                        | no                   | yes   |
+| `GET`/`PUT /api/settings/queue`           | no                        | no                   | yes   |
 | `GET /api/images` (allowed images)        | yes                       | yes                  | yes   |
 | `PUT /api/images`                         | no                        | no                   | yes   |
 | `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |
@@ -71,7 +72,7 @@ Controls that are in place
 * Branch names are validated as Git references. Builds may only use images an admin has allowed; image names are validated against a restrictive pattern.
 * The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build. The `.git` directory is not copied into the container.
 * The container runs with no network, no capabilities, `no-new-privileges`, a PID limit of 256, 1 GiB of memory, one CPU, and as the unprivileged user `65534:65534`.
-* One build runs at a time and times out after ten minutes. Output is stored in full, up to the `BUILD_LOG_MAX_BYTES` safety limit (default 1 GiB); output beyond it is discarded and the build is marked truncated.
+* Builds run up to the concurrency limit (default 1, at most 16 when set by an admin); further requests wait in a bounded queue. Each build times out after ten minutes. Output is stored in full, up to the `BUILD_LOG_MAX_BYTES` safety limit (default 1 GiB); output beyond it is discarded and the build is marked truncated.
 * Builds left in the `RUNNING` state by a server restart are marked `FAILED` at startup.
 
 ### Repository addresses
