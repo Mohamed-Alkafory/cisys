@@ -13,8 +13,11 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import org.junit.jupiter.api.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
@@ -140,6 +143,79 @@ class BuildQueueTest {
   Build first=submit(),second=submit();submit();
   WebApplicationException full=assertThrows(WebApplicationException.class,this::submit);assertEquals(429,full.getResponse().getStatus());
   assertEquals(first.id,runner.claim().id);assertEquals(second.id,runner.claim().id);assertNull(runner.claim());
+ }
+ @Test void recoveryRemovesOrphanedContainersAndCheckoutDirectories()throws Exception{
+  Path root=Files.createTempDirectory("cisys-recovery-");
+  Path stale=Files.createDirectory(root.resolve("cisys-old"));
+  Files.writeString(stale.resolve("file"),"checkout");
+  Path keep=Files.createDirectory(root.resolve("keep-me"));
+  Build interrupted=submit();
+  runner.claim();
+  List<List<String>> calls=new CopyOnWriteArrayList<>();
+  BuildRunner restarted=new BuildRunner(){
+   @Override Path checkoutRoot(){return root;}
+  };
+  restarted.runtime="podman";
+  restarted.commands=(args,timeout,limit)->{
+   calls.add(List.copyOf(args));
+   if(args.get(1).equals("ps"))return new BuildRunner.Result(0,false,"cisys-build-1\ncisys-build-2\nunrelated\n");
+   return new BuildRunner.Result(0,false,"");
+  };
+  restarted.logs=logs;restarted.concurrency=1;restarted.queueLimit=100;
+  try{
+   restarted.recover(null);
+   assertEquals(List.of(
+       List.of("podman","ps","-a","--format","{{.Names}}"),
+       List.of("podman","rm","-f","cisys-build-1"),
+       List.of("podman","rm","-f","cisys-build-2")),calls);
+   assertFalse(Files.exists(stale),"the stale checkout is removed");
+   assertTrue(Files.exists(keep),"unrelated directories are kept");
+   assertEquals(Build.Status.FAILED,read(interrupted.id).status);
+  }finally{
+   restarted.stop();
+   BuildRunner.delete(root);
+  }
+ }
+ @Test void cleanupFailureDoesNotStopRecovery(){
+  Build interrupted=submit();
+  runner.claim();
+  BuildRunner restarted=new BuildRunner(){
+   @Override Path checkoutRoot(){return Path.of("/definitely/not/a/checkout/root");}
+  };
+  restarted.runtime="podman";
+  restarted.commands=(args,timeout,limit)->{
+   if(args.get(1).equals("ps"))return new BuildRunner.Result(0,false,"cisys-build-1\n");
+   return new BuildRunner.Result(1,false,"container runtime unavailable");
+  };
+  restarted.logs=logs;restarted.concurrency=1;restarted.queueLimit=100;
+  try{
+   assertDoesNotThrow(()->restarted.recover(null));
+   assertEquals(Build.Status.FAILED,read(interrupted.id).status);
+  }finally{restarted.stop();}
+ }
+ @Test void rejectedScheduleReturnsTheBuildToTheQueue()throws Exception{
+  Build queued=submit();
+  AtomicBoolean reject=new AtomicBoolean(true);
+  List<Long> executed=new CopyOnWriteArrayList<>();
+  BuildRunner worker=new BuildRunner(){
+   @Override void schedule(Runnable task){
+    if(reject.get())throw new RejectedExecutionException("worker stopped");
+    super.schedule(task);
+   }
+   @Override void execute(Build b){executed.add(b.id);finish(b.id);}
+  };
+  worker.logs=logs;worker.concurrency=1;worker.queueLimit=100;worker.recover(null);
+  try{
+   worker.dispatch();
+   Build after=read(queued.id);
+   assertEquals(Build.Status.QUEUED,after.status);
+   assertNull(after.startedAt);
+   reject.set(false);
+   worker.dispatch();
+   long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+   while(executed.isEmpty() && System.nanoTime()<deadline)Thread.sleep(10);
+   assertEquals(List.of(queued.id),executed);
+  }finally{worker.stop();}
  }
  @Test void retentionProtectsQueuedBuilds(){
   Build waiting=submit();

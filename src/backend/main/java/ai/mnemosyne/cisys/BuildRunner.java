@@ -36,6 +36,9 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  @Inject RepositoryUrlValidator repositoryUrls;
  @ConfigProperty(name="cisys.build.log-max-bytes",defaultValue="1073741824") long logMaxBytes;
  String runtime;
+ /** Runs a container runtime command. Replaced in tests so cleanup never reaches the host. */
+ interface RuntimeCommand{Result run(List<String> args,int timeout,int limit)throws Exception;}
+ RuntimeCommand commands=BuildRunner::command;
  /** Uses podman when it is installed, otherwise docker. */
  @PostConstruct void resolveRuntime(){
   runtime=onPath("podman")?"podman":onPath("docker")?"docker":"podman";
@@ -81,6 +84,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  }
  void recover(@Observes StartupEvent event){
   if(concurrency<1 || queueLimit<1)throw new IllegalArgumentException("Build concurrency and queue limit must be positive");
+  cleanupOrphans();
   List<Long> running=QuarkusTransaction.requiringNew().call(()->Build.<Build>list("status",Build.Status.RUNNING).stream().map(b->b.id).toList());
   for(Long id:running){
    Throwable failure=logs.appendLine(id,"Server restarted during build");
@@ -91,6 +95,61 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    });
   }
   ready=true;
+ }
+ /** Containers a previous runner process left behind when it did not get to remove them. */
+ List<String> staleContainers(){
+  if(runtime==null)return List.of();
+  try{
+   Result r=commands.run(List.of(runtime,"ps","-a","--format","{{.Names}}"),15,1_000_000);
+   if(r.timeout() || r.code()!=0)throw new IllegalStateException("Container listing failed");
+   return r.output().lines().map(String::strip).filter(n->n.startsWith("cisys-build-")).toList();
+  }catch(Exception e){
+   throw new IllegalStateException("Could not list containers",e);
+  }
+ }
+ /** Removes one stale build container. */
+ void removeContainer(String name){
+  try{
+   Result r=commands.run(List.of(runtime,"rm","-f",name),15,4096);
+   if(r.timeout() || r.code()!=0)throw new IllegalStateException("Container command failed");
+  }catch(Exception e){
+   throw new IllegalStateException("Could not remove container "+name,e);
+  }
+ }
+ /** Root of the checkout directories created by {@link #run}. */
+ Path checkoutRoot(){
+  return Path.of(System.getProperty("java.io.tmpdir"));
+ }
+ /** Best-effort cleanup of a previous runner process. A failure is logged and does not stop startup. */
+ private void cleanupOrphans(){
+  try{
+   cleanupOrphansUnchecked();
+  }catch(RuntimeException e){
+   Log.warn("Could not clean up orphaned runner state",e);
+  }
+ }
+ private void cleanupOrphansUnchecked(){
+  try{
+   for(String name:staleContainers()){
+    try{removeContainer(name);Log.infof("Removed orphaned build container %s",name);}
+    catch(Exception e){Log.warnf(e,"Could not remove orphaned build container %s",name);}
+   }
+  }catch(RuntimeException e){
+   Log.warn("Could not list orphaned build containers",e);
+  }
+  Path root=checkoutRoot();
+  if(!Files.isDirectory(root))return;
+  try(var entries=Files.list(root)){
+   for(Path path:entries.filter(p->p.getFileName().toString().startsWith("cisys-")).toList()){
+    try{
+     if(Files.isSymbolicLink(path))Files.deleteIfExists(path);else delete(path);
+    }catch(Exception e){
+     Log.warnf(e,"Could not remove stale checkout %s",path);
+    }
+   }
+  }catch(Exception e){
+   Log.warnf(e,"Could not list stale checkouts in %s",root);
+  }
  }
  Build submit(Long projectId,String actor,String url,BuildResource.RunRequest request){
   return QuarkusTransaction.requiringNew().call(()->{
@@ -126,7 +185,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    Build b;
    while((b=claim())!=null){
     Build task=b;
-    try{executor.submit(()->execute(task));}
+    try{schedule(()->execute(task));}
     catch(RejectedExecutionException e){
      QuarkusTransaction.requiringNew().run(()->Build.update("status = ?1, startedAt = null where id = ?2 and status = ?3",Build.Status.QUEUED,task.id,Build.Status.RUNNING));
      throw e;
@@ -134,6 +193,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    }
   }catch(RuntimeException e){Log.error("Build queue dispatch failed; will retry",e);}
  }
+ /** Hands a claimed build to the executor. Overridden in tests to simulate a rejected schedule. */
+ void schedule(Runnable task){executor.submit(task);}
  void execute(Build b){run(b.id,b.repositoryUrl,new BuildResource.RunRequest(b.branch,b.image,b.command,b.credentialRef));}
  /** For tests waiting for the queue to drain. */
  boolean hasPendingBuilds(){return QuarkusTransaction.requiringNew().call(()->Build.count("status in ?1",List.of(Build.Status.QUEUED,Build.Status.RUNNING))>0);}
@@ -143,7 +204,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    log=logs.open(id);
    // Checked again here because DNS can change after the project was saved.
    repositoryUrls.validate(url);
-   dir=Files.createTempDirectory("cisys-");
+   dir=Files.createTempDirectory(checkoutRoot(),"cisys-");
    try(Git git=Git.init().setDirectory(dir.toFile()).call()){
     var cfg=git.getRepository().getConfig();cfg.setString("http",null,"followRedirects","false");cfg.save();
     var fetch=git.fetch().setRemote(url).setRefSpecs(new RefSpec("+refs/heads/"+request.branch()+":refs/remotes/origin/build")).setDepth(1).setTimeout(60);

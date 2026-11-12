@@ -29,7 +29,7 @@ Build requests are stored as `QUEUED` and claimed in request order. By default o
 
 If saving a completed result fails, the runner retains it in memory and retries on each dispatcher tick without rerunning the build. Its slot stays reserved until the result is saved.
 
-On restart, interrupted `RUNNING` builds become `FAILED` and retain their partial logs. `QUEUED` builds remain queued and run when a slot is available. Queued and running builds are protected from retention cleanup and prevent project deletion. This runner supports one backend instance; startup recovery assumes the previous instance has stopped.
+On restart, interrupted `RUNNING` builds become `FAILED` and retain their partial logs. `QUEUED` builds remain queued and run when a slot is available. Startup also removes leftover `cisys-build-*` containers and `cisys-*` checkout directories from an unclean stop; a cleanup failure is logged and does not stop startup. Queued and running builds are protected from retention cleanup and prevent project deletion. This runner supports one backend instance; startup recovery assumes the previous instance has stopped.
 
 ## What a build records
 
