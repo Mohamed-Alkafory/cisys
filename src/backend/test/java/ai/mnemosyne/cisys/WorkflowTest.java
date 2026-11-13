@@ -165,27 +165,18 @@ class WorkflowTest {
         // Each quote grows to five characters in the Containerfile ('\'' in JSON), so 13 steps exceed the limit.
         String step = "      - name: s\n        run: x" + "'".repeat(3999) + "\n";
         Workflow w = workflow(step.repeat(13));
-        assertThrows(Workflow.InvalidWorkflowException.class, () -> w.containerfile(URL, "main", REV, false));
+        assertThrows(Workflow.InvalidWorkflowException.class, () -> w.containerfile(ID, URL, "main", REV, false));
     }
 
     static final String URL = "https://github.com/example/app";
     static final String REV = "0123456789abcdef0123456789abcdef01234567";
-
-    @Test
-    void qualifiesOfficialImages() {
-        assertEquals("docker.io/library/alpine:3.23", Workflow.official("alpine:3.23"));
-        assertEquals("docker.io/library/alpine", Workflow.official("alpine"));
-        assertEquals("docker.io/valkey/valkey:8-alpine", Workflow.official("valkey/valkey:8-alpine"));
-        assertEquals("quay.io/keycloak/keycloak:26", Workflow.official("quay.io/keycloak/keycloak:26"));
-        assertEquals("localhost/tools:1", Workflow.official("localhost/tools:1"));
-        assertEquals("registry:5000/tools:1", Workflow.official("registry:5000/tools:1"));
-    }
+    static final String ID = "164b5c6a230f645862b6123e07cf0a67f2f03371696aa82a12ccf3589e87c016";
 
     @Test
     void containerfileClonesTheBranchThenRunsEachStepWithoutNetwork() {
         List<String> lines = Workflow.parse(VALID.replace("        wait: 8180\n", "        run: make wait\n"))
-                .containerfile(URL, "feature/x", REV, false).lines().toList();
-        assertEquals("FROM docker.io/library/alpine:3.23", lines.get(0));
+                .containerfile(ID, URL, "feature/x", REV, false).lines().toList();
+        assertEquals("FROM " + ID, lines.get(0));
         assertEquals("USER 0", lines.get(1));
         assertTrue(lines.get(2).startsWith("RUN [\"sh\",\"-c\",\"command -v git"), lines.get(2));
         assertEquals("USER 65534:65534", lines.get(4));
@@ -209,7 +200,7 @@ class WorkflowTest {
 
     @Test
     void credentialIsMountedForTheCloneOnly() {
-        String file = Workflow.parse(VALID).containerfile(URL, "main", REV, true);
+        String file = Workflow.parse(VALID).containerfile(ID, URL, "main", REV, true);
         assertEquals(1, file.split("--mount=type=secret,id=" + Workflow.GIT_SECRET + " ", -1).length - 1, file);
         assertTrue(file.contains("/run/secrets/" + Workflow.GIT_SECRET), file);
     }
@@ -217,7 +208,7 @@ class WorkflowTest {
     @Test
     void argumentsCannotEscapeTheExecForm() {
         String file = workflow("      - name: \"a\\\"]\\nRUN evil\"\n        run: echo \"\\\\\\n\"\n")
-                .containerfile(URL, "main", REV, false);
+                .containerfile(ID, URL, "main", REV, false);
         assertEquals(9, file.lines().count(), file);
         assertTrue(file.lines().noneMatch(l -> l.startsWith("RUN evil")), file);
     }

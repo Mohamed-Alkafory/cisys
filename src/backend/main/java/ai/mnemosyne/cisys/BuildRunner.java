@@ -246,14 +246,16 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    QuarkusTransaction.requiringNew().run(()->Build.update("workflow = ?1 where id = ?2",text,id));
    Workflow workflow=Workflow.parse(text);
    String base=workflow.environment().base();
-   QuarkusTransaction.requiringNew().run(()->Build.update("image = ?1 where id = ?2",base,id));
-   if(!QuarkusTransaction.requiringNew().call(()->AllowedImage.isAllowed(base)))throw new IllegalArgumentException("Image "+base+" is not allowed");
-   String containerfile=workflow.containerfile(url,request.branch(),revision,request.credentialRef()!=null);
-   log.line("Workflow "+workflow.name()+" on "+workflow.baseReference());
+   ImageReference.Resolved from=ImageReference.resolve(base,localImages());
+   QuarkusTransaction.requiringNew().run(()->Build.update("image = ?1 where id = ?2",from.name(),id));
+   // Allowed when the admin allowed any name of the image, whichever way the workflow names it.
+   if(!QuarkusTransaction.requiringNew().call(()->from.names().stream().anyMatch(AllowedImage::isAllowed)))throw new IllegalArgumentException("Image "+base+" is not allowed");
+   String containerfile=workflow.containerfile(from.id(),url,request.branch(),revision,request.credentialRef()!=null);
+   log.line("Workflow "+workflow.name()+" on "+from.name()+" ("+from.id().substring(0,12)+")");
    dir=Files.createTempDirectory(checkoutRoot(),"cisys-");
    Path context=Files.createDirectory(dir.resolve("context"));
    Path file=Files.writeString(dir.resolve("Containerfile"),containerfile);
-   List<String> build=new ArrayList<>(List.of(runtime,"build","--no-cache","--pull=missing","-f",file.toString(),"-t",name));
+   List<String> build=new ArrayList<>(List.of(runtime,"build","--no-cache","--pull=never","-f",file.toString(),"-t",name));
    if(runtime.equals("podman"))build.addAll(List.of("--layers=false","--security-opt=no-new-privileges","--memory=1g","--cpu-period=100000","--cpu-quota=100000"));
    else build.add("--progress=plain");
    // The runtime reads the token from its environment, so it never appears in an argument or in the image.
@@ -262,7 +264,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    Streamed result=stream(build,600,log,logMaxBytes);
    captureError=result.readerError();
    if(result.truncated()){truncated=true;log.line("[output truncated after "+logMaxBytes+" bytes; "+(result.totalBytes()-logMaxBytes)+" further bytes discarded]");}
-   digest=digest(workflow.baseReference());
+   digest=digest(from.id());
    if(result.timeout())log.line("Build timed out");
    else {
     // The image build stops at the first failing RUN and exits with its exit code.
@@ -291,6 +293,19 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    if(captureError!=null){truncated=true;Log.errorf(captureError,"Log capture failed for build %d",id);}
    complete(new Completion(id,Build.Status.valueOf(status),revision,exit,digest,truncated,Instant.now()));
   }
+ }
+ /** Every local image with its full ID, for resolving a workflow's base image. */
+ List<ImageReference.Local> localImages()throws Exception{
+  Result r=command(List.of(runtime,"images","--no-trunc","--format","{{.Repository}}\t{{.Tag}}\t{{.ID}}"),30,1_000_000);
+  if(r.timeout()||r.code()!=0)throw new IllegalStateException("Container command failed");
+  List<ImageReference.Local> images=new ArrayList<>();
+  for(String line:r.output().split("\n")){
+   String[] f=line.strip().split("\t");
+   if(f.length!=3)continue;
+   String id=f[2].replace("sha256:","");
+   if(id.matches("[0-9a-f]{64}"))images.add(new ImageReference.Local(f[0],f[1],id));
+  }
+  return images;
  }
  record LocalImage(String name,String id,String size,String created){}
  /** Lists the tagged images in the local container runtime. */

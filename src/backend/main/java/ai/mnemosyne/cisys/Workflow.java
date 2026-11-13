@@ -42,7 +42,7 @@ import java.util.List;
  * </pre>
  *
  * A step either runs a shell command ({@code run}) or waits until a TCP port accepts connections ({@code wait}).
- * A build turns the workflow into a Containerfile, see {@link #containerfile(String, String, String, boolean)}.
+ * A build turns the workflow into a Containerfile, see {@link #containerfile(String, String, String, String, boolean)}.
  */
 public record Workflow(String name, Environment environment, List<Job> jobs) {
     /** Where the workflow lives, relative to the repository root. */
@@ -150,27 +150,16 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
     static final String GIT_SECRET = "git";
 
     /**
-     * The fully qualified name of {@code environment.base}. A name without a registry, such as {@code alpine:3.23},
-     * is the official image on Docker Hub, so the build never depends on the runtime's short-name search.
+     * The Containerfile that builds this workflow's image from the local image {@code baseId}, which
+     * {@link ImageReference#resolve} found for {@code environment.base}; see
+     * {@link #containerfile(String, String, String, String, boolean, int)}.
      */
-    public String baseReference() {
-        return official(environment.base());
-    }
-
-    static String official(String image) {
-        int slash = image.indexOf('/');
-        String first = slash < 0 ? "" : image.substring(0, slash);
-        if (first.contains(".") || first.contains(":") || first.equals("localhost")) return image;
-        return "docker.io/" + (slash < 0 ? "library/" : "") + image;
-    }
-
-    /** The Containerfile that builds this workflow's image, see {@link #containerfile(String, String, String, boolean, int)}. */
-    public String containerfile(String repositoryUrl, String branch, String revision, boolean credential) {
-        return containerfile(repositoryUrl, branch, revision, credential, WAIT_SECONDS);
+    public String containerfile(String baseId, String repositoryUrl, String branch, String revision, boolean credential) {
+        return containerfile(baseId, repositoryUrl, branch, revision, credential, WAIT_SECONDS);
     }
 
     /**
-     * Builds an image from {@code environment.base}:
+     * Builds an image from the base image, named by its ID so the build uses exactly the image that was resolved:
      * <ol>
      * <li>installs Git as root when the image does not have it,</li>
      * <li>clones the branch into {@code /workspace} as an unprivileged user and checks that it is at {@code revision};
@@ -182,9 +171,10 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
      * step stops the build with its exit code. The Git token, when there is one, is a build secret
      * ({@value #GIT_SECRET}) that is mounted for the clone only and is not stored in the image.
      */
-    String containerfile(String repositoryUrl, String branch, String revision, boolean credential, int waitSeconds) {
+    String containerfile(String baseId, String repositoryUrl, String branch, String revision, boolean credential, int waitSeconds) {
+        if (!baseId.matches("[0-9a-f]{64}")) throw new IllegalArgumentException("Not an image ID: " + baseId);
         StringBuilder f = new StringBuilder();
-        f.append("FROM ").append(baseReference()).append('\n');
+        f.append("FROM ").append(baseId).append('\n');
         f.append("USER 0\n");
         f.append("RUN ").append(exec("sh", "-c", INSTALL_GIT)).append('\n');
         f.append("RUN ").append(exec("sh", "-c", "mkdir -p /workspace && chown " + BUILD_USER + " /workspace")).append('\n');

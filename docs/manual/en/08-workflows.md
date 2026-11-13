@@ -46,9 +46,25 @@ The workflow is checked before anything runs. Unknown or duplicate keys, missing
 
 ### The base image
 
-`environment.base` names an official image. A name without a registry, such as `alpine:3.23` or `debian:13-slim`, means the official image on Docker Hub (`docker.io/library/alpine:3.23`). An image from another registry is written in full, for example `quay.io/fedora/fedora:43`.
+`environment.base` names an image that is already on the build host. Admins pull images and allow them on the **Images** page. The build never pulls an image itself.
 
-An admin must allow the image on the **Images** page, under the name exactly as the workflow writes it. Otherwise the build fails with `Image … is not allowed`.
+The image can be named in several ways. With `docker.io/library/alpine:3.23` (ID `164b5c6a230f`) as the only local Alpine image, all of these name it:
+
+| `base` | Meaning |
+|--------|---------|
+| `alpine` | The official image on Docker Hub, any tag |
+| `alpine:3.23` | The official image with that tag |
+| `docker.io/library/alpine` | The full repository name, any tag |
+| `docker.io/library/alpine:3.23` | The full name, as the **Images** page lists it |
+| `164b5c6a230f` | The image ID, or a prefix of it of at least 12 characters |
+
+* A name without a registry, such as `alpine` or `valkey/valkey`, means Docker Hub. An image from another registry is written in full, for example `quay.io/fedora/fedora:43`.
+* A name without a tag is fine when one image of that repository is present. If several are present, `latest` is used if present; otherwise the build fails and lists the tags to choose from.
+* Digest references (`alpine@sha256:…`) are not supported; use the image ID.
+* The image must be allowed on the **Images** page under any of its names; the workflow may name it differently.
+* A missing image fails the build with `Image … is not available on the build host`, and one that is not allowed with `Image … is not allowed`.
+
+The build starts `FROM` the image ID it found, so it uses exactly that image even if a tag is moved during the build.
 
 The base image needs `sh`. If it has no `git`, the build installs it with the image's package manager. That works for `apk`, `apt-get`, `dnf`, `microdnf`, `yum` and `zypper`. Images without one of these, such as distroless images, must already contain `git`.
 
@@ -57,7 +73,7 @@ The base image needs `sh`. If it has no `git`, the build installs it with the im
 A build turns the workflow into a Containerfile and builds an image from it with Podman (or Docker):
 
 1. **Read.** The backend fetches the branch and records its commit ID. It reads `.cisys/workflows/ci.yml` and stores the text with the build, then validates it.
-2. **Base.** The image starts `FROM` the qualified `environment.base`. If the image is not available locally, it is pulled.
+2. **Base.** `environment.base` is looked up among the local images, and the image starts `FROM` its ID. Nothing is pulled.
 3. **Git.** If the image has no `git`, it is installed as root. This step has network access.
 4. **Checkout.** As the unprivileged user `65534:65534`, the branch is cloned into `/workspace` at depth 1. The build then checks that the clone is at the recorded commit; if the branch moved in the meantime, the build fails. The working tree is **on the branch being tested**, with its `.git` directory, so `git status`, `git log -1` and `git rev-parse HEAD` work. `HOME` is `/tmp`.
 5. **Steps.** The jobs and steps run in order as `65534:65534`, in `/workspace`, **without network**. The log marks every job and step with `==> Job:` and `==> Step:` lines.
@@ -85,7 +101,7 @@ Never put secrets in a workflow file, because each build stores the file and sho
 
 ## On the build page
 
-The build page shows the workflow file the build read, under **Workflow**. A queued build shows *Not read yet*. A build that failed before it could read the file shows *None*. **Image** shows `environment.base` as written in the workflow.
+The build page shows the workflow file the build read, under **Workflow**. A queued build shows *Not read yet*. A build that failed before it could read the file shows *None*. **Image** shows the full name of the base image the build found, for example `docker.io/library/alpine:3.23`.
 
 ## Limits
 
