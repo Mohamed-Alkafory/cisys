@@ -66,7 +66,13 @@ The image can be named in several ways. With `docker.io/library/alpine:3.23` (ID
 
 The build starts `FROM` the image ID it found, so it uses exactly that image even if a tag is moved during the build.
 
-The base image needs `sh`. If it has no `git`, the build installs it with the image's package manager. That works for `apk`, `apt-get`, `dnf`, `microdnf`, `yum` and `zypper`. Images without one of these, such as distroless images, must already contain `git`.
+### Tools in every build image
+
+Every build image contains `git`, `make`, `podman` and `podman-compose`. The build installs those the base image lacks, as root, with the image's package manager: `apk`, `apt-get`, `dnf`, `microdnf`, `yum` or `zypper`. The package names are the command names. The build fails if a tool cannot be installed, for example on an image without a supported package manager (such as a distroless image), or where the distribution does not package one of them. On Red Hat Enterprise Linux and UBI images, for instance, `podman-compose` is only in EPEL.
+
+The base image also needs `sh`. Installing the tools downloads packages on every build. A base image that already contains them starts faster.
+
+`podman` and `podman-compose` are installed, but containers cannot yet be started from a step: steps run as the unprivileged user `65534:65534`, with no subordinate UID range, no network, and inside the build's own container storage.
 
 ## How a workflow is built
 
@@ -74,7 +80,7 @@ A build turns the workflow into a Containerfile and builds an image from it with
 
 1. **Read.** The backend fetches the branch and records its commit ID. It reads `.cisys/workflows/ci.yml` and stores the text with the build, then validates it.
 2. **Base.** `environment.base` is looked up among the local images, and the image starts `FROM` its ID. Nothing is pulled.
-3. **Git.** If the image has no `git`, it is installed as root. This step has network access.
+3. **Tools.** `git`, `make`, `podman` and `podman-compose` are installed as root if the image lacks them. This step has network access.
 4. **Checkout.** As the unprivileged user `65534:65534`, the branch is cloned into `/workspace` at depth 1. The build then checks that the clone is at the recorded commit; if the branch moved in the meantime, the build fails. The working tree is **on the branch being tested**, with its `.git` directory, so `git status`, `git log -1` and `git rev-parse HEAD` work. `HOME` is `/tmp`.
 5. **Steps.** The jobs and steps run in order as `65534:65534`, in `/workspace`, **without network**. The log marks every job and step with `==> Job:` and `==> Step:` lines.
 6. **Result.** The first failing step stops the build. The log shows `==> Step failed:` with the step name and exit code, and the build records that exit code and the status `FAILED`. When every step succeeds, the build is `PASSED`.
@@ -92,6 +98,7 @@ The whole image build has ten minutes. After that it is stopped and reported as 
 ### No network for steps
 
 Steps cannot reach the network. A step that downloads dependencies, such as a `mvn` or `npm install` without a local cache, fails. Use a base image that already contains the tools and dependencies the build needs.
+
 
 ## Private repositories
 

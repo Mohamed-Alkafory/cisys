@@ -156,13 +156,22 @@ function App() {
   }, []);
 
   // Switches to an in-app page, leaving any project URL behind.
-  function go(target) {
-    if (window.location.pathname !== '/') window.history.pushState(null, '', '/');
+  function go(target, replace = false) {
+    if (window.location.pathname !== '/') window.history[replace ? 'replaceState' : 'pushState'](null, '', '/');
     setProjectName(null);
     setProjectBranch('');
     setBuildId(null);
     setPage(target);
   }
+
+  // A project or build that does not exist, or that the visitor may not see, and any unknown path,
+  // goes straight to the front page. The URL is replaced, so Back does not return to it.
+  const showFrontPage = useCallback(() => go('home', true), []);
+
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path !== '/' && projectName === null && buildId === null) showFrontPage();
+  }, [projectName, buildId, showFrontPage]);
 
   function openProject(name, branch = '') {
     window.history.pushState(null, '', projectPath(name));
@@ -211,8 +220,8 @@ function App() {
 
   if (mode === 'public') return <PublicHome branding={branding || DEFAULT_BRANDING} stats={stats} statsError={statsError} logoUrl={API + '/branding/logo'} onSignIn={() => keycloak.login()} dark={dark} setDark={setDark}>
     {projectName !== null && (buildId !== null
-      ? <ProjectBuild key={`${projectName}-${projectBranch}-${buildId}`} name={projectName} branch={projectBranch} buildId={buildId} load={publicJson} onBack={() => openProject(projectName, projectBranch)}/>
-      : <ProjectBuilds key={projectName} name={projectName} initialBranch={projectBranch} load={publicJson} onSignIn={() => keycloak.login()} onOpenBuild={openBuild}/>)}
+      ? <ProjectBuild key={`${projectName}-${projectBranch}-${buildId}`} name={projectName} branch={projectBranch} buildId={buildId} load={publicJson} onBack={() => openProject(projectName, projectBranch)} onNotFound={showFrontPage}/>
+      : <ProjectBuilds key={projectName} name={projectName} initialBranch={projectBranch} load={publicJson} onOpenBuild={openBuild} onNotFound={showFrontPage}/>)}
   </PublicHome>;
   if (!ready) return <main className="loading-state" role={error ? 'alert' : 'status'}>{error || 'Connecting to Cisys…'}</main>;
   const canCreate = user.roles.includes('lead') || user.roles.includes('admin');
@@ -246,8 +255,8 @@ function App() {
         </div>
       </header>
       {projectName !== null ? (buildId !== null
-        ? <ProjectBuild key={`${projectName}-${projectBranch}-${buildId}`} name={projectName} branch={projectBranch} buildId={buildId} load={api} onBack={() => openProject(projectName, projectBranch)}/>
-        : <ProjectBuilds key={projectName} name={projectName} initialBranch={projectBranch} load={api} onOpenBuild={openBuild} onBuild={canCreate ? startBranchBuild : undefined}/>) : page === 'home' ? <main id="home" className="page-container">
+        ? <ProjectBuild key={`${projectName}-${projectBranch}-${buildId}`} name={projectName} branch={projectBranch} buildId={buildId} load={api} onBack={() => openProject(projectName, projectBranch)} onNotFound={showFrontPage}/>
+        : <ProjectBuilds key={projectName} name={projectName} initialBranch={projectBranch} load={api} onOpenBuild={openBuild} onBuild={canCreate ? startBranchBuild : undefined} onNotFound={showFrontPage}/>) : page === 'home' ? <main id="home" className="page-container">
         <PublicStats stats={stats} statsError={statsError}/>
       </main> : page === 'profile' ? <main id="profile" className="page-container">
         <PageHeader title="Profile"/>

@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, FolderGit2, Pin, PinOff } from 'lucide-react';
+import { ArrowLeft, Pin, PinOff } from 'lucide-react';
 import { Button } from './components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './components/ui/card';
 import PageHeader from './components/layout/PageHeader';
@@ -16,8 +16,9 @@ import { BuildLogPanel } from './BuildLogView';
 import { duration, startedAt } from './build-format';
 
 /** Dedicated page for one build, including the expanded log. */
-export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
-  // undefined while loading, null when not found.
+/** `onNotFound()` is called when the build does not exist or the visitor may not see it. */
+export default function ProjectBuild({ name, branch, buildId, load, onBack, onNotFound }) {
+  // undefined while loading.
   const [build, setBuild] = useState(undefined);
   const [error, setError] = useState('');
   const [pinning, setPinning] = useState(false);
@@ -27,10 +28,10 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
       setBuild(await load(`/project-pages/${encodeURIComponent(name)}/builds/${buildId}`));
       setError('');
     } catch (e) {
-      if (e.status === 404) setBuild(null);
+      if (e.status === 404) onNotFound();
       else setError(e.message || 'Unable to load the build.');
     }
-  }, [load, name, buildId]);
+  }, [load, name, buildId, onNotFound]);
 
   async function togglePin() {
     setPinning(true); setError('');
@@ -46,23 +47,6 @@ export default function ProjectBuild({ name, branch, buildId, load, onBack }) {
     const timer = setInterval(loadBuild, 5000);
     return () => { clearTimeout(initial); clearInterval(timer); };
   }, [loadBuild]);
-
-  if (build === null) {
-    return (
-      <main id="project-build" className="page-container">
-        <Card className="project-card">
-          <CardContent>
-            <div className="empty-state">
-              <FolderGit2 size={28} aria-hidden="true"/>
-              <strong>Build not found</strong>
-              <p>Build #{buildId} does not exist for {name}, or you do not have access to it.</p>
-              <Button type="button" variant="outline" onClick={onBack}><ArrowLeft aria-hidden="true"/> Back to builds</Button>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-    );
-  }
 
   if (build === undefined) {
     return <main id="project-build" className="page-container">{error

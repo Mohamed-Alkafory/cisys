@@ -7,9 +7,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { FolderGit2, GitBranch, Hammer, LockKeyhole, LockKeyholeOpen, LogIn, Pin } from 'lucide-react';
+import { GitBranch, Hammer, LockKeyhole, LockKeyholeOpen, Pin } from 'lucide-react';
 import { Badge } from './components/ui/badge';
-import { Button } from './components/ui/button';
 import { Card, CardContent } from './components/ui/card';
 import PageHeader from './components/layout/PageHeader';
 import BuildStatus from './BuildStatus';
@@ -41,12 +40,12 @@ export function projectPath(name) {
 
 /**
  * Builds of one project, addressed by name. `load(path)` fetches JSON from the API, with or without a token.
- * The API answers 404 both for unknown projects and for private projects the visitor may not see,
- * so anonymous visitors are offered to sign in. Render it with `key={name}` so state resets per project.
+ * The API answers 404 both for unknown projects and for private projects the visitor may not see;
+ * either way `onNotFound()` is called. Render it with `key={name}` so state resets per project.
  * `onBuild(projectId, branch)` starts a build; without it no Build buttons are shown.
  */
-export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, onBuild, initialBranch = '' }) {
-  // undefined while loading, null when not found.
+export default function ProjectBuilds({ name, load, onOpenBuild, onBuild, onNotFound, initialBranch = '' }) {
+  // undefined while loading.
   const [page, setPage] = useState(undefined);
   const [error, setError] = useState('');
   const [branches, setBranches] = useState(null);
@@ -71,14 +70,14 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, onBui
         if (active) { setPage(data); setBuildsBranch(activeBranch); setError(''); }
       } catch (e) {
         if (!active) return;
-        if (e.status === 404) setPage(null);
+        if (e.status === 404) onNotFound();
         else setError(e.message || 'Unable to load the project.');
       }
     };
     void fetchPage();
     const timer = setInterval(fetchPage, 5000);
     return () => { active = false; clearInterval(timer); };
-  }, [name, load, activeBranch, reload]);
+  }, [name, load, activeBranch, reload, onNotFound]);
 
   // Branches are loaded once per project, not on every build refresh. Public projects read the
   // repository; private projects list the branches that already have builds.
@@ -94,25 +93,6 @@ export default function ProjectBuilds({ name, load, onSignIn, onOpenBuild, onBui
       });
     return () => { active = false; };
   }, [name, load, projectId]);
-
-  if (page === null) {
-    return (
-      <main id="project-builds" className="page-container">
-        <Card className="project-card">
-          <CardContent>
-            <div className="empty-state">
-              <FolderGit2 size={28} aria-hidden="true"/>
-              <strong>Project not found</strong>
-              {onSignIn ? <>
-                <p>If {name} is a private project, sign in to see its builds.</p>
-                <Button type="button" onClick={onSignIn}><LogIn aria-hidden="true"/> Sign in</Button>
-              </> : <p>There is no project called {name}, or you do not have access to it.</p>}
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-    );
-  }
 
   if (page === undefined) {
     return <main id="project-builds" className="page-container">{error

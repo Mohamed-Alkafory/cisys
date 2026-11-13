@@ -161,7 +161,7 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
     /**
      * Builds an image from the base image, named by its ID so the build uses exactly the image that was resolved:
      * <ol>
-     * <li>installs Git as root when the image does not have it,</li>
+     * <li>installs {@link #TOOLS} (Git, Make, Podman and Podman Compose) as root when the image does not have them,</li>
      * <li>clones the branch into {@code /workspace} as an unprivileged user and checks that it is at {@code revision};
      * the working tree stays on the branch, with its {@code .git},</li>
      * <li>runs the steps as that user, without network.</li>
@@ -176,7 +176,7 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
         StringBuilder f = new StringBuilder();
         f.append("FROM ").append(baseId).append('\n');
         f.append("USER 0\n");
-        f.append("RUN ").append(exec("sh", "-c", INSTALL_GIT)).append('\n');
+        f.append("RUN ").append(exec("sh", "-c", INSTALL_TOOLS)).append('\n');
         f.append("RUN ").append(exec("sh", "-c", "mkdir -p /workspace && chown " + BUILD_USER + " /workspace")).append('\n');
         f.append("USER ").append(BUILD_USER).append('\n');
         f.append("WORKDIR /workspace\n");
@@ -189,18 +189,24 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
         return f.toString();
     }
 
-    private static final String INSTALL_GIT = """
-            command -v git >/dev/null 2>&1 && exit 0
-            echo '==> Installing git'
-            if command -v apk >/dev/null 2>&1; then apk add --no-cache git
-            elif command -v apt-get >/dev/null 2>&1; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
-            elif command -v dnf >/dev/null 2>&1; then dnf install -y -q git && dnf clean all
-            elif command -v microdnf >/dev/null 2>&1; then microdnf install -y git && microdnf clean all
-            elif command -v yum >/dev/null 2>&1; then yum install -y -q git && yum clean all
-            elif command -v zypper >/dev/null 2>&1; then zypper --non-interactive install git && zypper clean
-            else echo '==> Cannot install git: the base image has no supported package manager'; exit 1
-            fi
-            """;
+    /** The commands every build image contains; each is installed from the package of the same name when missing. */
+    static final List<String> TOOLS = List.of("git", "make", "podman", "podman-compose");
+
+    private static final String INSTALL_TOOLS = """
+            missing=
+            for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"; done
+            [ -z "$missing" ] && exit 0
+            echo "==> Installing$missing"
+            if command -v apk >/dev/null 2>&1; then apk add --no-cache $missing
+            elif command -v apt-get >/dev/null 2>&1; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates $missing && rm -rf /var/lib/apt/lists/*
+            elif command -v dnf >/dev/null 2>&1; then dnf install -y -q $missing && dnf clean all
+            elif command -v microdnf >/dev/null 2>&1; then microdnf install -y $missing && microdnf clean all
+            elif command -v yum >/dev/null 2>&1; then yum install -y -q $missing && yum clean all
+            elif command -v zypper >/dev/null 2>&1; then zypper --non-interactive install $missing && zypper clean
+            else echo '==> Cannot install%2$s: the base image has no supported package manager'; exit 1
+            fi || { rc=$?; echo "==> Could not install$missing"; exit "$rc"; }
+            for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || { echo "==> $tool is missing after the installation"; exit 1; }; done
+            """.formatted(String.join(" ", TOOLS), String.join(", ", TOOLS).replaceFirst("^", " "));
 
     /** Arguments: $1 repository URL, $2 branch, $3 expected revision. */
     private static String clone(boolean credential) {

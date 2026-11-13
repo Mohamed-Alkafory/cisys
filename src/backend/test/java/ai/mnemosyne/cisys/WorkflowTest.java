@@ -178,7 +178,7 @@ class WorkflowTest {
                 .containerfile(ID, URL, "feature/x", REV, false).lines().toList();
         assertEquals("FROM " + ID, lines.get(0));
         assertEquals("USER 0", lines.get(1));
-        assertTrue(lines.get(2).startsWith("RUN [\"sh\",\"-c\",\"command -v git"), lines.get(2));
+        assertTrue(lines.get(2).startsWith("RUN [\"sh\",\"-c\",\"missing=\\nfor tool in git make podman podman-compose; do"), lines.get(2));
         assertEquals("USER 65534:65534", lines.get(4));
         assertEquals("WORKDIR /workspace", lines.get(5));
         String clone = lines.get(7);

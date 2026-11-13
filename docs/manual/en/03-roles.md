@@ -32,6 +32,6 @@ The **Admin** role manages the installation. Admins can see every project includ
 | Change branding                     | no     | no   | yes   |
 | Change settings (retention, queue)  | no     | no   | yes   |
 
-"View" always means projects the user may access. A project that is not visible to a user is reported as not found.
+"View" always means projects the user may access. The address of a project or build that does not exist or is not visible to the user opens the front page instead, so a private project is not revealed; the same applies to any unknown address.
 
 The following chapters describe the application areas in more detail.
