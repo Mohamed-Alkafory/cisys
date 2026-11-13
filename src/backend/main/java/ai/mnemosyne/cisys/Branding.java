@@ -19,7 +19,6 @@ public class Branding {
     @Column(nullable = false, length = 7) public String headerColor = "#176a4a";
     @Column(nullable = false, length = 7) public String headingColor = "#176a4a";
     @Column(nullable = false, length = 7) public String buttonColor = "#176a4a";
-    @Column(length = 20) public String fontFamily = "red-hat";
     @Column(length = 350000) public String logo;
     @Column(length = 350000) public String background;
 }

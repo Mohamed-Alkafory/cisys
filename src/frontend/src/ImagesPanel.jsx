@@ -7,8 +7,9 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Container, Download, Trash2 } from 'lucide-react';
+import { Container, Download, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { Button } from './components/ui/button';
+import { Spinner } from './components/ui/spinner';
 import { Badge } from './components/ui/badge';
 import { Input } from './components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from './components/ui/card';
@@ -84,7 +85,7 @@ export default function ImagesPanel({ api, onSaved }) {
       <CardContent>
         <form className="image-pull" onSubmit={pull}>
           <div className="form-field"><Input id="pull-name" aria-label="Image to pull" required maxLength="201" pattern="[A-Za-z0-9][A-Za-z0-9_./:@\-]*" value={pullName} onChange={(e) => setPullName(e.target.value)} placeholder="docker.io/library/alpine:3.23"/></div>
-          <Button type="submit" disabled={!!working || busy}><Download aria-hidden="true"/>{working === 'pull' ? 'Pulling…' : 'Pull'}</Button>
+          <Button type="submit" size="icon" className="h-10 w-10 justify-self-end" disabled={!!working || busy} title={working === 'pull' ? 'Pulling…' : 'Pull image'} aria-label={working === 'pull' ? 'Pulling…' : 'Pull image'}>{working === 'pull' ? <Spinner/> : <Download size={16} aria-hidden="true"/>}</Button>
         </form>
       </CardContent>
     </Card>
@@ -95,15 +96,15 @@ export default function ImagesPanel({ api, onSaved }) {
           <div className="empty-state"><Container size={28} aria-hidden="true"/><strong>No local images</strong><p>Pull an image above to get started.</p></div>
         ) : <div className="image-list">
           <div className="image-row image-head" aria-hidden="true"><span/><span>Image</span><span>ID</span><span>Size</span><span>Created</span><span/></div>
-          {local.map((i) => row(i.name, <><span className="image-meta">{i.id.slice(0, 12)}</span><span className="image-meta">{i.size}</span><span className="image-meta">{i.created}</span><Button type="button" variant="outline" size="sm" disabled={!!working} onClick={() => void remove(i.name)} aria-label={`Remove ${i.name}`} title="Remove image"><Trash2 aria-hidden="true"/>{working === i.name ? 'Removing…' : 'Remove'}</Button></>))}
+          {local.map((i) => row(i.name, <><span className="image-meta">{i.id.slice(0, 12)}</span><span className="image-meta">{i.size}</span><span className="image-meta">{i.created}</span><Button type="button" variant="outline" size="icon" className="h-10 w-10" disabled={!!working} onClick={() => void remove(i.name)} title={working === i.name ? 'Removing…' : 'Remove image'} aria-label={working === i.name ? `Removing ${i.name}` : `Remove ${i.name}`}>{working === i.name ? <Spinner/> : <Trash2 size={16} aria-hidden="true"/>}</Button></>))}
         </div>}
         {missing.length > 0 && <div className="image-list image-missing">
           <p><strong>Allowed but not present locally.</strong> Builds with these images will fail until they are pulled. Clear a box to remove it.</p>
-          {missing.map((name) => row(name, <><span/><span/><span/><Button type="button" variant="outline" size="sm" disabled={!!working} onClick={() => void pull(null, name)} aria-label={`Pull ${name}`}><Download aria-hidden="true"/>{working === 'pull:' + name ? 'Pulling…' : 'Pull'}</Button></>))}
+          {missing.map((name) => row(name, <><span/><span/><span/><Button type="button" variant="outline" size="icon" className="h-10 w-10" disabled={!!working} onClick={() => void pull(null, name)} title={working === 'pull:' + name ? 'Pulling…' : 'Pull image'} aria-label={working === 'pull:' + name ? `Pulling ${name}` : `Pull ${name}`}>{working === 'pull:' + name ? <Spinner/> : <Download size={16} aria-hidden="true"/>}</Button></>))}
         </div>}
         <div className="image-actions">
-          <Button type="button" onClick={save} disabled={busy || loading || !!working}>{busy ? 'Saving…' : 'Save'}</Button>
-          <Button type="button" variant="outline" onClick={() => { setNotice(''); void load(); }} disabled={busy || loading}>Reload</Button>
+          <Button type="button" size="icon" className="h-10 w-10" onClick={save} disabled={busy || loading || !!working} title="Save allowed images" aria-label="Save allowed images"><Save size={16} aria-hidden="true"/></Button>
+          <Button type="button" variant="outline" size="icon" className="h-10 w-10" onClick={() => { setNotice(''); void load(); }} disabled={busy || loading} title="Reload images" aria-label="Reload images"><RefreshCw size={16} aria-hidden="true"/></Button>
         </div>
       </CardContent>
     </Card>

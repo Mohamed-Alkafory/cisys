@@ -62,13 +62,15 @@ CREATE TABLE IF NOT EXISTS branding (
     id bigint NOT NULL,
     background character varying(350000),
     buttoncolor character varying(7) NOT NULL,
-    fontfamily character varying(20),
     headercolor character varying(7) NOT NULL,
     headingcolor character varying(7) NOT NULL,
     logo character varying(350000),
     name character varying(80) NOT NULL,
     CONSTRAINT branding_pkey PRIMARY KEY (id)
 );
+
+-- The font is no longer configurable: Red Hat Text is always used.
+ALTER TABLE branding DROP COLUMN IF EXISTS fontfamily;
 
 CREATE TABLE IF NOT EXISTS allowedimage (
     name character varying(201) NOT NULL,

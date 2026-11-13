@@ -15,7 +15,7 @@ It provides sign-in through Keycloak, three roles, project registration with pub
 * Manual Linux builds from a chosen branch, run in a container through Docker or Podman
 * Build history with status, commit ID, timing and output
 * Private Git access through environment-variable credential references
-* Branding (name, font, colors, logo and background image)
+* Branding (name, colors, logo and background image)
 * Light and dark mode
 * Public front page for visitors who are not signed in, with aggregate statistics for public projects
 

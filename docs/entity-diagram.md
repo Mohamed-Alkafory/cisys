@@ -36,7 +36,6 @@ erDiagram
         STRING header_color
         STRING heading_color
         STRING button_color
-        STRING font_family
         TEXT logo
         TEXT background
     }

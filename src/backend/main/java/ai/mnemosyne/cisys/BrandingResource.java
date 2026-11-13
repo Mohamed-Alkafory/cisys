@@ -35,7 +35,7 @@ public class BrandingResource {
     @Inject EntityManager em;
     /** The name and colors only, readable without signing in so the Keycloak login pages can use them. */
     public record PublicBranding(String name, String headerColor, String headingColor, String buttonColor) {}
-    public record Input(String name, String headerColor, String headingColor, String buttonColor, String fontFamily, String logo, String background) {}
+    public record Input(String name, String headerColor, String headingColor, String buttonColor, String logo, String background) {}
     @GET public Branding get() {
         requireRole();
         Branding b = em.find(Branding.class, 1L);
@@ -59,11 +59,9 @@ public class BrandingResource {
         if (input == null || input.name() == null || input.name().isBlank() || input.name().trim().length() > 80) throw new BadRequestException("A name of up to 80 characters is required");
         validateColor(input.headerColor()); validateColor(input.headingColor()); validateColor(input.buttonColor());
         validateImage(input.logo()); validateImage(input.background());
-        String font = input.fontFamily() == null ? "red-hat" : input.fontFamily();
-        if (!(font.equals("red-hat") || font.equals("system"))) throw new BadRequestException("Unsupported font");
         Branding b = em.find(Branding.class, 1L);
         if (b == null) { b = new Branding(); em.persist(b); }
-        b.name = input.name().trim(); b.headerColor = input.headerColor(); b.headingColor = input.headingColor(); b.buttonColor = input.buttonColor(); b.fontFamily = font; b.logo = emptyToNull(input.logo()); b.background = emptyToNull(input.background());
+        b.name = input.name().trim(); b.headerColor = input.headerColor(); b.headingColor = input.headingColor(); b.buttonColor = input.buttonColor(); b.logo = emptyToNull(input.logo()); b.background = emptyToNull(input.background());
         em.flush();
         return b;
     }
