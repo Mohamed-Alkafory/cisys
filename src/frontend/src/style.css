@@ -69,8 +69,8 @@ body { background: var(--body-bg); color: var(--body-text); }
 .branch-option:hover { background: var(--surface-accent); }
 .branch-item { display: flex; align-items: center; gap: .25rem; }
 .branch-item .branch-option { flex: 1; min-width: 0; }
-.branch-build { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border: 0; border-radius: .35rem; background: transparent; color: var(--muted-foreground); cursor: pointer; }
-.branch-build:hover:not(:disabled) { background: var(--surface-accent); color: var(--body-text); }
+.branch-build { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border: 0; border-radius: .35rem; background: var(--button-bg); color: var(--button-text); cursor: pointer; }
+.branch-build:hover:not(:disabled) { background: var(--button-hover); }
 .branch-build:disabled { opacity: .5; cursor: default; }
 .branch-option[aria-current="page"] { background: var(--surface-accent); font-weight: 700; box-shadow: inset 3px 0 0 var(--section-header-color); }
 .branch-panel-note { margin: .35rem 0 0; font-size: .8rem; color: var(--muted-foreground); }
