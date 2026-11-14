@@ -364,6 +364,88 @@ public class BuildRunner {
     run(b.id, b.repositoryUrl, new BuildResource.RunRequest(b.branch, b.credentialRef));
   }
 
+  @Inject HostResolver resolver;
+
+  @ConfigProperty(name = "cisys.build.network.ports", defaultValue = "443")
+  String networkPorts;
+
+  @ConfigProperty(name = "quarkus.datasource.jdbc.url")
+  Optional<String> datasourceUrl;
+
+  @ConfigProperty(name = "quarkus.oidc.auth-server-url")
+  Optional<String> oidcUrl;
+
+  @ConfigProperty(name = "cisys.keycloak.url")
+  Optional<String> keycloakUrl;
+
+  @ConfigProperty(name = "quarkus.http.host")
+  Optional<String> httpHost;
+
+  /**
+   * Starts the build's egress proxy in {@code dir}, or returns null when the allowlist is empty.
+   * Anything that keeps the proxy from enforcing its rules fails the build; a build never falls
+   * back to unrestricted networking.
+   */
+  EgressProxy network(
+      Path dir, NetworkAllowlist allowlist, java.util.function.Consumer<String> log) {
+    if (allowlist.isEmpty()) return null;
+    // Docker's build only forwards SSH agent sockets, so its steps cannot reach the proxy.
+    if (!"podman".equals(runtime))
+      throw new IllegalArgumentException("Network access is not supported with " + runtime);
+    try {
+      return EgressProxy.start(
+          dir.resolve("proxy"), networkPolicy(allowlist), resolver, EgressProxy.TCP, log);
+    } catch (Exception e) {
+      Log.errorf(e, "Could not start the network proxy");
+      throw new IllegalArgumentException("Network access could not be set up");
+    }
+  }
+
+  /**
+   * The allowlist plus the backend's own addresses and the internal services it uses, which are
+   * always denied.
+   */
+  EgressProxy.Policy networkPolicy(NetworkAllowlist allowlist) throws Exception {
+    Set<Integer> ports = new HashSet<>();
+    for (String p : networkPorts.split(",")) {
+      if (p.isBlank()) continue;
+      int port = Integer.parseInt(p.strip());
+      if (port < 1 || port > 65535)
+        throw new IllegalArgumentException("Invalid cisys.build.network.ports");
+      ports.add(port);
+    }
+    Set<String> hosts = new HashSet<>();
+    for (Optional<String> u : List.of(datasourceUrl, oidcUrl, keycloakUrl))
+      u.ifPresent(v -> hosts.addAll(hostsOf(v)));
+    httpHost.ifPresent(h -> hosts.add(h.strip()));
+    hosts.removeIf(h -> h.isEmpty() || h.equals("0.0.0.0") || h.equals("::"));
+    Set<java.net.InetAddress> addresses = new HashSet<>();
+    for (var nic : Collections.list(java.net.NetworkInterface.getNetworkInterfaces()))
+      addresses.addAll(Collections.list(nic.getInetAddresses()));
+    for (String h : hosts) {
+      java.net.InetAddress literal = NetworkAllowlist.literal(h);
+      addresses.addAll(literal != null ? List.of(literal) : List.of(resolver.resolve(h)));
+    }
+    return new EgressProxy.Policy(allowlist, ports, hosts, addresses);
+  }
+
+  /** The host names in a URL such as {@code jdbc:postgresql://a:5432,b:5432/db}. */
+  static List<String> hostsOf(String url) {
+    int start = url.indexOf("//");
+    if (start < 0) return List.of();
+    String authority = url.substring(start + 2).split("[/?#]", 2)[0];
+    authority = authority.substring(authority.lastIndexOf('@') + 1);
+    List<String> hosts = new ArrayList<>();
+    for (String part : authority.split(",")) {
+      String h =
+          part.startsWith("[")
+              ? part.substring(1, Math.max(1, part.indexOf(']')))
+              : part.replaceFirst(":[0-9]*$", "");
+      if (!h.isBlank()) hosts.add(h.toLowerCase(Locale.ROOT));
+    }
+    return hosts;
+  }
+
   /** For tests waiting for the queue to drain. */
   boolean hasPendingBuilds() {
     return QuarkusTransaction.requiringNew()
@@ -378,6 +460,7 @@ public class BuildRunner {
     boolean truncated = false;
     Throwable captureError = null;
     BuildLogs.Writer log = null;
+    EgressProxy proxy = null;
     try {
       log = logs.open(id);
       // Checked again here because DNS can change after the project was saved.
@@ -427,9 +510,19 @@ public class BuildRunner {
       if (!QuarkusTransaction.requiringNew()
           .call(() -> from.names().stream().anyMatch(AllowedImage::isAllowed)))
         throw new IllegalArgumentException("Image " + base + " is not allowed");
+      // A stored list that no longer validates fails the build rather than running it without its
+      // rules.
+      NetworkAllowlist allowlist =
+          QuarkusTransaction.requiringNew()
+              .call(() -> NetworkAllowlist.stored(Settings.current().networkAllowlist));
       String containerfile =
           workflow.containerfile(
-              from.id(), url, request.branch(), revision, request.credentialRef() != null);
+              from.id(),
+              url,
+              request.branch(),
+              revision,
+              request.credentialRef() != null,
+              !allowlist.isEmpty());
       log.line(
           "Workflow "
               + workflow.name()
@@ -439,6 +532,8 @@ public class BuildRunner {
               + from.id().substring(0, 12)
               + ")");
       dir = Files.createTempDirectory(checkoutRoot(), "cisys-");
+      BuildLogs.Writer buildLog = log;
+      proxy = network(dir, allowlist, buildLog::line);
       Path context = Files.createDirectory(dir.resolve("context"));
       Path file = Files.writeString(dir.resolve("Containerfile"), containerfile);
       List<String> build =
@@ -465,6 +560,8 @@ public class BuildRunner {
       // the image.
       if (request.credentialRef() != null)
         build.add("--secret=id=" + Workflow.GIT_SECRET + ",env=" + request.credentialRef());
+      if (proxy != null)
+        build.add("--volume=" + proxy.directory() + ":" + Workflow.PROXY_DIR + ":ro,Z");
       build.add(context.toString());
       Streamed result = stream(build, 600, log, logMaxBytes);
       captureError = result.readerError();
@@ -508,6 +605,12 @@ public class BuildRunner {
         command(List.of(runtime, "rmi", "-f", name), 60, 4096);
       } catch (Exception ignored) {
       }
+      if (proxy != null)
+        try {
+          proxy.close();
+        } catch (Exception e) {
+          Log.errorf(e, "Could not stop the network proxy of build %d", id);
+        }
       if (dir != null)
         try {
           delete(dir);

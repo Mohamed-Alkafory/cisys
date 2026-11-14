@@ -29,7 +29,7 @@ final class RepositoryUrls {
   static final String UNKNOWN = "The repository host could not be resolved";
 
   /** Never fetched, even when the host is on the allowlist, unless the network is allowed too. */
-  private static final List<Cidr> BLOCKED_NETWORKS =
+  static final List<Cidr> BLOCKED_NETWORKS =
       parseNetworks(
           String.join(
               ",",
@@ -137,7 +137,7 @@ final class RepositoryUrls {
     return new byte[] {address[12], address[13], address[14], address[15]};
   }
 
-  private static boolean inside(byte[] address, List<Cidr> networks) {
+  static boolean inside(byte[] address, List<Cidr> networks) {
     for (Cidr network : networks) if (network.contains(address)) return true;
     return false;
   }

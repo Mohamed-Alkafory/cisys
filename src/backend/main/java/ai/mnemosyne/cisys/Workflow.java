@@ -263,8 +263,53 @@ public record Workflow(
    */
   public String containerfile(
       String baseId, String repositoryUrl, String branch, String revision, boolean credential) {
-    return containerfile(baseId, repositoryUrl, branch, revision, credential, WAIT_SECONDS);
+    return containerfile(baseId, repositoryUrl, branch, revision, credential, false, WAIT_SECONDS);
   }
+
+  /**
+   * As {@link #containerfile(String, String, String, String, boolean)}, with the steps given the
+   * egress proxy when {@code network}.
+   */
+  public String containerfile(
+      String baseId,
+      String repositoryUrl,
+      String branch,
+      String revision,
+      boolean credential,
+      boolean network) {
+    return containerfile(
+        baseId, repositoryUrl, branch, revision, credential, network, WAIT_SECONDS);
+  }
+
+  String containerfile(
+      String baseId,
+      String repositoryUrl,
+      String branch,
+      String revision,
+      boolean credential,
+      int waitSeconds) {
+    return containerfile(baseId, repositoryUrl, branch, revision, credential, false, waitSeconds);
+  }
+
+  /** Where the build mounts the directory holding the {@link EgressProxy} socket. */
+  static final String PROXY_DIR = "/run/cisys";
+
+  /** The loopback port in the step where {@code socat} forwards to the proxy socket. */
+  static final int PROXY_PORT = 3128;
+
+  /**
+   * Starts the forwarder and points the usual proxy settings at it. The step still has no network:
+   * the forwarded socket is its only way out, and the proxy decides what it may reach.
+   */
+  static final String PROXY =
+      """
+      socat TCP-LISTEN:%1$d,bind=127.0.0.1,reuseaddr,fork UNIX-CONNECT:%2$s/%3$s 2>/dev/null &
+      i=0; until grep -Eqs '^ *[0-9]+: 0100007F:%4$04X [0-9A-F]+:[0-9A-F]+ 0A ' /proc/net/tcp; do i=$((i+1)); if [ "$i" -ge 100 ]; then echo '==> Network proxy did not start'; exit 1; fi; sleep 0.1; done
+      unset ALL_PROXY all_proxy HTTP_PROXY http_proxy FTP_PROXY ftp_proxy NO_PROXY no_proxy
+      export HTTPS_PROXY=http://127.0.0.1:%1$d https_proxy=http://127.0.0.1:%1$d
+      export JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=%1$d${JAVA_TOOL_OPTIONS:+ $JAVA_TOOL_OPTIONS}"
+      """
+          .formatted(PROXY_PORT, PROXY_DIR, EgressProxy.SOCKET, PROXY_PORT);
 
   /**
    * Builds an image from the base image, named by its ID so the build uses exactly the image that
@@ -290,6 +335,9 @@ public record Workflow(
    * started them. The first failing step stops the build with its exit code. The Git token, when
    * there is one, is a build secret ({@value #GIT_SECRET}) that is mounted for the clone only and
    * is not stored in the image.
+   *
+   * <p>With {@code network}, {@code socat} is installed with the tools and every step starts with
+   * {@link #PROXY}.
    */
   String containerfile(
       String baseId,
@@ -297,13 +345,16 @@ public record Workflow(
       String branch,
       String revision,
       boolean credential,
+      boolean network,
       int waitSeconds) {
     if (!baseId.matches("[0-9a-f]{64}"))
       throw new IllegalArgumentException("Not an image ID: " + baseId);
     StringBuilder f = new StringBuilder();
     f.append("FROM ").append(baseId).append('\n');
     f.append("USER 0\n");
-    f.append("RUN ").append(exec("sh", "-c", INSTALL_TOOLS)).append('\n');
+    f.append("RUN ")
+        .append(exec("sh", "-c", network ? INSTALL_NETWORK_TOOLS : INSTALL_TOOLS))
+        .append('\n');
     install(f, dependencies);
     // The variables travel as an argument, so neither the Containerfile parser nor a shell
     // interprets them here.
@@ -333,7 +384,11 @@ public record Workflow(
         .append('\n');
     for (String run : runs(waitSeconds)) {
       f.append("RUN --network=none ")
-          .append(exec("sh", "-c", ". " + ENVIRONMENT_FILE + " || exit 1\n" + run))
+          .append(
+              exec(
+                  "sh",
+                  "-c",
+                  ". " + ENVIRONMENT_FILE + " || exit 1\n" + (network ? PROXY : "") + run))
           .append('\n');
     }
     if (f.length() > MAX_CONTAINERFILE)
@@ -383,19 +438,27 @@ public record Workflow(
       }
       """;
 
-  private static final String INSTALL_TOOLS =
-      PACKAGE_MANAGER
-          + """
-          echo "==> Container: ${PRETTY_NAME:-unknown}, package manager: ${pm:-none}"
-          missing=
-          for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"; done
-          [ -z "$missing" ] && exit 0
-          [ -n "$pm" ] || { echo '==> Cannot install%2$s: the container has no supported package manager'; exit 1; }
-          echo "==> Installing$missing with $pm"
-          install $missing || { rc=$?; echo "==> Could not install$missing"; exit "$rc"; }
-          for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || { echo "==> $tool is missing after the installation"; exit 1; }; done
-          """
-              .formatted(String.join(" ", TOOLS), String.join(", ", TOOLS).replaceFirst("^", " "));
+  /** {@link #TOOLS} plus {@code socat}, which forwards a step's proxy port to the proxy socket. */
+  static final List<String> NETWORK_TOOLS =
+      java.util.stream.Stream.concat(TOOLS.stream(), java.util.stream.Stream.of("socat")).toList();
+
+  private static final String INSTALL_TOOLS = installTools(TOOLS);
+  private static final String INSTALL_NETWORK_TOOLS = installTools(NETWORK_TOOLS);
+
+  private static String installTools(List<String> tools) {
+    return PACKAGE_MANAGER
+        + """
+        echo "==> Container: ${PRETTY_NAME:-unknown}, package manager: ${pm:-none}"
+        missing=
+        for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"; done
+        [ -z "$missing" ] && exit 0
+        [ -n "$pm" ] || { echo '==> Cannot install%2$s: the container has no supported package manager'; exit 1; }
+        echo "==> Installing$missing with $pm"
+        install $missing || { rc=$?; echo "==> Could not install$missing"; exit "$rc"; }
+        for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || { echo "==> $tool is missing after the installation"; exit 1; }; done
+        """
+            .formatted(String.join(" ", tools), String.join(", ", tools).replaceFirst("^", " "));
+  }
 
   /**
    * Arguments: name and value of each dependency, in turn. The values are package names, see {@link

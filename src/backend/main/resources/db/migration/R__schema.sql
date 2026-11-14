@@ -98,3 +98,5 @@ ALTER TABLE build ADD COLUMN IF NOT EXISTS workflow character varying(65536);
 -- Null uses the configured queue limits.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxconcurrentbuilds integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxqueuedbuilds integer;
+-- Destinations build steps may reach through the egress proxy, one per line; null means no network.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS networkallowlist text;

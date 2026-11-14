@@ -468,6 +468,47 @@ class WorkflowTest {
   }
 
   @Test
+  void withoutNetworkTheContainerfileIsUnchanged() {
+    Workflow w = Workflow.parse(DEPENDENCIES);
+    String file = w.containerfile(ID, URL, "main", REV, false, false);
+    assertEquals(w.containerfile(ID, URL, "main", REV, false), file);
+    assertFalse(file.contains("socat"), file);
+    assertFalse(file.contains("PROXY"), file);
+  }
+
+  @Test
+  void withNetworkStepsUseTheProxyAndStillHaveNoNetwork() {
+    Workflow w = Workflow.parse(VALID.replace("        wait: 8180\n", "        run: make wait\n"));
+    List<String> plain = w.containerfile(ID, URL, "main", REV, false).lines().toList();
+    List<String> lines = w.containerfile(ID, URL, "main", REV, false, true).lines().toList();
+    assertEquals(plain.size(), lines.size());
+    assertTrue(
+        lines.get(2).contains("for tool in git make podman podman-compose socat; do"),
+        lines.get(2));
+    // Everything up to the steps, the clone included, is unchanged.
+    assertEquals(plain.subList(3, 9), lines.subList(3, 9));
+    List<String> steps = lines.subList(9, lines.size());
+    String forward =
+        "socat TCP-LISTEN:3128,bind=127.0.0.1,reuseaddr,fork UNIX-CONNECT:/run/cisys/proxy.sock";
+    for (String step : steps) {
+      assertTrue(
+          step.startsWith(
+              "RUN --network=none [\"sh\",\"-c\",\". /etc/cisys-environment || exit 1\\n"
+                  + forward),
+          step);
+      assertTrue(
+          step.contains(
+              "unset ALL_PROXY all_proxy HTTP_PROXY http_proxy FTP_PROXY ftp_proxy NO_PROXY no_proxy\\nexport HTTPS_PROXY=http://127.0.0.1:3128 https_proxy=http://127.0.0.1:3128"),
+          step);
+      assertTrue(step.contains("-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=3128"), step);
+      assertTrue(step.contains("0100007F:0C38"), step);
+      assertFalse(
+          step.contains("HTTP_PROXY=") || step.contains("http_proxy="),
+          "plain HTTP is not proxied: " + step);
+    }
+  }
+
+  @Test
   void argumentsCannotEscapeTheExecForm() {
     String file =
         workflow("      - name: \"a\\\"]\\nRUN evil\"\n        run: echo \"\\\\\\n\"\n")

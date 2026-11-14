@@ -11,6 +11,7 @@ import { Save } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
+import { Textarea } from "./components/ui/textarea";
 import { Card, CardContent } from "./components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import PageHeader from "./components/layout/PageHeader";
@@ -151,6 +152,91 @@ function SettingsTab({ api, section }) {
   );
 }
 
+function NetworkTab({ api }) {
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    api("/settings/network")
+      .then((n) => setDraft(n.allowedHosts.join("\n")))
+      .catch((e) => setError(e.message));
+  }, [api]);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const allowedHosts = draft
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const saved = await api("/settings/network", {
+        method: "PUT",
+        body: JSON.stringify({ allowedHosts }),
+      });
+      setDraft(saved.allowedHosts.join("\n"));
+      setNotice("Network settings saved.");
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="project-card">
+      <CardContent className="pt-6">
+        {error && (
+          <div className="error-message" role="alert">
+            {error}
+          </div>
+        )}
+        {notice && (
+          <div className="success-message" role="status">
+            {notice}
+          </div>
+        )}
+        {draft === null ? (
+          !error && <p role="status">Loading network settings…</p>
+        ) : (
+          <form onSubmit={submit}>
+            <div className="form-field">
+              <Label htmlFor="network-hosts">Allowed hosts</Label>
+              <Textarea
+                id="network-hosts"
+                rows={8}
+                spellCheck={false}
+                placeholder="registry.npmjs.org"
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  setNotice("");
+                }}
+              />
+            </div>
+            <div className="flex justify-end mt-4">
+              <Button
+                type="submit"
+                size="icon"
+                className="h-10 w-10"
+                disabled={busy}
+                title="Save network settings"
+                aria-label="Save network settings"
+              >
+                <Save size={16} aria-hidden="true" />
+              </Button>
+            </div>
+          </form>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPanel({ api, branding, saveBranding }) {
   return (
     <main className="page-container">
@@ -162,6 +248,7 @@ export default function SettingsPanel({ api, branding, saveBranding }) {
               {title}
             </TabsTrigger>
           ))}
+          <TabsTrigger value="network">Network</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
         {Object.keys(SECTIONS).map((value) => (
@@ -174,6 +261,13 @@ export default function SettingsPanel({ api, branding, saveBranding }) {
             <SettingsTab api={api} section={value} />
           </TabsContent>
         ))}
+        <TabsContent
+          value="network"
+          forceMount
+          className="data-[state=inactive]:hidden"
+        >
+          <NetworkTab api={api} />
+        </TabsContent>
         <TabsContent
           value="branding"
           forceMount

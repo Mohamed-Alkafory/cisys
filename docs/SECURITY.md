@@ -70,10 +70,33 @@ Controls that are in place
 * Only HTTPS repositories on an allowed host are accepted for builds and branch discovery; redirects, embedded credentials, query strings, fragments and non-default ports are rejected. See [Repository addresses](#repository-addresses).
 * Branch discovery for private projects is not attempted because credentials are not stored on the project; the endpoint returns an empty list with reason `private_repository`.
 * Branch names are validated as Git references. Builds may only use images an admin has allowed; image names are validated against a restrictive pattern.
-* The branch is fetched afresh with JGit at depth 1 to read its workflow file and commit ID. The build then builds an image from the workflow: it installs `git`, `make`, `podman` and `podman-compose` and the workflow's `dependencies` as root, with network access, clones the branch at that commit as `65534:65534`, and runs the steps as `65534:65534` without network. The installs and the clone have network access.
+* The branch is fetched afresh with JGit at depth 1 to read its workflow file and commit ID. The build then builds an image from the workflow: it installs `git`, `make`, `podman` and `podman-compose` and the workflow's `dependencies` as root, with network access, clones the branch at that commit as `65534:65534`, and runs the steps as `65534:65534` without network, except through the egress proxy (see [Network for build steps](#network-for-build-steps)). The installs and the clone have network access.
 * The image build runs with `no-new-privileges`, 1 GiB of memory and one CPU under Podman; Docker applies neither limit. The image is removed when the build ends.
 * Builds run up to the concurrency limit (default 1, at most 16 when set by an admin); further requests wait in a bounded queue. Each build times out after ten minutes. Output is stored in full, up to the `BUILD_LOG_MAX_BYTES` safety limit (default 1 GiB); output beyond it is discarded and the build is marked truncated.
 * Builds left in the `RUNNING` state by a server restart are marked `FAILED` at startup. Startup also removes leftover `cisys-build-*` containers and images and `cisys-*` checkout directories from an unclean stop; a cleanup failure is logged and does not stop startup.
+
+### Network for build steps
+
+Steps run with `--network=none`. An admin can allow destinations under **Settings → Network**; an empty list (the default) means steps have no network at all.
+
+How it is enforced
+
+* With a non-empty list, the backend starts one `EgressProxy` per build on a Unix socket in the build's private temporary directory (`0700`). The socket's own directory is `0711`, so the step user can reach the socket but not list it. Podman mounts that directory read-only into every `RUN` (`--volume …:/run/cisys:ro,Z`). The step keeps `--network=none`; `socat` forwards `127.0.0.1:3128` in the step to the socket. Bypassing the proxy variables therefore gains nothing: there is no other route out.
+* The proxy accepts HTTP `CONNECT host:port` only. The port must be in `cisys.build.network.ports` (`BUILD_NETWORK_PORTS`, default `443`). The host must match an entry: an exact name, `*.suffix` for subdomains, or a public IP or CIDR range.
+* Protected destinations are always denied, whatever the list says: loopback, private, CGNAT, link-local (including `169.254.169.254`), multicast, documentation and reserved ranges, IPv4-mapped, IPv4-compatible, NAT64, 6to4 and Teredo forms, every address of the backend host's interfaces, and the hosts and addresses of the datasource, Keycloak and `quarkus.http.host`. Entries that are or overlap protected ranges are rejected when saved.
+* The proxy resolves the host once, checks every address it resolves to, and connects to the checked address, so a DNS change cannot redirect an approved tunnel.
+* Fail closed: an unresolvable host, a protected address, a refused or timed-out connection, or any other request is denied and logged in the build log as `==> Network denied: host:port (reason)`. A stored list that no longer validates, a proxy that cannot start, or internal service hosts that cannot be resolved fail the build. A build never falls back to ordinary networking.
+* The proxy limits concurrent connections (64), the time to send the request (10 s), the connect time (10 s) and idle tunnels (5 min). It is closed, and its socket and directory removed, on every exit path of the build.
+
+Docker and Podman
+
+* Tested on Podman 4.9 and Docker 29.9 with BuildKit (buildx 0.38), on 2026-11-14. With rootless Podman, the mounted socket worked from `RUN --network=none` as `65534:65534`, and so did several concurrent connections, while direct connections failed with *Network is unreachable*.
+* Docker's builder can forward a socket only through `--ssh`, which accepts the connection but passes no data unless it speaks the SSH agent protocol. Docker builds cannot mount host directories. With Docker, a build with a non-empty list therefore fails with `Network access is not supported with docker`.
+
+Residual risk
+
+* The proxy sees only the host and port, not the paths or the content inside TLS. Any allowed host can receive whatever a step sends it, so an allowed host is a possible exfiltration channel; a wildcard such as `*.example.com` widens that to every subdomain. Allow only registries you trust, and prefer exact names.
+* Installing the tools and dependencies and cloning the branch still have ordinary network access, as before.
 
 ### Repository addresses
 
