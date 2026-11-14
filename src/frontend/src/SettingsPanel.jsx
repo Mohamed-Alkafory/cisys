@@ -56,6 +56,25 @@ const SECTIONS = {
       },
     ],
   },
+  checkout: {
+    title: "Checkout",
+    fields: [
+      {
+        key: "maxSizeMib",
+        id: "checkout-size",
+        label: "Max size (MiB)",
+        min: 1,
+        max: 102400,
+      },
+      {
+        key: "maxFiles",
+        id: "checkout-files",
+        label: "Max files",
+        min: 1,
+        max: 1000000,
+      },
+    ],
+  },
 };
 
 function SettingsTab({ api, section }) {

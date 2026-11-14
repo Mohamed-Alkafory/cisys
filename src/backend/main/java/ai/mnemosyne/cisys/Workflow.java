@@ -51,7 +51,7 @@ import java.util.List;
  *
  * A step either runs a shell command ({@code run}) or waits until a TCP port accepts connections
  * ({@code wait}). A build turns the workflow into a Containerfile, see {@link
- * #containerfile(String, String, String, String, boolean)}.
+ * #containerfile(String)}.
  */
 public record Workflow(
     String name,
@@ -60,8 +60,8 @@ public record Workflow(
     List<Dependency> dependencies,
     List<Job> jobs) {
   /**
-   * Where the steps read {@link #environment()} from. Root writes it before the clone and makes it
-   * read-only, so a step cannot add variables for the steps after it.
+   * Where the steps read {@link #environment()} from. Root writes it before the checkout and makes
+   * it read-only, so a step cannot add variables for the steps after it.
    */
   static final String ENVIRONMENT_FILE = "/etc/cisys-environment";
 
@@ -250,45 +250,30 @@ public record Workflow(
 
   static final int MAX_CONTAINERFILE = 200_000;
 
-  /** The user the clone and the steps run as. */
+  /** The user the checkout and the steps belong to. */
   static final String BUILD_USER = "65534:65534";
 
-  /** The id of the build secret that holds the Git token, see {@link #containerfile}. */
-  static final String GIT_SECRET = "git";
+  /** The directory in the build context that holds the checkout. */
+  static final String WORKSPACE = "workspace";
 
   /**
    * The Containerfile that builds this workflow's image from the local image {@code baseId}, which
    * {@link ImageReference#resolve} found for {@code container}; see {@link #containerfile(String,
-   * String, String, String, boolean, int)}.
+   * int)}.
    */
-  public String containerfile(
-      String baseId, String repositoryUrl, String branch, String revision, boolean credential) {
-    return containerfile(baseId, repositoryUrl, branch, revision, credential, false, WAIT_SECONDS);
+  public String containerfile(String baseId) {
+    return containerfile(baseId, false, WAIT_SECONDS);
   }
 
   /**
-   * As {@link #containerfile(String, String, String, String, boolean)}, with the steps given the
-   * egress proxy when {@code network}.
+   * As {@link #containerfile(String)}, with the steps given the egress proxy when {@code network}.
    */
-  public String containerfile(
-      String baseId,
-      String repositoryUrl,
-      String branch,
-      String revision,
-      boolean credential,
-      boolean network) {
-    return containerfile(
-        baseId, repositoryUrl, branch, revision, credential, network, WAIT_SECONDS);
+  public String containerfile(String baseId, boolean network) {
+    return containerfile(baseId, network, WAIT_SECONDS);
   }
 
-  String containerfile(
-      String baseId,
-      String repositoryUrl,
-      String branch,
-      String revision,
-      boolean credential,
-      int waitSeconds) {
-    return containerfile(baseId, repositoryUrl, branch, revision, credential, false, waitSeconds);
+  String containerfile(String baseId, int waitSeconds) {
+    return containerfile(baseId, false, waitSeconds);
   }
 
   /** Where the build mounts the directory holding the {@link EgressProxy} socket. */
@@ -318,8 +303,9 @@ public record Workflow(
    * <ol>
    *   <li>installs {@link #TOOLS} (Git, Make, Podman and Podman Compose) as root when the image
    *       does not have them,
-   *   <li>clones the branch into {@code /workspace} as an unprivileged user and checks that it is
-   *       at {@code revision}; the working tree stays on the branch, with its {@code .git},
+   *   <li>copies the build's checkout from {@value #WORKSPACE} in the build context into {@code
+   *       /workspace}, owned by an unprivileged user; the working tree is on the branch, with its
+   *       {@code .git},
    *   <li>runs the steps as that user, without network, with the workflow's, the job's and the
    *       step's {@code environment} exported, the innermost winning. A variable is unset again
    *       when its scope ends: a step's variables when the step ends, a job's when the job ends. A
@@ -328,25 +314,17 @@ public record Workflow(
    * </ol>
    *
    * {@code dependencies} are installed as root, with network, with the package manager the image
-   * has, before the clone.
+   * has, before the checkout is copied.
    *
    * <p>Each {@code run} step is its own {@code RUN}. A job with a {@code wait} step runs as a
    * single {@code RUN}, because processes started in the background end with the {@code RUN} that
-   * started them. The first failing step stops the build with its exit code. The Git token, when
-   * there is one, is a build secret ({@value #GIT_SECRET}) that is mounted for the clone only and
-   * is not stored in the image.
+   * started them. The first failing step stops the build with its exit code. The image build does
+   * not fetch the repository, so it needs no Git token.
    *
    * <p>With {@code network}, {@code socat} is installed with the tools and every step starts with
    * {@link #PROXY}.
    */
-  String containerfile(
-      String baseId,
-      String repositoryUrl,
-      String branch,
-      String revision,
-      boolean credential,
-      boolean network,
-      int waitSeconds) {
+  String containerfile(String baseId, boolean network, int waitSeconds) {
     if (!baseId.matches("[0-9a-f]{64}"))
       throw new IllegalArgumentException("Not an image ID: " + baseId);
     StringBuilder f = new StringBuilder();
@@ -378,10 +356,11 @@ public record Workflow(
     f.append("USER ").append(BUILD_USER).append('\n');
     f.append("WORKDIR /workspace\n");
     f.append("ENV HOME=/tmp GIT_TERMINAL_PROMPT=0\n");
-    f.append("RUN ");
-    if (credential) f.append("--mount=type=secret,id=").append(GIT_SECRET).append(' ');
-    f.append(exec("sh", "-c", clone(credential), "clone", repositoryUrl, branch, revision))
-        .append('\n');
+    f.append("COPY --chown=")
+        .append(BUILD_USER)
+        .append(' ')
+        .append(WORKSPACE)
+        .append(" /workspace\n");
     for (String run : runs(waitSeconds)) {
       f.append("RUN --network=none ")
           .append(
@@ -483,22 +462,6 @@ public record Workflow(
       args.add(d.value());
     }
     f.append("RUN ").append(exec(args.toArray(String[]::new))).append('\n');
-  }
-
-  /** Arguments: $1 repository URL, $2 branch, $3 expected revision. */
-  private static String clone(boolean credential) {
-    String helper =
-        credential
-            ? "-c 'credential.helper=!f() { echo username=oauth2; printf \"password=%s\\n\" \"$(cat /run/secrets/"
-                + GIT_SECRET
-                + ")\"; }; f' "
-            : "";
-    return "echo \"==> Checkout: $2\"\n"
-        + "git -c credential.helper= "
-        + helper
-        + "clone --quiet --depth 1 --single-branch --branch \"$2\" -- \"$1\" . || exit $?\n"
-        + "rev=$(git rev-parse HEAD) || exit $?\n"
-        + "if [ \"$rev\" != \"$3\" ]; then echo \"==> Checkout failed: $2 is at $rev, expected $3\"; exit 1; fi\n";
   }
 
   private static final JsonMapper JSON = new JsonMapper();

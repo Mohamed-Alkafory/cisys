@@ -100,3 +100,7 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxconcurrentbuilds integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxqueuedbuilds integer;
 -- Destinations build steps may reach through the egress proxy, one per line; null means no network.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS networkallowlist text;
+
+-- Null uses the configured checkout limits.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxcheckoutmib integer;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxcheckoutfiles integer;

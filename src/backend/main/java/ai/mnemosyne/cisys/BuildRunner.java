@@ -28,8 +28,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -83,6 +81,22 @@ public class BuildRunner {
   int queueLimit() {
     Integer v = Settings.current().maxQueuedBuilds;
     return v != null ? v : queueLimit;
+  }
+
+  @ConfigProperty(name = "cisys.build.max-checkout-mib", defaultValue = "1024")
+  int maxCheckoutMib = 1024;
+
+  @ConfigProperty(name = "cisys.build.max-checkout-files", defaultValue = "100000")
+  int maxCheckoutFiles = 100000;
+
+  int maxCheckoutMib() {
+    Integer v = Settings.current().maxCheckoutMib;
+    return v != null ? v : maxCheckoutMib;
+  }
+
+  int maxCheckoutFiles() {
+    Integer v = Settings.current().maxCheckoutFiles;
+    return v != null ? v : maxCheckoutFiles;
   }
 
   private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -148,6 +162,8 @@ public class BuildRunner {
   void recover(@Observes StartupEvent event) {
     if (concurrency < 1 || queueLimit < 1)
       throw new IllegalArgumentException("Build concurrency and queue limit must be positive");
+    if (maxCheckoutMib < 1 || maxCheckoutFiles < 1)
+      throw new IllegalArgumentException("Checkout size and file limits must be positive");
     cleanupOrphans();
     List<Long> running =
         QuarkusTransaction.requiringNew()
@@ -465,38 +481,24 @@ public class BuildRunner {
       log = logs.open(id);
       // Checked again here because DNS can change after the project was saved.
       repositoryUrls.validate(url);
-      dir = Files.createTempDirectory(checkoutRoot(), "cisys-");
-      try (Git git = Git.init().setDirectory(dir.toFile()).call()) {
-        var cfg = git.getRepository().getConfig();
-        cfg.setString("http", null, "followRedirects", "false");
-        cfg.save();
-        var fetch =
-            git.fetch()
-                .setRemote(url)
-                .setRefSpecs(
-                    new RefSpec("+refs/heads/" + request.branch() + ":refs/remotes/origin/build"))
-                .setDepth(1)
-                .setTimeout(60);
-        if (request.credentialRef() != null) {
-          String token = System.getenv(request.credentialRef());
-          if (token == null || token.isBlank())
-            throw new IllegalStateException("Missing Git credential");
-          fetch.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", token));
-        }
-        fetch.call();
-        git.checkout()
-            .setName("build")
-            .setCreateBranch(true)
-            .setStartPoint("refs/remotes/origin/build")
-            .call();
-        revision = git.getRepository().resolve("HEAD").name();
+      UsernamePasswordCredentialsProvider credentials = null;
+      if (request.credentialRef() != null) {
+        String token = System.getenv(request.credentialRef());
+        if (token == null || token.isBlank())
+          throw new IllegalStateException("Missing Git credential");
+        credentials = new UsernamePasswordCredentialsProvider("oauth2", token);
       }
-      // The workflow on the fetched branch describes the image. This checkout is only read for the
-      // workflow file;
-      // the image clones the branch itself.
-      String text = Workflow.read(dir);
-      delete(dir);
-      dir = null;
+      int[] limits =
+          QuarkusTransaction.requiringNew()
+              .call(() -> new int[] {maxCheckoutMib(), maxCheckoutFiles()});
+      dir = Files.createTempDirectory(checkoutRoot(), "cisys-");
+      // The image copies this checkout, so what it gets is what was measured against the limits.
+      Path context = Files.createDirectory(dir.resolve("context"));
+      Path workspace = context.resolve(Workflow.WORKSPACE);
+      revision =
+          Checkout.fetch(workspace, url, request.branch(), credentials, limits[0], limits[1]);
+      // The workflow on the fetched branch describes the image.
+      String text = Workflow.read(workspace);
       if (text == null) throw new IllegalArgumentException("The branch has no " + Workflow.PATH);
       // Stored before parsing, so a build keeps the file that it ran or that failed validation.
       QuarkusTransaction.requiringNew()
@@ -515,14 +517,7 @@ public class BuildRunner {
       NetworkAllowlist allowlist =
           QuarkusTransaction.requiringNew()
               .call(() -> NetworkAllowlist.stored(Settings.current().networkAllowlist));
-      String containerfile =
-          workflow.containerfile(
-              from.id(),
-              url,
-              request.branch(),
-              revision,
-              request.credentialRef() != null,
-              !allowlist.isEmpty());
+      String containerfile = workflow.containerfile(from.id(), !allowlist.isEmpty());
       log.line(
           "Workflow "
               + workflow.name()
@@ -531,10 +526,8 @@ public class BuildRunner {
               + " ("
               + from.id().substring(0, 12)
               + ")");
-      dir = Files.createTempDirectory(checkoutRoot(), "cisys-");
       BuildLogs.Writer buildLog = log;
       proxy = network(dir, allowlist, buildLog::line);
-      Path context = Files.createDirectory(dir.resolve("context"));
       Path file = Files.writeString(dir.resolve("Containerfile"), containerfile);
       List<String> build =
           new ArrayList<>(
@@ -556,10 +549,6 @@ public class BuildRunner {
                 "--cpu-period=100000",
                 "--cpu-quota=100000"));
       else build.add("--progress=plain");
-      // The runtime reads the token from its environment, so it never appears in an argument or in
-      // the image.
-      if (request.credentialRef() != null)
-        build.add("--secret=id=" + Workflow.GIT_SECRET + ",env=" + request.credentialRef());
       if (proxy != null)
         build.add("--volume=" + proxy.directory() + ":" + Workflow.PROXY_DIR + ":ro,Z");
       build.add(context.toString());

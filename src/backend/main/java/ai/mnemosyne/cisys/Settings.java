@@ -39,6 +39,12 @@ public class Settings extends PanacheEntityBase {
   @Column(columnDefinition = "text")
   public String networkAllowlist;
 
+  /** Null uses cisys.build.max-checkout-mib. */
+  public Integer maxCheckoutMib;
+
+  /** Null uses cisys.build.max-checkout-files. */
+  public Integer maxCheckoutFiles;
+
   public static Settings current() {
     Settings s = findById(1L);
     return s == null ? new Settings() : s;
