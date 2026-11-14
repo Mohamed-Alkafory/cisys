@@ -11,11 +11,17 @@ Selecting **Build** next to a branch on a project page runs that branch's workfl
 ```yaml
 name: main
 
+container: alpine:3.23
+
 environment:
-  base: alpine:3.23
+  - name: MODE
+    value: test
 
 jobs:
   - job: Test
+    environment:
+      - name: DATABASE_PORT
+        value: 5432
     steps:
       - name: Start
         run: make platform-start
@@ -32,11 +38,14 @@ The workflow does not name a repository or a branch. The build uses the project'
 | Key | Required | Meaning |
 |-----|----------|---------|
 | `name` | yes | The workflow name, shown in the build log. |
-| `environment.base` | yes | The official container image the build starts from, for example `alpine:3.23`. |
+| `container` | yes | The container image the build starts from, for example `alpine:3.23`. |
+| `environment` | no | Environment variables for every step, as a list of `name` and `value`. |
 | `jobs` | yes | One or more jobs, run in order. |
 | `jobs[].job` | yes | The job name. |
+| `jobs[].environment` | no | Environment variables for this job's steps. |
 | `jobs[].steps` | yes | One or more steps, run in order. |
 | `steps[].name` | yes | The step name. |
+| `steps[].environment` | no | Environment variables for this `run` step only. |
 | `steps[].run` | one of `run` or `wait` | A shell command, at most 4000 characters. |
 | `steps[].wait` | one of `run` or `wait` | A TCP port (1–65535). The step waits until a process listens on it. |
 
@@ -44,13 +53,53 @@ Each step has exactly one of `run` and `wait`.
 
 The workflow is checked before anything runs. Unknown or duplicate keys, missing keys, wrong types and values out of range fail the build. The log names the problem and, where it can, the line. Names are at most 200 characters and the file at most 64 KiB.
 
-### The base image
+### Environment
 
-`environment.base` names an image that is already on the build host. Admins pull images and allow them on the **Images** page. The build never pulls an image itself.
+Environment variables are set with `environment`, a list of entries with a `name` and a `value`. It can appear at three levels, and each level is scoped to what it belongs to:
+
+```yaml
+environment:              # every step of every job
+  - name: LEVEL
+    value: workflow
+  - name: GREETING
+    value: "it's $HOME"
+
+jobs:
+  - job: Test
+    environment:          # every step of this job
+      - name: LEVEL
+        value: job
+    steps:
+      - name: Start
+        run: make platform-start      # LEVEL=job
+      - name: Verbose test
+        environment:      # this step only
+          - name: LEVEL
+            value: step
+        run: make test                # LEVEL=step
+      - name: Stop
+        run: make platform-stop       # LEVEL=job again
+  - job: Report
+    steps:
+      - name: Report
+        run: make report              # LEVEL=workflow
+```
+
+* A job's variables are added to the workflow's, and a step's to its job's. Where a name appears at more than one level, the innermost wins.
+* A step's variables apply to that step only. A `wait` step cannot have `environment`.
+* `name` is letters, digits and `_`, not starting with a digit, at most 200 characters, and appears once per list.
+* `value` is taken literally: `$HOME`, backticks and quotes are not expanded. Numbers and `true`/`false` become their text, so `5432` is `"5432"`. A value is at most 4000 characters; write `""` for an empty value. Lists and nested blocks are rejected.
+* A variable can replace one the image sets, such as `PATH` or `HOME`.
+* Installing the tools and cloning the branch do not see these variables. They apply to the steps only.
+* The workflow file is stored with each build and shown on the build page, so never put secrets in `environment`.
+
+### The container image
+
+`container` names an image that is already on the build host. Admins pull images and allow them on the **Images** page. The build never pulls an image itself.
 
 The image can be named in several ways. With `docker.io/library/alpine:3.23` (ID `164b5c6a230f`) as the only local Alpine image, all of these name it:
 
-| `base` | Meaning |
+| `container` | Meaning |
 |--------|---------|
 | `alpine` | The official image on Docker Hub, any tag |
 | `alpine:3.23` | The official image with that tag |
@@ -79,10 +128,10 @@ The base image also needs `sh`. Installing the tools downloads packages on every
 A build turns the workflow into a Containerfile and builds an image from it with Podman (or Docker):
 
 1. **Read.** The backend fetches the branch and records its commit ID. It reads `.cisys/workflows/ci.yml` and stores the text with the build, then validates it.
-2. **Base.** `environment.base` is looked up among the local images, and the image starts `FROM` its ID. Nothing is pulled.
+2. **Base.** `container` is looked up among the local images, and the image starts `FROM` its ID. Nothing is pulled.
 3. **Tools.** `git`, `make`, `podman` and `podman-compose` are installed as root if the image lacks them. This step has network access.
 4. **Checkout.** As the unprivileged user `65534:65534`, the branch is cloned into `/workspace` at depth 1. The build then checks that the clone is at the recorded commit; if the branch moved in the meantime, the build fails. The working tree is **on the branch being tested**, with its `.git` directory, so `git status`, `git log -1` and `git rev-parse HEAD` work. `HOME` is `/tmp`.
-5. **Steps.** The jobs and steps run in order as `65534:65534`, in `/workspace`, **without network**. The log marks every job and step with `==> Job:` and `==> Step:` lines.
+5. **Steps.** The jobs and steps run in order as `65534:65534`, in `/workspace`, **without network**, with the workflow's, the job's and the step's `environment` variables set. The log marks every job and step with `==> Job:` and `==> Step:` lines.
 6. **Result.** The first failing step stops the build. The log shows `==> Step failed:` with the step name and exit code, and the build records that exit code and the status `FAILED`. When every step succeeds, the build is `PASSED`.
 7. **Cleanup.** The image is removed when the build ends. The log, the workflow text, the commit ID and the base image digest are kept.
 
@@ -90,7 +139,7 @@ The whole image build has ten minutes. After that it is stopped and reported as 
 
 ### Steps and shells
 
-* Each `run` step runs in a new `sh -c`, so a `cd` or a variable does not carry over to the next step. Files written to `/workspace` or `/tmp` do carry over.
+* Each `run` step runs in a new `sh -c`, so a `cd` or a variable set in a step does not carry over to the next step; use `environment` for variables every step needs. Files written to `/workspace` or `/tmp` do carry over.
 * In a job **without** `wait` steps, each step is its own image layer (`RUN`). A process started in the background ends when its step ends.
 * A job **with** a `wait` step runs as one `RUN`. A service started in the background by one step, such as `make platform-start`, therefore keeps running for the later steps of that job and stops when the job ends.
 * A `wait` step checks the kernel's listening sockets (`/proc/net/tcp` and `/proc/net/tcp6`) once a second, for up to five minutes, so it needs only `sh` and `grep`. If the port is not listening by then, the step fails.
@@ -114,4 +163,4 @@ The build page shows the workflow file the build read, under **Workflow**. A que
 
 * One workflow file per branch, at a fixed path. There is no trigger on push yet; builds are started from the web UI.
 * All jobs run one after another in a single image build. Jobs do not run in parallel and have no separate images.
-* Steps have no network access, and there are no per-step timeouts, environment variables, caches or artifacts.
+* Steps have no network access, and there are no per-step timeouts, caches or artifacts.

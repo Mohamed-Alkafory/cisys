@@ -29,13 +29,22 @@ import java.util.List;
  * <pre>
  * name: main branch
  *
+ * container: alpine:3.23
+ *
  * environment:
- *   base: alpine:3.23
+ *   - name: MODE
+ *     value: test
  *
  * jobs:
  *   - job: Build and test
+ *     environment:
+ *       - name: PROFILE
+ *         value: ci
  *     steps:
  *       - name: Start
+ *         environment:
+ *           - name: VERBOSE
+ *             value: "1"
  *         run: make platform-start
  *       - name: Wait for 8180
  *         wait: 8180
@@ -44,20 +53,27 @@ import java.util.List;
  * A step either runs a shell command ({@code run}) or waits until a TCP port accepts connections ({@code wait}).
  * A build turns the workflow into a Containerfile, see {@link #containerfile(String, String, String, String, boolean)}.
  */
-public record Workflow(String name, Environment environment, List<Job> jobs) {
+public record Workflow(String name, String container, List<Variable> environment, List<Job> jobs) {
+    /** Where the steps read {@link #environment()} from; written once, before the first step. */
+    static final String ENVIRONMENT_FILE = "/tmp/.cisys-environment";
+    static final int MAX_ENVIRONMENT = 100_000;
     /** Where the workflow lives, relative to the repository root. */
     public static final String PATH = ".cisys/workflows/ci.yml";
     static final int MAX_BYTES = 64 * 1024;
     static final int MAX_NAME = 200;
     static final int MAX_COMMAND = 4000;
 
-    /** The container the jobs run in. */
-    public record Environment(String base) {}
+    /** One entry of an {@code environment} list. */
+    public record Variable(String name, String value) {}
 
-    public record Job(String job, List<Step> steps) {}
+    /** {@code environment} applies to this job's steps, over the workflow's. */
+    public record Job(String job, List<Variable> environment, List<Step> steps) {}
 
-    /** Exactly one of {@code run} and {@code wait} is set; {@code wait} is held in {@link #port()}, as records cannot have a {@code wait} component. */
-    public record Step(String name, String run, @JsonProperty("wait") Integer port) {
+    /**
+     * Exactly one of {@code run} and {@code wait} is set; {@code wait} is held in {@link #port()}, as records cannot
+     * have a {@code wait} component. {@code environment} applies to this {@code run} step only, over the job's.
+     */
+    public record Step(String name, List<Variable> environment, String run, @JsonProperty("wait") Integer port) {
         public boolean isRun() {
             return run != null;
         }
@@ -115,21 +131,23 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
 
     private void validate() {
         requireName(name, "name");
-        if (environment == null) throw new InvalidWorkflowException("environment is required");
-        if (environment.base() == null || environment.base().isBlank()) throw new InvalidWorkflowException("environment.base is required");
-        if (!environment.base().matches(AllowedImage.PATTERN)) throw new InvalidWorkflowException("environment.base is not a valid image reference");
+        validateEnvironment(environment, "environment");
+        if (container == null || container.isBlank()) throw new InvalidWorkflowException("container is required");
+        if (!container.matches(AllowedImage.PATTERN)) throw new InvalidWorkflowException("container is not a valid image reference");
         if (jobs == null || jobs.isEmpty()) throw new InvalidWorkflowException("At least one job is required");
         for (int j = 0; j < jobs.size(); j++) {
             Job job = jobs.get(j);
             String where = "jobs[" + j + "]";
             if (job == null) throw new InvalidWorkflowException(where + " is empty");
             requireName(job.job(), where + ".job");
+            validateEnvironment(job.environment(), where + ".environment");
             if (job.steps() == null || job.steps().isEmpty()) throw new InvalidWorkflowException(where + " needs at least one step");
             for (int s = 0; s < job.steps().size(); s++) {
                 Step step = job.steps().get(s);
                 String at = where + ".steps[" + s + "]";
                 if (step == null) throw new InvalidWorkflowException(at + " is empty");
                 requireName(step.name(), at + ".name");
+                validateEnvironment(step.environment(), at + ".environment");
                 if ((step.run() == null) == (step.port() == null)) throw new InvalidWorkflowException(at + " needs exactly one of run or wait");
                 if (step.run() != null && (step.run().isBlank() || step.run().length() > MAX_COMMAND)) {
                     throw new InvalidWorkflowException(at + ".run must be a command of at most " + MAX_COMMAND + " characters");
@@ -137,8 +155,29 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
                 if (step.port() != null && (step.port() < 1 || step.port() > 65535)) {
                     throw new InvalidWorkflowException(at + ".wait must be a port between 1 and 65535");
                 }
+                if (step.port() != null && step.environment() != null) {
+                    throw new InvalidWorkflowException(at + ".environment applies to run steps only");
+                }
             }
         }
+    }
+
+    private static void validateEnvironment(List<Variable> environment, String where) {
+        if (environment == null) return;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < environment.size(); i++) {
+            Variable v = environment.get(i);
+            String at = where + "[" + i + "]";
+            if (v == null) throw new InvalidWorkflowException(at + " is empty");
+            if (v.name() == null) throw new InvalidWorkflowException(at + ".name is required");
+            if (!v.name().matches("[A-Za-z_][A-Za-z0-9_]{0,199}")) {
+                throw new InvalidWorkflowException(at + ".name '" + v.name() + "' must be a variable name: letters, digits and _, not starting with a digit");
+            }
+            if (!seen.add(v.name())) throw new InvalidWorkflowException(at + ".name " + v.name() + " appears more than once");
+            if (v.value() == null) throw new InvalidWorkflowException(at + ".value is required; use \"\" for an empty one");
+            if (v.value().length() > MAX_COMMAND) throw new InvalidWorkflowException(at + ".value is longer than " + MAX_COMMAND + " characters");
+        }
+        if (exports(environment).length() > MAX_ENVIRONMENT) throw new InvalidWorkflowException(where + " is too large");
     }
 
     /** How long a {@code wait} step waits for its port, in seconds. */
@@ -151,7 +190,7 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
 
     /**
      * The Containerfile that builds this workflow's image from the local image {@code baseId}, which
-     * {@link ImageReference#resolve} found for {@code environment.base}; see
+     * {@link ImageReference#resolve} found for {@code container}; see
      * {@link #containerfile(String, String, String, String, boolean, int)}.
      */
     public String containerfile(String baseId, String repositoryUrl, String branch, String revision, boolean credential) {
@@ -164,7 +203,8 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
      * <li>installs {@link #TOOLS} (Git, Make, Podman and Podman Compose) as root when the image does not have them,</li>
      * <li>clones the branch into {@code /workspace} as an unprivileged user and checks that it is at {@code revision};
      * the working tree stays on the branch, with its {@code .git},</li>
-     * <li>runs the steps as that user, without network.</li>
+     * <li>runs the steps as that user, without network, with the workflow's, the job's and the step's
+     * {@code environment} exported, the innermost winning.</li>
      * </ol>
      * Each {@code run} step is its own {@code RUN}. A job with a {@code wait} step runs as a single {@code RUN},
      * because processes started in the background end with the {@code RUN} that started them. The first failing
@@ -184,7 +224,11 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
         f.append("RUN ");
         if (credential) f.append("--mount=type=secret,id=").append(GIT_SECRET).append(' ');
         f.append(exec("sh", "-c", clone(credential), "clone", repositoryUrl, branch, revision)).append('\n');
-        for (String run : runs(waitSeconds)) f.append("RUN --network=none ").append(exec("sh", "-c", run)).append('\n');
+        // The variables travel as an argument, so neither the Containerfile parser nor a shell interprets them here.
+        f.append("RUN --network=none ").append(exec("sh", "-c", "printf '%s' \"$1\" > " + ENVIRONMENT_FILE, "environment", exports())).append('\n');
+        for (String run : runs(waitSeconds)) {
+            f.append("RUN --network=none ").append(exec("sh", "-c", ". " + ENVIRONMENT_FILE + " || exit 1\n" + run)).append('\n');
+        }
         if (f.length() > MAX_CONTAINERFILE) throw new InvalidWorkflowException("The workflow is too large to run");
         return f.toString();
     }
@@ -230,9 +274,12 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
         }
     }
 
-    /** All steps as one shell script, as the Containerfile's {@code RUN}s run them in order. */
+    /** The environment and all steps as one shell script, as the Containerfile's {@code RUN}s run them in order. */
     String script(int waitSeconds) {
-        return String.join("", runs(waitSeconds));
+        // Each RUN is a new shell, so each runs in a subshell here.
+        StringBuilder s = new StringBuilder(exports());
+        for (String run : runs(waitSeconds)) s.append("(\n").append(run).append(") || exit $?\n");
+        return s.toString();
     }
 
     /** The scripts of the Containerfile's step {@code RUN}s. */
@@ -240,13 +287,15 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
         List<String> runs = new java.util.ArrayList<>();
         for (Job job : jobs) {
             String header = "echo " + quote("==> Job: " + job.job()) + "\n";
+            // Each RUN of the job sets the job's variables again, as a RUN starts a new shell.
+            String jobEnvironment = exports(job.environment());
             if (job.steps().stream().anyMatch(step -> !step.isRun())) {
-                StringBuilder s = new StringBuilder(header);
+                StringBuilder s = new StringBuilder(jobEnvironment + header);
                 for (Step step : job.steps()) s.append(step(step, waitSeconds));
                 runs.add(s.toString());
             } else {
                 for (int i = 0; i < job.steps().size(); i++) {
-                    runs.add((i == 0 ? header : "") + step(job.steps().get(i), waitSeconds));
+                    runs.add(jobEnvironment + (i == 0 ? header : "") + step(job.steps().get(i), waitSeconds));
                 }
             }
         }
@@ -261,7 +310,9 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
         StringBuilder s = new StringBuilder();
         s.append("echo ").append(quote("==> Step: " + step.name())).append('\n');
         if (step.isRun()) {
-            s.append("sh -c ").append(quote(step.run()))
+            // The step's variables are set in a subshell, so they do not reach the job's later steps.
+            String own = exports(step.environment());
+            s.append(own.isEmpty() ? "" : "(\n" + own + "exec ").append("sh -c ").append(quote(step.run())).append(own.isEmpty() ? "" : "\n)")
                     .append(" || { rc=$?; echo ").append(quote("==> Step failed: " + step.name() + ", exit code"))
                     .append(" \"$rc\"; exit \"$rc\"; }\n");
         } else {
@@ -273,6 +324,17 @@ public record Workflow(String name, Environment environment, List<Job> jobs) {
                             + " not listening after " + waitSeconds + " seconds"))
                     .append("; exit 1; fi; sleep 1; done\n");
         }
+        return s.toString();
+    }
+
+    /** The workflow's {@link #environment()} as shell {@code export} lines, in the order of the file. */
+    String exports() {
+        return exports(environment);
+    }
+
+    private static String exports(List<Variable> environment) {
+        StringBuilder s = new StringBuilder();
+        if (environment != null) environment.forEach(v -> s.append("export ").append(v.name()).append('=').append(quote(v.value())).append('\n'));
         return s.toString();
     }
 

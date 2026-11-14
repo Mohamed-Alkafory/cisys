@@ -245,7 +245,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    // Stored before parsing, so a build keeps the file that it ran or that failed validation.
    QuarkusTransaction.requiringNew().run(()->Build.update("workflow = ?1 where id = ?2",text,id));
    Workflow workflow=Workflow.parse(text);
-   String base=workflow.environment().base();
+   String base=workflow.container();
    ImageReference.Resolved from=ImageReference.resolve(base,localImages());
    QuarkusTransaction.requiringNew().run(()->Build.update("image = ?1 where id = ?2",from.name(),id));
    // Allowed when the admin allowed any name of the image, whichever way the workflow names it.

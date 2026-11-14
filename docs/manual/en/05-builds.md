@@ -18,7 +18,7 @@ Members can view build history and logs for the projects they can access. Privat
 ## How a build runs
 
 1. The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build, and its commit ID is recorded.
-2. The branch's `.cisys/workflows/ci.yml` is read and stored with the build, then validated. A branch without the file, an invalid file, or an `environment.base` image that is not on the build host or that an admin has not allowed on the **Images** page fails the build with a message in the log.
+2. The branch's `.cisys/workflows/ci.yml` is read and stored with the build, then validated. A branch without the file, an invalid file, or a `container` image that is not on the build host or that an admin has not allowed on the **Images** page fails the build with a message in the log.
 3. The workflow becomes a Containerfile. Podman builds it with `no-new-privileges`, 1 GiB of memory, one CPU and no layer cache. The image installs `git`, `make`, `podman` and `podman-compose` if they are missing, clones the branch at the recorded commit, and runs the steps as `65534:65534` without network. See **Workflows**.
 4. The status is `PASSED` when the image build succeeds, otherwise `FAILED` with the exit code of the failing step. A build that exceeds ten minutes is stopped and reported as timed out. The image is removed afterwards.
 
@@ -77,7 +77,7 @@ Admins manage build images under **Images** in the header. The page lists the im
 
 * **Pull** downloads an image from its registry, for example `docker.io/library/alpine:3.23`.
 * **Remove** deletes a local image and takes it off the allowed list.
-* Tick the images that builds may use and select **Save**. A workflow whose `environment.base` resolves to any other image fails. A workflow may name an allowed image by its short name, full name or ID; see **Workflows**.
+* Tick the images that builds may use and select **Save**. A workflow whose `container` resolves to any other image fails. A workflow may name an allowed image by its short name, full name or ID; see **Workflows**.
 
 An image that is allowed but no longer present locally is listed separately, where it can be pulled again or cleared.
 

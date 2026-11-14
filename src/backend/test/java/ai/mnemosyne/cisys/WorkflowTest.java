@@ -28,8 +28,13 @@ class WorkflowTest {
     static final String VALID = """
             name: main branch
 
+            container: alpine:3.23
+
             environment:
-              base: alpine:3.23
+              - name: MODE
+                value: test
+              - name: PORT
+                value: 8180
 
             jobs:
               - job: Build and test
@@ -48,7 +53,8 @@ class WorkflowTest {
     void parsesWorkflow() {
         Workflow w = Workflow.parse(VALID);
         assertEquals("main branch", w.name());
-        assertEquals("alpine:3.23", w.environment().base());
+        assertEquals("alpine:3.23", w.container());
+        assertEquals(List.of(new Workflow.Variable("MODE", "test"), new Workflow.Variable("PORT", "8180")), w.environment());
         assertEquals(1, w.jobs().size());
         Workflow.Job job = w.jobs().get(0);
         assertEquals("Build and test", job.job());
@@ -100,8 +106,10 @@ class WorkflowTest {
                 "",
                 "name: [",
                 VALID.replace("name: main branch", "name: \"\""),
-                VALID.replace("  base: alpine:3.23", "  base: \"-rm\""),
-                VALID.replace("environment:\n  base: alpine:3.23\n", ""),
+                VALID.replace("container: alpine:3.23", "container: \"-rm\""),
+                VALID.replace("container: alpine:3.23\n", ""),
+                VALID.replace("container: alpine:3.23", "container:\n  base: alpine:3.23"),
+                VALID.replace("container: alpine:3.23", "environment:\n  base: alpine:3.23"),
                 VALID.replace("    steps:", "    stepz:"),
                 VALID.replace("        wait: 8180", "        wait: 70000"),
                 VALID.replace("        wait: 8180", "        wait: 81.5"),
@@ -109,14 +117,25 @@ class WorkflowTest {
                 VALID.replace("        wait: 8180", "        timeout: 5"),
                 VALID.replace("        run: make run", "        run: \" \""),
                 VALID + "name: duplicate\n",
-                "name: x\nenvironment:\n  base: alpine:3.23\njobs: []\n",
-                "name: x\nenvironment:\n  base: alpine:3.23\njobs:\n  - job: j\n    steps: []\n")) {
+                VALID.replace("name: PORT", "name: MODE"),
+                VALID.replace("name: MODE", "name: 1MODE"),
+                VALID.replace("name: MODE", "name: MY-MODE"),
+                VALID.replace("  - name: MODE\n    value: test\n", "  - value: test\n"),
+                VALID.replace("    value: test", "    value:"),
+                VALID.replace("    value: test", "    value: [a, b]"),
+                VALID.replace("    value: test", "    value:\n      nested: x"),
+                VALID.replace("    value: test", "    value: test\n    other: x"),
+                VALID.replace("    value: test", "    value: " + "x".repeat(Workflow.MAX_COMMAND + 1)),
+                VALID.replace("  - name: MODE\n    value: test\n", "  MODE: test\n"),
+                VALID.replace("        wait: 8180", "        wait: 8180\n        environment:\n          - name: X\n            value: y"),
+                "name: x\ncontainer: alpine:3.23\njobs: []\n",
+                "name: x\ncontainer: alpine:3.23\njobs:\n  - job: j\n    steps: []\n")) {
             assertThrows(Workflow.InvalidWorkflowException.class, () -> Workflow.parse(yaml), yaml);
         }
     }
 
     private static Workflow workflow(String steps) {
-        return Workflow.parse("name: w\nenvironment:\n  base: alpine:3.23\njobs:\n  - job: j\n    steps:\n" + steps);
+        return Workflow.parse("name: w\ncontainer: alpine:3.23\njobs:\n  - job: j\n    steps:\n" + steps);
     }
 
     private static BuildRunner.Result runScript(String script) throws Exception {
@@ -137,6 +156,55 @@ class WorkflowTest {
         assertTrue(r.output().contains("==> Job: j\n==> Step: First\nit's one\n==> Step: Fails\n"), r.output());
         assertTrue(r.output().contains("==> Step failed: Fails, exit code 3"), r.output());
         assertFalse(r.output().contains("never"), r.output());
+    }
+
+    @Test
+    void stepsSeeTheEnvironment() throws Exception {
+        Workflow w = Workflow.parse("""
+                name: w
+                container: alpine:3.23
+                environment:
+                  - name: GREETING
+                    value: "it's $HOME `x` \\\\ \\"q\\""
+                  - name: EMPTY
+                    value: ""
+                  - name: LEVEL
+                    value: workflow
+                jobs:
+                  - job: j
+                    environment:
+                      - name: LEVEL
+                        value: job
+                    steps:
+                      - name: Show
+                        run: printf '[%s][%s][%s]\\n' "$GREETING" "${EMPTY-unset}" "$LEVEL"
+                      - name: Own
+                        environment:
+                          - name: LEVEL
+                            value: step
+                          - name: ONLY_HERE
+                            value: "yes"
+                        run: echo "own=$LEVEL $ONLY_HERE"
+                      - name: After
+                        run: echo "after=$LEVEL ${ONLY_HERE-unset}"
+                  - job: k
+                    steps:
+                      - name: Other job
+                        run: echo "other=$LEVEL"
+                """);
+        var r = runScript(w.script(Workflow.WAIT_SECONDS));
+        assertEquals(0, r.code(), r.output());
+        assertTrue(r.output().contains("[it's $HOME `x` \\ \"q\"][][job]"), r.output());
+        assertTrue(r.output().contains("own=step yes"), r.output());
+        assertTrue(r.output().contains("after=job unset"), r.output());
+        assertTrue(r.output().contains("other=workflow"), r.output());
+    }
+
+    @Test
+    void environmentIsOptional() {
+        Workflow w = workflow("      - name: s\n        run: true\n");
+        assertNull(w.environment());
+        assertEquals("", w.exports());
     }
 
     @Test
@@ -185,9 +253,10 @@ class WorkflowTest {
         assertTrue(clone.startsWith("RUN [\"sh\",\"-c\","), clone);
         assertTrue(clone.endsWith(",\"clone\",\"" + URL + "\",\"feature/x\",\"" + REV + "\"]"), clone);
         assertFalse(clone.contains("secret"), clone);
-        List<String> steps = lines.subList(8, lines.size());
+        assertEquals("RUN --network=none [\"sh\",\"-c\",\"printf '%s' \\\"$1\\\" > /tmp/.cisys-environment\",\"environment\",\"export MODE='test'\\nexport PORT='8180'\\n\"]", lines.get(8));
+        List<String> steps = lines.subList(9, lines.size());
         assertEquals(4, steps.size(), String.join("\n", lines));
-        assertTrue(steps.stream().allMatch(l -> l.startsWith("RUN --network=none [\"sh\",\"-c\",")), String.join("\n", steps));
+        assertTrue(steps.stream().allMatch(l -> l.startsWith("RUN --network=none [\"sh\",\"-c\",\". /tmp/.cisys-environment || exit 1\\n")), String.join("\n", steps));
         assertTrue(steps.get(0).contains("==> Job: Build and test") && steps.get(0).contains("make platform-start"), steps.get(0));
     }
 
@@ -209,7 +278,7 @@ class WorkflowTest {
     void argumentsCannotEscapeTheExecForm() {
         String file = workflow("      - name: \"a\\\"]\\nRUN evil\"\n        run: echo \"\\\\\\n\"\n")
                 .containerfile(ID, URL, "main", REV, false);
-        assertEquals(9, file.lines().count(), file);
+        assertEquals(10, file.lines().count(), file);
         assertTrue(file.lines().noneMatch(l -> l.startsWith("RUN evil")), file);
     }
 

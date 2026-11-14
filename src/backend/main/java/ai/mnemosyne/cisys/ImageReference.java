@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Finds the local image a workflow's {@code environment.base} means. These all name the same image when
+ * Finds the local image a workflow's {@code container} means. These all name the same image when
  * {@code docker.io/library/alpine:3.23} with ID {@code 164b5c6a230f…} is the only local Alpine image:
  * {@code alpine}, {@code alpine:3.23}, {@code docker.io/library/alpine}, {@code docker.io/library/alpine:3.23} and
  * {@code 164b5c6a230f}.

@@ -1,7 +1,5 @@
 name: main
-
-environment:
-  base: alpine:3.23
+container: alpine:3.23
 
 jobs:
   - job: Test
