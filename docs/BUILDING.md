@@ -6,7 +6,7 @@ This document describes how to build the project, run it locally, run the tests,
 
 - Java 25 or newer
 - Maven
-- Node.js 26 and npm
+- Node.js 24 and npm
 - Docker Compose, or Podman with Compose (PostgreSQL and Keycloak for local development)
 - Pandoc and the Eisvogel Pandoc template (only for the PDF manual)
 
@@ -198,5 +198,5 @@ The `platform-start`, `platform-stop` and `reset` targets use Podman Compose whe
 
 ## Windows
 
-Use Docker Desktop with its WSL 2 backend and Ubuntu. Extract or clone the project into your Ubuntu home directory, install Java, Maven, Node.js 26 and npm inside Ubuntu, and follow the steps above from an Ubuntu terminal. Open
+Use Docker Desktop with its WSL 2 backend and Ubuntu. Extract or clone the project into your Ubuntu home directory, install Java, Maven, Node.js 24 and npm inside Ubuntu, and follow the steps above from an Ubuntu terminal. Open
 <http://localhost:5173> in your Windows browser.

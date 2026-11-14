@@ -10,7 +10,7 @@ Before you begin, make sure the following tools are available:
 
 * [Java](https://openjdk.org/) 25 or newer
 * [Maven](https://maven.apache.org/)
-* [Node.js 26 and npm](https://nodejs.org/)
+* [Node.js 24 and npm](https://nodejs.org/)
 * [Docker Compose](https://docs.docker.com/compose/) or [Podman](https://podman.io/) with Compose
 * [Git](https://git-scm.com/)
 
@@ -62,4 +62,4 @@ The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `a
 
 ## Windows
 
-Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java, Maven, Node.js 26 and npm inside Ubuntu, and follow the steps above from an Ubuntu terminal.
+Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java, Maven, Node.js 24 and npm inside Ubuntu, and follow the steps above from an Ubuntu terminal.

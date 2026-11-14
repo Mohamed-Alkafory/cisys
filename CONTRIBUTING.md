@@ -35,7 +35,7 @@ You need
 
 * Java 25 or newer
 * [Apache Maven](https://maven.apache.org/)
-* [Node.js 26 and npm](https://nodejs.org/)
+* [Node.js 24 and npm](https://nodejs.org/)
 * Docker Compose or Podman with Compose (for PostgreSQL and Keycloak)
 * Git
 

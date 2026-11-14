@@ -63,7 +63,7 @@ Run `make` targets for the common tasks; see the Makefile section of the build g
 
 ## Getting started
 
-Requires Java 25+, Maven, Node.js 26, npm, and Docker Compose or Podman with Compose. Images and dependencies must be downloadable. This setup is for a trusted local machine only.
+Requires Java 25+, Maven, Node.js 24, npm, and Docker Compose or Podman with Compose. Images and dependencies must be downloadable. This setup is for a trusted local machine only.
 
 Clone the repository:
 
@@ -122,7 +122,7 @@ The Keycloak admin console is at <http://localhost:8180/admin> with `admin` / `a
 
 ### Windows
 
-Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java 25, Maven, Node.js 26 and npm inside Ubuntu, then follow the steps above from an Ubuntu terminal.
+Install Docker Desktop with its WSL 2 backend and Ubuntu. Put the project in your Ubuntu home directory, install Java 25, Maven, Node.js 24 and npm inside Ubuntu, then follow the steps above from an Ubuntu terminal.
 
 ## Contributing
 

@@ -6,7 +6,7 @@
 
 * [OpenJDK 25](https://openjdk.org/) or newer
 * [Apache Maven](https://maven.apache.org/)
-* [Node.js 26 and npm](https://nodejs.org/)
+* [Node.js 24 and npm](https://nodejs.org/)
 * Docker Compose, or Podman with Compose
 
 PostgreSQL and Keycloak are started by `compose.yaml`; see [BUILDING.md](BUILDING.md). To use your own PostgreSQL instead, create a database and user, and set `DB_URL`, `DB_USER` and `DB_PASSWORD`:
