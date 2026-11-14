@@ -218,6 +218,60 @@ class WorkflowTest {
     }
 
     @Test
+    void variablesAreUnsetWhenTheirScopeEnds() throws Exception {
+        try (var server = new java.net.ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            Workflow w = Workflow.parse("""
+                    name: w
+                    container: alpine:3.23
+                    environment:
+                      - name: LEVEL
+                        value: workflow
+                    jobs:
+                      - job: Steps
+                        environment:
+                          - name: LEVEL
+                            value: job
+                          - name: JOB_ONLY
+                            value: one
+                        steps:
+                          - name: Own
+                            environment:
+                              - name: STEP_ONLY
+                                value: s1
+                            run: echo "a=$LEVEL $JOB_ONLY $STEP_ONLY"
+                          - name: Next
+                            run: echo "b=$LEVEL $JOB_ONLY ${STEP_ONLY-unset}"
+                      - job: One RUN
+                        environment:
+                          - name: WAIT_JOB
+                            value: two
+                        steps:
+                          - name: Own
+                            environment:
+                              - name: STEP_ONLY
+                                value: s2
+                              - name: LEVEL
+                                value: step
+                            run: echo "c=$LEVEL $WAIT_JOB $STEP_ONLY ${JOB_ONLY-unset}"
+                          - name: Wait
+                            wait: %d
+                          - name: Next
+                            run: echo "d=$LEVEL $WAIT_JOB ${STEP_ONLY-unset}"
+                      - job: Last
+                        steps:
+                          - name: Last
+                            run: echo "e=$LEVEL ${JOB_ONLY-unset} ${WAIT_JOB-unset} ${STEP_ONLY-unset}"
+                    """.formatted(server.getLocalPort()));
+            var r = runScript(w.script(5));
+            assertEquals(0, r.code(), r.output());
+            for (String line : List.of("a=job one s1", "b=job one unset", "c=step two s2 unset", "d=workflow two unset",
+                    "e=workflow unset unset unset")) {
+                assertTrue(r.output().contains(line + "\n"), line + " in\n" + r.output());
+            }
+        }
+    }
+
+    @Test
     void waitStepFailsWhenThePortNeverListens() throws Exception {
         int port;
         try (var probe = new java.net.ServerSocket(0)) {
@@ -246,25 +300,87 @@ class WorkflowTest {
                 .containerfile(ID, URL, "feature/x", REV, false).lines().toList();
         assertEquals("FROM " + ID, lines.get(0));
         assertEquals("USER 0", lines.get(1));
-        assertTrue(lines.get(2).startsWith("RUN [\"sh\",\"-c\",\"missing=\\nfor tool in git make podman podman-compose; do"), lines.get(2));
-        assertEquals("USER 65534:65534", lines.get(4));
-        assertEquals("WORKDIR /workspace", lines.get(5));
-        String clone = lines.get(7);
+        assertTrue(lines.get(2).startsWith("RUN [\"sh\",\"-c\",\". /etc/os-release"), lines.get(2));
+        assertTrue(lines.get(2).contains("for tool in git make podman podman-compose; do"), lines.get(2));
+        // Root writes the variables read-only, before switching to the build user.
+        assertEquals("RUN --network=none [\"sh\",\"-c\",\"printf '%s' \\\"$1\\\" > /etc/cisys-environment && chown 0:0 /etc/cisys-environment && chmod 444 /etc/cisys-environment\",\"environment\",\"export MODE='test'\\nexport PORT='8180'\\n\"]", lines.get(3));
+        assertEquals("USER 65534:65534", lines.get(5));
+        assertEquals("WORKDIR /workspace", lines.get(6));
+        String clone = lines.get(8);
         assertTrue(clone.startsWith("RUN [\"sh\",\"-c\","), clone);
         assertTrue(clone.endsWith(",\"clone\",\"" + URL + "\",\"feature/x\",\"" + REV + "\"]"), clone);
         assertFalse(clone.contains("secret"), clone);
-        assertEquals("RUN --network=none [\"sh\",\"-c\",\"printf '%s' \\\"$1\\\" > /tmp/.cisys-environment\",\"environment\",\"export MODE='test'\\nexport PORT='8180'\\n\"]", lines.get(8));
         List<String> steps = lines.subList(9, lines.size());
         assertEquals(4, steps.size(), String.join("\n", lines));
-        assertTrue(steps.stream().allMatch(l -> l.startsWith("RUN --network=none [\"sh\",\"-c\",\". /tmp/.cisys-environment || exit 1\\n")), String.join("\n", steps));
+        assertTrue(steps.stream().allMatch(l -> l.startsWith("RUN --network=none [\"sh\",\"-c\",\". /etc/cisys-environment || exit 1\\n")), String.join("\n", steps));
         assertTrue(steps.get(0).contains("==> Job: Build and test") && steps.get(0).contains("make platform-start"), steps.get(0));
     }
 
     @Test
     void jobWithAWaitStepIsOneRun() {
-        List<String> runs = Workflow.parse(VALID).runs(Workflow.WAIT_SECONDS);
+        var runs = Workflow.parse(VALID).runs(Workflow.WAIT_SECONDS);
         assertEquals(1, runs.size());
-        assertTrue(runs.get(0).contains("make platform-start") && runs.get(0).contains("make platform-stop"), runs.get(0));
+        String script = runs.get(0);
+        assertTrue(script.contains("make platform-start") && script.contains("make platform-stop"), script);
+    }
+
+    static final String DEPENDENCIES = """
+            name: w
+            container: alpine:3.23
+            dependencies:
+              - name: JSON processor
+                value: jq
+              - name: Compiler
+                value: gcc
+            jobs:
+              - job: Build
+                steps:
+                  - name: Compile
+                    run: make
+            """;
+
+    private static String installs(String line) {
+        return line.substring(line.indexOf(",\"dependencies\",") + 16);
+    }
+
+    @Test
+    void dependenciesAreInstalledAsRootBeforeTheClone() {
+        List<String> lines = Workflow.parse(DEPENDENCIES).containerfile(ID, URL, "main", REV, false).lines().toList();
+        assertEquals("USER 0", lines.get(1));
+        assertTrue(lines.get(3).startsWith("RUN [\"sh\",\"-c\",\". /etc/os-release"), lines.get(3));
+        assertEquals("\"JSON processor\",\"jq\",\"Compiler\",\"gcc\"]", installs(lines.get(3)));
+        assertTrue(lines.get(4).contains("/etc/cisys-environment"), lines.get(4));
+        assertEquals("USER 65534:65534", lines.get(6));
+        assertTrue(lines.get(9).contains("\"clone\""), lines.get(9));
+        assertEquals(1, lines.stream().filter(l -> l.equals("USER 0")).count(), String.join("\n", lines));
+    }
+
+    @Test
+    void dependenciesAreTopLevelOnly() {
+        for (String yaml : List.of(
+                DEPENDENCIES.replace("    steps:\n", "    dependencies:\n      - name: Archiver\n        value: zip\n    steps:\n"),
+                DEPENDENCIES.replace("        run: make\n", "        run: make\n        dependencies:\n          - name: Archiver\n            value: zip\n"))) {
+            assertFalse(yaml.equals(DEPENDENCIES), "the test document must differ");
+            assertThrows(Workflow.InvalidWorkflowException.class, () -> Workflow.parse(yaml), yaml);
+        }
+    }
+
+    @Test
+    void rejectsInvalidDependencies() {
+        for (String yaml : List.of(
+                DEPENDENCIES.replace("value: jq", "value: \"jq; rm -rf /\""),
+                DEPENDENCIES.replace("value: jq", "value: \"-y\""),
+                DEPENDENCIES.replace("value: jq", "value: \"\""),
+                DEPENDENCIES.replace("value: jq", "value: [jq, gcc]"),
+                DEPENDENCIES.replace("    value: jq\n", ""),
+                DEPENDENCIES.replace("  - name: JSON processor\n", "  - value: jq\n").replace("    value: jq\n    value: jq", "    value: jq"),
+                DEPENDENCIES.replace("  - name: Compiler\n", "  - name: JSON processor\n"),
+                DEPENDENCIES.replace("dependencies:\n  - name: JSON processor\n    value: jq", "dependencies:\n  jq: JSON processor"))) {
+            assertFalse(yaml.equals(DEPENDENCIES), "the test document must differ");
+            assertThrows(Workflow.InvalidWorkflowException.class, () -> Workflow.parse(yaml), yaml);
+        }
+        assertEquals("git=2.47.3-0+deb13u1", Workflow.parse(DEPENDENCIES.replace("value: jq", "value: git=2.47.3-0+deb13u1"))
+                .dependencies().get(0).value());
     }
 
     @Test

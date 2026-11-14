@@ -53,9 +53,12 @@ import java.util.List;
  * A step either runs a shell command ({@code run}) or waits until a TCP port accepts connections ({@code wait}).
  * A build turns the workflow into a Containerfile, see {@link #containerfile(String, String, String, String, boolean)}.
  */
-public record Workflow(String name, String container, List<Variable> environment, List<Job> jobs) {
-    /** Where the steps read {@link #environment()} from; written once, before the first step. */
-    static final String ENVIRONMENT_FILE = "/tmp/.cisys-environment";
+public record Workflow(String name, String container, List<Variable> environment, List<Dependency> dependencies, List<Job> jobs) {
+    /**
+     * Where the steps read {@link #environment()} from. Root writes it before the clone and makes it read-only, so a
+     * step cannot add variables for the steps after it.
+     */
+    static final String ENVIRONMENT_FILE = "/etc/cisys-environment";
     static final int MAX_ENVIRONMENT = 100_000;
     /** Where the workflow lives, relative to the repository root. */
     public static final String PATH = ".cisys/workflows/ci.yml";
@@ -65,6 +68,12 @@ public record Workflow(String name, String container, List<Variable> environment
 
     /** One entry of an {@code environment} list. */
     public record Variable(String name, String value) {}
+
+    /**
+     * One entry of the workflow's {@code dependencies} list: {@code value} is the package to install, {@code name}
+     * labels it in the log. Only the workflow has dependencies, not jobs or steps.
+     */
+    public record Dependency(String name, String value) {}
 
     /** {@code environment} applies to this job's steps, over the workflow's. */
     public record Job(String job, List<Variable> environment, List<Step> steps) {}
@@ -132,6 +141,7 @@ public record Workflow(String name, String container, List<Variable> environment
     private void validate() {
         requireName(name, "name");
         validateEnvironment(environment, "environment");
+        validateDependencies(dependencies, "dependencies");
         if (container == null || container.isBlank()) throw new InvalidWorkflowException("container is required");
         if (!container.matches(AllowedImage.PATTERN)) throw new InvalidWorkflowException("container is not a valid image reference");
         if (jobs == null || jobs.isEmpty()) throw new InvalidWorkflowException("At least one job is required");
@@ -180,6 +190,23 @@ public record Workflow(String name, String container, List<Variable> environment
         if (exports(environment).length() > MAX_ENVIRONMENT) throw new InvalidWorkflowException(where + " is too large");
     }
 
+    /** A package name, optionally with a version as the package manager writes it, such as {@code openjdk-25-jdk} or {@code git=2.47.3-0+deb13u1}. */
+    static final String PACKAGE = "[A-Za-z0-9][A-Za-z0-9+._:=~@-]{0,199}";
+
+    private static void validateDependencies(List<Dependency> dependencies, String where) {
+        if (dependencies == null) return;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < dependencies.size(); i++) {
+            Dependency d = dependencies.get(i);
+            String at = where + "[" + i + "]";
+            if (d == null) throw new InvalidWorkflowException(at + " is empty");
+            requireName(d.name(), at + ".name");
+            if (!seen.add(d.name())) throw new InvalidWorkflowException(at + ".name " + d.name() + " appears more than once");
+            if (d.value() == null) throw new InvalidWorkflowException(at + ".value is required");
+            if (!d.value().matches(PACKAGE)) throw new InvalidWorkflowException(at + ".value '" + d.value() + "' is not a package name");
+        }
+    }
+
     /** How long a {@code wait} step waits for its port, in seconds. */
     static final int WAIT_SECONDS = 300;
     static final int MAX_CONTAINERFILE = 200_000;
@@ -204,8 +231,13 @@ public record Workflow(String name, String container, List<Variable> environment
      * <li>clones the branch into {@code /workspace} as an unprivileged user and checks that it is at {@code revision};
      * the working tree stays on the branch, with its {@code .git},</li>
      * <li>runs the steps as that user, without network, with the workflow's, the job's and the step's
-     * {@code environment} exported, the innermost winning.</li>
+     * {@code environment} exported, the innermost winning. A variable is unset again when its scope ends: a step's
+     * variables when the step ends, a job's when the job ends. A step cannot change the variables of the steps after
+     * it, as each step starts a new shell from the read-only {@link #ENVIRONMENT_FILE}.</li>
      * </ol>
+     * {@code dependencies} are installed as root, with network, with the package manager the image has, before the
+     * clone.
+     * <p>
      * Each {@code run} step is its own {@code RUN}. A job with a {@code wait} step runs as a single {@code RUN},
      * because processes started in the background end with the {@code RUN} that started them. The first failing
      * step stops the build with its exit code. The Git token, when there is one, is a build secret
@@ -217,6 +249,10 @@ public record Workflow(String name, String container, List<Variable> environment
         f.append("FROM ").append(baseId).append('\n');
         f.append("USER 0\n");
         f.append("RUN ").append(exec("sh", "-c", INSTALL_TOOLS)).append('\n');
+        install(f, dependencies);
+        // The variables travel as an argument, so neither the Containerfile parser nor a shell interprets them here.
+        f.append("RUN --network=none ").append(exec("sh", "-c", "printf '%s' \"$1\" > " + ENVIRONMENT_FILE
+                + " && chown 0:0 " + ENVIRONMENT_FILE + " && chmod 444 " + ENVIRONMENT_FILE, "environment", exports())).append('\n');
         f.append("RUN ").append(exec("sh", "-c", "mkdir -p /workspace && chown " + BUILD_USER + " /workspace")).append('\n');
         f.append("USER ").append(BUILD_USER).append('\n');
         f.append("WORKDIR /workspace\n");
@@ -224,8 +260,6 @@ public record Workflow(String name, String container, List<Variable> environment
         f.append("RUN ");
         if (credential) f.append("--mount=type=secret,id=").append(GIT_SECRET).append(' ');
         f.append(exec("sh", "-c", clone(credential), "clone", repositoryUrl, branch, revision)).append('\n');
-        // The variables travel as an argument, so neither the Containerfile parser nor a shell interprets them here.
-        f.append("RUN --network=none ").append(exec("sh", "-c", "printf '%s' \"$1\" > " + ENVIRONMENT_FILE, "environment", exports())).append('\n');
         for (String run : runs(waitSeconds)) {
             f.append("RUN --network=none ").append(exec("sh", "-c", ". " + ENVIRONMENT_FILE + " || exit 1\n" + run)).append('\n');
         }
@@ -236,21 +270,54 @@ public record Workflow(String name, String container, List<Variable> environment
     /** The commands every build image contains; each is installed from the package of the same name when missing. */
     static final List<String> TOOLS = List.of("git", "make", "podman", "podman-compose");
 
-    private static final String INSTALL_TOOLS = """
+    /**
+     * Shell code that finds the image's package manager, sets {@code pm} to it (empty when there is none) and defines
+     * {@code install PACKAGE...}.
+     */
+    private static final String PACKAGE_MANAGER = """
+            . /etc/os-release 2>/dev/null
+            for pm in apk apt-get dnf microdnf yum zypper ''; do [ -z "$pm" ] || ! command -v "$pm" >/dev/null 2>&1 || break; done
+            install() {
+              case "$pm" in
+                apk) apk add --no-cache "$@" ;;
+                apt-get) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates "$@" && rm -rf /var/lib/apt/lists/* ;;
+                dnf) dnf install -y -q "$@" && dnf clean all ;;
+                microdnf) microdnf install -y "$@" && microdnf clean all ;;
+                yum) yum install -y -q "$@" && yum clean all ;;
+                zypper) zypper --non-interactive install "$@" && zypper clean ;;
+                *) return 1 ;;
+              esac
+            }
+            """;
+
+    private static final String INSTALL_TOOLS = PACKAGE_MANAGER + """
+            echo "==> Container: ${PRETTY_NAME:-unknown}, package manager: ${pm:-none}"
             missing=
             for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"; done
             [ -z "$missing" ] && exit 0
-            echo "==> Installing$missing"
-            if command -v apk >/dev/null 2>&1; then apk add --no-cache $missing
-            elif command -v apt-get >/dev/null 2>&1; then apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates $missing && rm -rf /var/lib/apt/lists/*
-            elif command -v dnf >/dev/null 2>&1; then dnf install -y -q $missing && dnf clean all
-            elif command -v microdnf >/dev/null 2>&1; then microdnf install -y $missing && microdnf clean all
-            elif command -v yum >/dev/null 2>&1; then yum install -y -q $missing && yum clean all
-            elif command -v zypper >/dev/null 2>&1; then zypper --non-interactive install $missing && zypper clean
-            else echo '==> Cannot install%2$s: the base image has no supported package manager'; exit 1
-            fi || { rc=$?; echo "==> Could not install$missing"; exit "$rc"; }
+            [ -n "$pm" ] || { echo '==> Cannot install%2$s: the container has no supported package manager'; exit 1; }
+            echo "==> Installing$missing with $pm"
+            install $missing || { rc=$?; echo "==> Could not install$missing"; exit "$rc"; }
             for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || { echo "==> $tool is missing after the installation"; exit 1; }; done
             """.formatted(String.join(" ", TOOLS), String.join(", ", TOOLS).replaceFirst("^", " "));
+
+    /** Arguments: name and value of each dependency, in turn. The values are package names, see {@link #PACKAGE}. */
+    private static final String INSTALL_DEPENDENCIES = PACKAGE_MANAGER + """
+            [ -n "$pm" ] || { echo '==> Cannot install dependencies: the container has no supported package manager'; exit 1; }
+            packages=
+            while [ "$#" -gt 1 ]; do echo "==> Dependency: $1 ($2) with $pm"; packages="$packages $2"; shift 2; done
+            install $packages || { rc=$?; echo "==> Could not install$packages"; exit "$rc"; }
+            """;
+
+    private static void install(StringBuilder f, List<Dependency> dependencies) {
+        if (dependencies == null || dependencies.isEmpty()) return;
+        List<String> args = new java.util.ArrayList<>(List.of("sh", "-c", INSTALL_DEPENDENCIES, "dependencies"));
+        for (Dependency d : dependencies) {
+            args.add(d.name());
+            args.add(d.value());
+        }
+        f.append("RUN ").append(exec(args.toArray(String[]::new))).append('\n');
+    }
 
     /** Arguments: $1 repository URL, $2 branch, $3 expected revision. */
     private static String clone(boolean credential) {
@@ -295,7 +362,8 @@ public record Workflow(String name, String container, List<Variable> environment
                 runs.add(s.toString());
             } else {
                 for (int i = 0; i < job.steps().size(); i++) {
-                    runs.add(jobEnvironment + (i == 0 ? header : "") + step(job.steps().get(i), waitSeconds));
+                    Step step = job.steps().get(i);
+                    runs.add(jobEnvironment + (i == 0 ? header : "") + step(step, waitSeconds));
                 }
             }
         }

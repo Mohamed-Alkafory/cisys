@@ -17,6 +17,10 @@ environment:
   - name: MODE
     value: test
 
+dependencies:
+  - name: JSON processor
+    value: jq
+
 jobs:
   - job: Test
     environment:
@@ -40,6 +44,7 @@ The workflow does not name a repository or a branch. The build uses the project'
 | `name` | yes | The workflow name, shown in the build log. |
 | `container` | yes | The container image the build starts from, for example `alpine:3.23`. |
 | `environment` | no | Environment variables for every step, as a list of `name` and `value`. |
+| `dependencies` | no | Packages to install before the checkout, as a list of `name` and `value`. Top level only. |
 | `jobs` | yes | One or more jobs, run in order. |
 | `jobs[].job` | yes | The job name. |
 | `jobs[].environment` | no | Environment variables for this job's steps. |
@@ -86,12 +91,48 @@ jobs:
 ```
 
 * A job's variables are added to the workflow's, and a step's to its job's. Where a name appears at more than one level, the innermost wins.
-* A step's variables apply to that step only. A `wait` step cannot have `environment`.
+* A variable is unset when its scope ends. A step's variables are gone in the next step, and a job's in the next job. A name the inner level replaced has its outer value again, as `LEVEL` above shows. This also holds within a job that has a `wait` step. A `wait` step cannot have `environment`.
+* A step cannot pass variables on: `export` in a `run` command lasts only for that command. The variables are kept in `/etc/cisys-environment`, which root writes before the checkout and which the steps can only read.
 * `name` is letters, digits and `_`, not starting with a digit, at most 200 characters, and appears once per list.
 * `value` is taken literally: `$HOME`, backticks and quotes are not expanded. Numbers and `true`/`false` become their text, so `5432` is `"5432"`. A value is at most 4000 characters; write `""` for an empty value. Lists and nested blocks are rejected.
 * A variable can replace one the image sets, such as `PATH` or `HOME`.
 * Installing the tools and cloning the branch do not see these variables. They apply to the steps only.
 * The workflow file is stored with each build and shown on the build page, so never put secrets in `environment`.
+
+### Dependencies
+
+`dependencies` installs packages into the container, as a list of entries with a `name` and a `value`. `value` is the package; `name` describes it in the log. Unlike `environment`, `dependencies` is a top-level key only; jobs and steps cannot have it:
+
+```yaml
+container: debian:13-slim
+
+dependencies:
+  - name: JSON processor
+    value: jq
+  - name: Java
+    value: openjdk-25-jdk-headless
+
+jobs:
+  - job: Build
+    steps:
+      - name: Compile
+        run: make
+```
+
+The build finds out what the container is and installs with its package manager: `apk` (Alpine), `apt-get` (Debian, Ubuntu), `dnf` (Fedora), `microdnf` or `yum` (Red Hat Enterprise Linux, UBI, CentOS) or `zypper` (openSUSE). The log shows the container and the package manager, then one line per dependency:
+
+```
+==> Container: Debian GNU/Linux 13 (trixie), package manager: apt-get
+==> Dependency: JSON processor (jq) with apt-get
+```
+
+* `value` is the package name in the container's distribution, so it depends on `container`: Java is `openjdk25` on Alpine, `openjdk-25-jdk-headless` on Debian and `java-25-openjdk-devel` on Fedora. A version can be given as the package manager writes it, for example `git=1:2.47.3-0+deb13u1` for `apt-get`.
+* `value` is one package: letters, digits and `+ . _ : = ~ @ -`, starting with a letter or digit, at most 200 characters. Options such as `-y`, spaces and shell characters are rejected.
+* `name` is required, at most 200 characters, and appears once in the list.
+* Packages are installed as root, with network access. The steps themselves still run as `65534:65534` without network.
+* All dependencies are installed together, in one step, before the branch is cloned, so every job and step can use them. `dependencies` on a job or a step is rejected.
+* A package that does not exist, or a container without a supported package manager, fails the build with `==> Could not install …` or `==> Cannot install dependencies …`.
+* Packages are downloaded on every build. A `container` image that already has them starts faster.
 
 ### The container image
 
@@ -129,7 +170,7 @@ A build turns the workflow into a Containerfile and builds an image from it with
 
 1. **Read.** The backend fetches the branch and records its commit ID. It reads `.cisys/workflows/ci.yml` and stores the text with the build, then validates it.
 2. **Base.** `container` is looked up among the local images, and the image starts `FROM` its ID. Nothing is pulled.
-3. **Tools.** `git`, `make`, `podman` and `podman-compose` are installed as root if the image lacks them. This step has network access.
+3. **Tools and dependencies.** `git`, `make`, `podman` and `podman-compose` are installed as root if the image lacks them, then the workflow's `dependencies`. This step has network access.
 4. **Checkout.** As the unprivileged user `65534:65534`, the branch is cloned into `/workspace` at depth 1. The build then checks that the clone is at the recorded commit; if the branch moved in the meantime, the build fails. The working tree is **on the branch being tested**, with its `.git` directory, so `git status`, `git log -1` and `git rev-parse HEAD` work. `HOME` is `/tmp`.
 5. **Steps.** The jobs and steps run in order as `65534:65534`, in `/workspace`, **without network**, with the workflow's, the job's and the step's `environment` variables set. The log marks every job and step with `==> Job:` and `==> Step:` lines.
 6. **Result.** The first failing step stops the build. The log shows `==> Step failed:` with the step name and exit code, and the build records that exit code and the status `FAILED`. When every step succeeds, the build is `PASSED`.
@@ -164,3 +205,4 @@ The build page shows the workflow file the build read, under **Workflow**. A que
 * One workflow file per branch, at a fixed path. There is no trigger on push yet; builds are started from the web UI.
 * All jobs run one after another in a single image build. Jobs do not run in parallel and have no separate images.
 * Steps have no network access, and there are no per-step timeouts, caches or artifacts.
+* `dependencies` names one package per entry for the container's distribution; there is no per-distribution choice of package names in a single workflow.
