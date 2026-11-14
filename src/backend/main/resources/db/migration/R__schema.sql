@@ -98,8 +98,31 @@ ALTER TABLE build ADD COLUMN IF NOT EXISTS workflow character varying(65536);
 -- Null uses the configured queue limits.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxconcurrentbuilds integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxqueuedbuilds integer;
--- Destinations build steps may reach through the egress proxy, one per line; null means no network.
-ALTER TABLE settings ADD COLUMN IF NOT EXISTS networkallowlist text;
+-- Destinations build steps may reach through the egress proxy; no rows means no network.
+CREATE TABLE IF NOT EXISTS networkhost (
+    id bigint NOT NULL,
+    name character varying(100) NOT NULL,
+    host character varying(253) NOT NULL,
+    createdby character varying(255) NOT NULL,
+    createdat timestamp(6) with time zone NOT NULL,
+    CONSTRAINT networkhost_pkey PRIMARY KEY (id),
+    CONSTRAINT networkhost_host_key UNIQUE (host)
+);
+CREATE SEQUENCE IF NOT EXISTS networkhost_seq START WITH 1 INCREMENT BY 50;
+
+-- The allowlist used to be one text column on settings, one entry per line.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'settings' AND column_name = 'networkallowlist') THEN
+        INSERT INTO networkhost (id, name, host, createdby, createdat)
+        SELECT nextval('networkhost_seq'), entry, entry, 'migration', now()
+        FROM (SELECT DISTINCT btrim(unnest(string_to_array(networkallowlist, E'\n'))) AS entry FROM settings) entries
+        WHERE entry <> ''
+        ON CONFLICT (host) DO NOTHING;
+        ALTER TABLE settings DROP COLUMN networkallowlist;
+    END IF;
+END $$;
 
 -- Null uses the configured checkout limits.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxcheckoutmib integer;

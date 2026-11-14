@@ -22,7 +22,6 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.util.List;
 import java.util.Map;
 
 /** Admin settings. */
@@ -105,38 +104,6 @@ public class SettingsResource {
     s.maxConcurrentBuilds = input.maxConcurrent();
     s.maxQueuedBuilds = input.maxQueued();
     return new Queue(s.maxConcurrentBuilds, s.maxQueuedBuilds);
-  }
-
-  /** Destinations build steps may reach; empty means no network. */
-  public record Network(List<String> allowedHosts) {}
-
-  @GET
-  @Path("/network")
-  public Network network() {
-    requireAdmin();
-    return new Network(NetworkAllowlist.stored(Settings.current().networkAllowlist).entries());
-  }
-
-  @PUT
-  @Path("/network")
-  @Transactional
-  public Network updateNetwork(Network input) {
-    requireAdmin();
-    if (input == null || input.allowedHosts() == null)
-      throw badRequest("Allowed hosts are required");
-    NetworkAllowlist allowlist;
-    try {
-      allowlist = NetworkAllowlist.of(input.allowedHosts());
-    } catch (IllegalArgumentException e) {
-      throw badRequest(e.getMessage());
-    }
-    Settings s = Settings.findById(1L);
-    if (s == null) {
-      s = new Settings();
-      s.persist();
-    }
-    s.networkAllowlist = allowlist.store();
-    return new Network(allowlist.entries());
   }
 
   @GET

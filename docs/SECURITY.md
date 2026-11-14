@@ -79,12 +79,12 @@ Controls that are in place
 
 ### Network for build steps
 
-Steps run with `--network=none`. An admin can allow destinations under **Settings → Network**; an empty list (the default) means steps have no network at all.
+Steps run with `--network=none`. An admin can allow destinations under **Settings → Network**, stored as `NetworkHost` rows; no hosts (the default) means steps have no network at all.
 
 How it is enforced
 
 * With a non-empty list, the backend starts one `EgressProxy` per build on a Unix socket in the build's private temporary directory (`0700`). The socket's own directory is `0711`, so the step user can reach the socket but not list it. Podman mounts that directory read-only into every `RUN` (`--volume …:/run/cisys:ro,Z`). The step keeps `--network=none`; `socat` forwards `127.0.0.1:3128` in the step to the socket. Bypassing the proxy variables therefore gains nothing: there is no other route out.
-* The proxy accepts HTTP `CONNECT host:port` only. The port must be in `cisys.build.network.ports` (`BUILD_NETWORK_PORTS`, default `443`). The host must match an entry: an exact name, `*.suffix` for subdomains, or a public IP or CIDR range.
+* The proxy accepts HTTP `CONNECT host:port` only. The port must be in `cisys.build.network.ports` (`BUILD_NETWORK_PORTS`, default `443`). The host must match an entry: an exact name, `*.suffix` for subdomains, a public IP or CIDR range, or `*` (also `all`) for every public host. `*` does not lift any of the denials below.
 * Protected destinations are always denied, whatever the list says: loopback, private, CGNAT, link-local (including `169.254.169.254`), multicast, documentation and reserved ranges, IPv4-mapped, IPv4-compatible, NAT64, 6to4 and Teredo forms, every address of the backend host's interfaces, and the hosts and addresses of the datasource, Keycloak and `quarkus.http.host`. Entries that are or overlap protected ranges are rejected when saved.
 * The proxy resolves the host once, checks every address it resolves to, and connects to the checked address, so a DNS change cannot redirect an approved tunnel.
 * Fail closed: an unresolvable host, a protected address, a refused or timed-out connection, or any other request is denied and logged in the build log as `==> Network denied: host:port (reason)`. A stored list that no longer validates, a proxy that cannot start, or internal service hosts that cannot be resolved fail the build. A build never falls back to ordinary networking.
@@ -98,6 +98,7 @@ Docker and Podman
 Residual risk
 
 * The proxy sees only the host and port, not the paths or the content inside TLS. Any allowed host can receive whatever a step sends it, so an allowed host is a possible exfiltration channel; a wildcard such as `*.example.com` widens that to every subdomain. Allow only registries you trust, and prefer exact names.
+* `*` widens that to every public host: a step can then upload to any server on the Internet. It still cannot reach protected addresses, the backend or its services, or ports outside `cisys.build.network.ports`.
 * Installing the tools and dependencies and cloning the branch still have ordinary network access, as before.
 
 ### Repository addresses

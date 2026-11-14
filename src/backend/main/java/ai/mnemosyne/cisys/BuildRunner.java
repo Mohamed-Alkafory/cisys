@@ -617,9 +617,7 @@ public class BuildRunner {
         throw new IllegalArgumentException("Image " + base + " is not allowed");
       // A stored list that no longer validates fails the build rather than running it without its
       // rules.
-      NetworkAllowlist allowlist =
-          QuarkusTransaction.requiringNew()
-              .call(() -> NetworkAllowlist.stored(Settings.current().networkAllowlist));
+      NetworkAllowlist allowlist = QuarkusTransaction.requiringNew().call(NetworkHost::allowlist);
       String containerfile = workflow.containerfile(from.id(), !allowlist.isEmpty());
       log.line(
           "Workflow "

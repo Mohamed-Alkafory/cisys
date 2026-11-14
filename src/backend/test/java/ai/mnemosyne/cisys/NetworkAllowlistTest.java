@@ -64,7 +64,9 @@ class NetworkAllowlistTest {
           "999.1.1.1",
           "8.8.8.8/33",
           "x".repeat(254) + ".com",
-          "*",
+          "**",
+          "*.*",
+          "alls",
           "*.",
           "a..b"
         }) {
@@ -115,15 +117,26 @@ class NetworkAllowlistTest {
   }
 
   @Test
-  void storedFormRoundTripsAndInvalidStoredDataFailsClosed() {
-    NetworkAllowlist a = NetworkAllowlist.of(List.of("a.example.com", "b.example.com"));
-    assertEquals("a.example.com\nb.example.com", a.store());
-    assertEquals(a, NetworkAllowlist.stored(a.store()));
-    assertTrue(NetworkAllowlist.stored(null).isEmpty());
-    assertTrue(NetworkAllowlist.stored("  ").isEmpty());
-    assertNull(NetworkAllowlist.EMPTY.store());
-    assertThrows(
-        IllegalArgumentException.class, () -> NetworkAllowlist.stored("a.example.com\n10.0.0.1"));
+  void anyAllowsEveryHostAndIsWrittenStarOrAll() {
+    for (String any : new String[] {"*", "all", " ALL "}) {
+      NetworkAllowlist a = NetworkAllowlist.of(List.of(any));
+      assertEquals(List.of(NetworkAllowlist.ANY), a.entries(), any);
+      assertTrue(a.allowsAny());
+      assertTrue(a.allowsHost("example.org"));
+      assertTrue(a.allowsHost("8.8.8.8"));
+      assertTrue(a.allowsHost("[2606:4700::1]"));
+    }
+    assertEquals(List.of("*"), NetworkAllowlist.of(List.of("*", "all")).entries());
+    assertFalse(NetworkAllowlist.of(List.of("example.org")).allowsAny());
+  }
+
+  @Test
+  void singleEntriesAreNormalizedOrRejected() {
+    assertEquals("registry.npmjs.org", NetworkAllowlist.entry(" Registry.NPMjs.org "));
+    assertEquals("*", NetworkAllowlist.entry("All"));
+    assertThrows(IllegalArgumentException.class, () -> NetworkAllowlist.entry(""));
+    assertThrows(IllegalArgumentException.class, () -> NetworkAllowlist.entry(null));
+    assertThrows(IllegalArgumentException.class, () -> NetworkAllowlist.entry("10.0.0.1"));
     assertThrows(
         IllegalArgumentException.class,
         () -> NetworkAllowlist.of(Collections.nCopies(1, "not valid")));

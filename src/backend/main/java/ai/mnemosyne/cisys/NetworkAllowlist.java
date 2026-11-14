@@ -18,7 +18,8 @@ import java.util.Set;
 /**
  * The destinations build steps may reach through the egress proxy, set by admins under Settings
  * &gt; Network. An entry is a host name, {@code *.suffix} for every subdomain of a name, a public
- * IP address or a public CIDR range. An empty list means no network.
+ * IP address, a public CIDR range, or {@value #ANY} (also written {@code all}) for every public
+ * destination. An empty list means no network.
  *
  * <p>{@link #PROTECTED} addresses are never reachable, whatever the list says, and no entry may
  * name them.
@@ -43,6 +44,9 @@ record NetworkAllowlist(List<String> entries) {
   private static final String LABEL = "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?";
   private static final String NAME = LABEL + "(\\." + LABEL + ")+";
 
+  /** Every public destination; {@link #PROTECTED} addresses stay denied. */
+  static final String ANY = "*";
+
   static final NetworkAllowlist EMPTY = new NetworkAllowlist(List.of());
 
   NetworkAllowlist {
@@ -53,15 +57,15 @@ record NetworkAllowlist(List<String> entries) {
     return entries.isEmpty();
   }
 
-  /**
-   * The stored form, one entry per line. A stored value that no longer validates fails the build.
-   */
-  static NetworkAllowlist stored(String value) {
-    return value == null || value.isBlank() ? EMPTY : of(List.of(value.split("\n")));
+  boolean allowsAny() {
+    return entries.contains(ANY);
   }
 
-  String store() {
-    return entries.isEmpty() ? null : String.join("\n", entries);
+  /** The normalized form of one entry. Throws like {@link #of}. */
+  static String entry(String value) {
+    return of(List.of(value == null ? "" : value)).entries().stream()
+        .findFirst()
+        .orElseThrow(() -> new IllegalArgumentException("A host is required"));
   }
 
   /** Throws {@link IllegalArgumentException} with a message safe to show to an admin. */
@@ -82,6 +86,7 @@ record NetworkAllowlist(List<String> entries) {
   private static String validate(String entry) {
     if (entry.length() > MAX_LENGTH)
       throw new IllegalArgumentException("Invalid network entry: " + entry.substring(0, 40) + "…");
+    if (entry.equals(ANY) || entry.equals("all")) return ANY;
     if (entry.contains("/")) {
       RepositoryUrls.Cidr cidr;
       try {
@@ -116,6 +121,7 @@ record NetworkAllowlist(List<String> entries) {
    * entries.
    */
   boolean allowsHost(String target) {
+    if (allowsAny()) return true;
     String host = target.toLowerCase(Locale.ROOT);
     if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
     InetAddress literal = literal(host);

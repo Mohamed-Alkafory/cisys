@@ -35,10 +35,6 @@ public class Settings extends PanacheEntityBase {
   /** Null uses cisys.build.queue-limit. */
   public Integer maxQueuedBuilds;
 
-  /** One {@link NetworkAllowlist} entry per line; null means no network. */
-  @Column(columnDefinition = "text")
-  public String networkAllowlist;
-
   /** Null uses cisys.build.max-checkout-mib. */
   public Integer maxCheckoutMib;
 

@@ -212,6 +212,39 @@ class EgressProxyTest {
   }
 
   @Test
+  void anyAllowsPublicHostsButNeverProtectedOnes() throws Exception {
+    proxy.close();
+    EgressProxy.Policy policy =
+        new EgressProxy.Policy(
+            NetworkAllowlist.of(List.of("*")),
+            Set.of(443),
+            Set.of("db.internal.example.com"),
+            Set.of(InetAddress.getByName("203.0.114.50")));
+    proxy = EgressProxy.start(temp.resolve("any"), policy, resolver, connector, log::add);
+    dns.put("other.org", new String[] {"203.0.114.20"});
+    assertEquals("HTTP/1.1 200 Connection established", connect("other.org:443"));
+    assertEquals("HTTP/1.1 200 Connection established", connect("8.8.4.4:443"));
+    assertEquals("HTTP/1.1 403 Forbidden", connect("other.org:22"));
+    for (String host :
+        new String[] {
+          "loop.example.com",
+          "private.example.com",
+          "metadata.example.com",
+          "mapped.example.com",
+          "mixed.example.com",
+          "self.example.com",
+          "db.internal.example.com",
+          "127.0.0.1",
+          "[::1]",
+          "169.254.169.254",
+          "10.0.0.1"
+        }) {
+      assertEquals("HTTP/1.1 403 Forbidden", connect(host + ":443"), host);
+    }
+    assertEquals(2, connected.size(), connected.toString());
+  }
+
+  @Test
   void protectedDestinationsAreAlwaysDenied() throws Exception {
     for (String host :
         new String[] {

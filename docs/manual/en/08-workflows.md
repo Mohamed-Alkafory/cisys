@@ -191,21 +191,26 @@ The whole image build has ten minutes. After that it is stopped and reported as 
 
 By default, steps cannot reach the network. A step that downloads dependencies, such as `mvn package` or `npm install` without a local cache, fails. Either use a base image that already has them, or have an admin allow the registries under **Settings > Network**.
 
-Once that list has entries, every step gets a proxy for HTTPS:
+That page lists the allowed hosts like the **Projects** page lists projects: each host has a name, and admins add, edit and remove hosts one at a time. **Templates** add every host a well-known registry needs in one click: npm, Yarn, Maven Central, Gradle, PyPI, crates.io, Go modules, RubyGems and GitHub. A template skips hosts that are already on the list.
+
+Once the list has hosts, every step gets a proxy for HTTPS:
 
 * The step itself still has no network. The only way out is a socket to the backend's egress proxy. Each step starts `socat` on `127.0.0.1:3128` to forward to it, and the build installs `socat` along with the other tools.
 * `ALL_PROXY`, `HTTP_PROXY`, `FTP_PROXY` and `NO_PROXY` (in both cases) are cleared, and `HTTPS_PROXY` and `https_proxy` are set to `http://127.0.0.1:3128`, so `npm`, `pip`, `cargo`, `curl` and Git over HTTPS use the proxy. Java tools such as Maven and Gradle get `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=3128` through `JAVA_TOOL_OPTIONS`.
 * Only HTTPS goes through, on port 443 unless the server sets other ports in `cisys.build.network.ports`. Plain HTTP, SSH and other ports are refused. A refused connection is shown in the log as `==> Network denied: host:port (reason)`.
-* The proxy allows hosts on the list only. It never connects to loopback, private, link-local or metadata addresses (such as `169.254.169.254`), the backend host's own addresses, or the database and Keycloak hosts, even when a listed name resolves to one of them.
-* This works with Podman only. With Docker, a build fails with `Network access is not supported with docker` while the list has entries.
+* The proxy allows hosts on the list only, or every public host with `*`. It never connects to loopback, private, link-local or metadata addresses (such as `169.254.169.254`), the backend host's own addresses, or the database and Keycloak hosts, even when a listed name resolves to one of them.
+* This works with Podman only. With Docker, a build fails with `Network access is not supported with docker` while the list has hosts.
 
 | Entry | Allows |
 |-------|--------|
 | `registry.npmjs.org` | That host only |
 | `*.maven.org` | Every subdomain of `maven.org`, but not `maven.org` itself |
 | `151.101.0.0/16` | Public addresses in the range, when a step connects to an address directly |
+| `*` or `all` | Every public host (the **All public hosts** template) |
 
 Private, loopback and link-local addresses and ranges cannot be entered. An empty list means no network.
+
+`*` is still not unrestricted networking: protected addresses, the backend and its services stay unreachable, and only the allowed ports go through. But a step can then send data to any public host, so prefer naming the registries a build needs.
 
 ## Private repositories
 

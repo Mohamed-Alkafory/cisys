@@ -10,7 +10,6 @@ package ai.mnemosyne.cisys;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -147,87 +146,6 @@ class SettingsResourceTest {
         }) {
       given().contentType("application/json").body(body).put(QUEUE).then().statusCode(400);
     }
-  }
-
-  private static final String NETWORK = "/api/settings/network";
-
-  static void clearNetwork() {
-    QuarkusTransaction.requiringNew()
-        .run(() -> Settings.update("networkAllowlist = null where id = 1"));
-  }
-
-  @Test
-  void anonymousCannotReadNetwork() {
-    given().get(NETWORK).then().statusCode(401);
-  }
-
-  @Test
-  @TestSecurity(user = "lead", roles = "lead")
-  void leadCannotReadOrUpdateNetwork() {
-    given().get(NETWORK).then().statusCode(403);
-    given()
-        .contentType("application/json")
-        .body("{\"allowedHosts\":[\"registry.npmjs.org\"]}")
-        .put(NETWORK)
-        .then()
-        .statusCode(403);
-  }
-
-  @Test
-  @TestSecurity(user = "admin", roles = "admin")
-  void adminSavesNetworkAllowlist() {
-    clearNetwork();
-    given().get(NETWORK).then().statusCode(200).body("allowedHosts.size()", equalTo(0));
-    try {
-      given()
-          .contentType("application/json")
-          .body("{\"allowedHosts\":[\" Registry.npmjs.org \",\"*.maven.org\",\"\",\"8.8.8.8\"]}")
-          .put(NETWORK)
-          .then()
-          .statusCode(200)
-          .body(
-              "allowedHosts",
-              equalTo(java.util.List.of("registry.npmjs.org", "*.maven.org", "8.8.8.8")));
-      given()
-          .get(NETWORK)
-          .then()
-          .statusCode(200)
-          .body(
-              "allowedHosts",
-              equalTo(java.util.List.of("registry.npmjs.org", "*.maven.org", "8.8.8.8")));
-      given()
-          .contentType("application/json")
-          .body("{\"allowedHosts\":[]}")
-          .put(NETWORK)
-          .then()
-          .statusCode(200)
-          .body("allowedHosts.size()", equalTo(0));
-      assertNull(QuarkusTransaction.requiringNew().call(() -> Settings.current().networkAllowlist));
-    } finally {
-      clearNetwork();
-    }
-  }
-
-  @Test
-  @TestSecurity(user = "admin", roles = "admin")
-  void rejectsInvalidOrProtectedNetworkEntries() {
-    clearNetwork();
-    given()
-        .contentType("application/json")
-        .body("{\"allowedHosts\":[\"ok.example.com\",\"10.0.0.0/8\"]}")
-        .put(NETWORK)
-        .then()
-        .statusCode(400)
-        .body("error", equalTo("Network entry 10.0.0.0/8 covers protected addresses"));
-    given()
-        .contentType("application/json")
-        .body("{\"allowedHosts\":[\"not a host\"]}")
-        .put(NETWORK)
-        .then()
-        .statusCode(400)
-        .body("error", equalTo("Invalid network entry: not a host"));
-    given().contentType("application/json").body("{}").put(NETWORK).then().statusCode(400);
-    given().get(NETWORK).then().statusCode(200).body("allowedHosts.size()", equalTo(0));
   }
 
   private static final String CHECKOUT = "/api/settings/checkout";

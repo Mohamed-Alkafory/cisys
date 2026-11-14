@@ -708,3 +708,18 @@ body {
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
+.network-templates {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+.network-template-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.network-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-self: end;
+}
