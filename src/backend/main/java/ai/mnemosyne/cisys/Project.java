@@ -29,4 +29,16 @@ public class Project extends PanacheEntity {
   /** The environment variable that holds a read-only token for a private repository. */
   @Column(length = 100)
   public String credentialRef;
+
+  /** Whether a verified push may start a build without a user asking for one. */
+  @Column(nullable = false)
+  public boolean webhookEnabled;
+
+  /** The signing secret GitHub uses for this project's webhook. Never returned to non-owners. */
+  @Column(length = 128)
+  public String webhookSecret;
+
+  /** Comma-separated branch globs; null or blank means every branch. */
+  @Column(length = 1000)
+  public String webhookBranches;
 }

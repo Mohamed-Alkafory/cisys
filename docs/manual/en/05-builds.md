@@ -13,11 +13,13 @@ Leads and admins select **Build** next to a branch on a project page. That runs 
 * **Branch**: the branch to fetch
 * **Credential reference** (admins only, optional): see below
 
+A project's owner or an admin can also enable **Automatic builds** in the project settings. A signed GitHub push webhook then starts a build for the pushed commit; see **Push webhooks** below. Automatic builds are off by default and are only for repositories you trust.
+
 Members can view build history and logs for the projects they can access. Private projects and their logs are visible only to their creator and admins.
 
 ## How a build runs
 
-1. The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build, and its commit ID is recorded. The checkout must stay within the size and file limits.
+1. The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build, and its commit ID is recorded. A webhook build fetches the exact pushed commit instead of the branch tip; if the commit is no longer reachable on the branch, the build fails instead of building something else. The checkout must stay within the size and file limits.
 2. The branch's `.cisys/workflows/ci.yml` is read and stored with the build, then validated. A branch without the file, an invalid file, or a `container` image that is not on the build host or that an admin has not allowed on the **Images** page fails the build with a message in the log.
 3. The workflow becomes a Containerfile. The image installs `git`, `make`, `podman` and `podman-compose` if they are missing and the workflow's `dependencies`, copies the checkout from step 1, and runs the steps as `65534:65534` without network. When admins allow hosts under **Settings** → **Network**, steps reach those hosts over HTTPS through the egress proxy and nothing else (Podman only). Podman builds with `no-new-privileges` and no layer cache. Docker uses its legacy builder, which honors the resource limits that BuildKit ignores: it first builds an image with the tools and dependencies, then builds the steps from that image with network off. See **Workflows**.
 4. The status is `PASSED` when the image build succeeds, otherwise `FAILED` with the exit code of the failing step. A build that exceeds ten minutes is stopped and reported as timed out. The image is removed afterwards.
@@ -36,13 +38,29 @@ On restart, interrupted `RUNNING` builds become `FAILED`, or `CANCELLED` when a 
 
 Admins, the project's creator and whoever started a build can cancel it while it is `QUEUED` or `RUNNING` with the cancel button on its build page. A queued build becomes `CANCELLED` at once and never runs. For a running build, the runner stops the fetch or the image build within about a second, forcibly after ten more seconds, removes the image and records `CANCELLED` with `Build cancelled` at the end of the log. A cancellation that arrives while the build is finishing still wins. Cancelling a finished build returns HTTP 409.
 
+## Push webhooks
+
+A project's owner or an admin can enable **Automatic builds** under the project settings. cisys supports GitHub's `push` webhook; other events and providers are ignored. Automatic builds are off by default.
+
+1. Open the project settings and generate a webhook secret. Copy the payload URL.
+2. In GitHub, open the repository's **Settings** → **Webhooks** → **Add webhook**. Use the payload URL, content type `application/json`, the generated secret, and select only the push event.
+3. Enable **Push trigger**, optionally restrict **Branches**, and save.
+
+The payload URL uses the address you opened cisys through. If GitHub reaches cisys under a different name, replace that part of the URL before adding it to GitHub.
+
+A delivery is accepted only when its `X-Hub-Signature-256` HMAC matches the project's secret. cisys checks the signature over the raw body before parsing it, and never uses a repository URL from the payload: the project's stored repository is the only one it builds. The payload repository must match that stored URL.
+
+The build uses the pushed commit, not the branch tip, so a later push cannot change what the first delivery builds. The optional branch filter is a comma-separated list of globs such as `main,release/*`; an empty filter means every branch. A redelivered event with the same `X-GitHub-Delivery` does not run twice, and a commit that is already queued or running is not queued again. A full build queue answers `503`; redeliver the event from GitHub later.
+
+GitHub must be able to reach cisys over HTTPS. The default configuration is for a trusted local machine, so expose only `/api/webhooks/git/*` through a reverse proxy or tunnel rather than the whole application. Automatic builds execute the pushed repository's code in a container on the backend host. Until isolated build workers are available, enable them only for repositories you trust.
+
 ## Workflow file
 
 The workflow file format, how the image is built, and its limits are described in the **Workflows** chapter.
 
 ## What a build records
 
-Each build stores the requested branch, the text of the workflow file it read (shown on the build page), the full name of the base image it found, the credential reference name if one was used (shown to admins only), the base image digest when the container runtime reports one, the commit ID, the exit code of the image build, which is that of the failing step (none when the build timed out, was cancelled or never ran), who started it, and when it started and finished; the duration is derived from these times.
+Each build stores the requested branch, the text of the workflow file it read (shown on the build page), the full name of the base image it found, the credential reference name if one was used (shown to admins only), the base image digest when the container runtime reports one, the commit ID, how it was started and the pusher for a webhook build, the exit code of the image build, which is that of the failing step (none when the build timed out, was cancelled or never ran), who started it, and when it started and finished; the duration is derived from these times.
 
 ## Build logs
 

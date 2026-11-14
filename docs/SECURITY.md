@@ -27,6 +27,8 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `GET /api/projects/{id}/branches`         | visible projects          | visible projects     | all   |
 | `POST /api/projects/{id}/builds`          | no                        | yes                  | yes   |
 | `POST` build with a `credentialRef`       | no                        | no                   | yes   |
+| `GET`/`PUT`/`DELETE .../webhook`          | no                        | own projects         | yes   |
+| `GET`/`POST .../webhook/secret`           | no                        | own projects         | yes   |
 | `PUT`/`DELETE .../builds/{id}/pin`        | no                        | own projects         | yes   |
 | `GET /api/branding`                       | yes                       | yes                  | yes   |
 | `PUT /api/branding`                       | no                        | no                   | yes   |
@@ -53,6 +55,8 @@ User subjects are returned to admins only:
 The public project page and the public statistics never include them.
 
 The private flag controls visibility inside cisys; it does not grant or restrict Git access.
+
+`POST /api/webhooks/git/{projectId}` is intentionally anonymous. GitHub cannot present a bearer token, so the request is authenticated by the project's HMAC secret. Unknown and disabled projects answer `404`, and a bad signature answers `401`. The endpoint is not part of the public visitor rate limit, because that budget belongs to the public pages.
 
 ## Authentication
 
@@ -115,6 +119,19 @@ Known gaps
 * Runner and Podman operation on Windows/WSL has not been verified.
 * Credentials are not scoped to individual projects; only admins may reference one.
 * DNS rebinding between the address check and JGit's own connection is not fully prevented, because JGit resolves the host again when it connects.
+
+### Push webhooks
+
+Automatic builds are opt-in per project and only support GitHub's `push` event.
+
+* The project owner or an admin generates a random 256-bit secret. It is stored in the project row because the HMAC must be recomputed for every delivery. It is returned only to the owner and admins, and it is never written to logs or build output.
+* cisys verifies `X-Hub-Signature-256` over the raw body with a constant-time comparison before parsing the JSON. The body is capped at 1 MiB.
+* The payload's repository URL is never used for checkout, credentials or the build row. cisys compares it with the project's stored URL and builds that stored repository only.
+* The build runs the pushed commit, not the branch tip. A commit that is no longer reachable on the branch fails the build instead of silently building a different one.
+* `X-GitHub-Delivery` is stored on the build under a unique `(project_id, trigger_delivery)` index, so a redelivery cannot run twice. A commit that is already queued or running is not queued again.
+* The endpoint must be reachable from GitHub, but the rest of cisys must not be. Expose only `/api/webhooks/git/*` through a reverse proxy or tunnel.
+
+**Trust boundary:** automatic execution still runs the pushed repository's code in a container on the backend host. The webhook signature proves the delivery came from someone who knows the project secret; it does not make the code safe. Enable automatic builds only for trusted repositories, and do not expose the rest of the application, until isolated build workers exist.
 
 ### Git credentials
 

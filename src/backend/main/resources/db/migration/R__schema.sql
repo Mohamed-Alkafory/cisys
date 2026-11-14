@@ -138,3 +138,18 @@ ALTER TABLE build ADD COLUMN IF NOT EXISTS cancelrequested boolean NOT NULL DEFA
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildmemorymib integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildcpus integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildpids integer;
+
+-- Push-triggered builds: the project owns the secret and the branch filter. The workflow file
+-- stays execution-only.
+ALTER TABLE project ADD COLUMN IF NOT EXISTS webhookenabled boolean NOT NULL DEFAULT false;
+ALTER TABLE project ADD COLUMN IF NOT EXISTS webhooksecret character varying(128);
+ALTER TABLE project ADD COLUMN IF NOT EXISTS webhookbranches character varying(1000);
+
+-- How a build was started. Existing builds were started by hand.
+ALTER TABLE build ADD COLUMN IF NOT EXISTS trigger character varying(20) NOT NULL DEFAULT 'MANUAL';
+ALTER TABLE build ADD COLUMN IF NOT EXISTS triggerdelivery character varying(100);
+ALTER TABLE build ADD COLUMN IF NOT EXISTS triggeractor character varying(255);
+-- A provider redelivery must not create a second build.
+CREATE UNIQUE INDEX IF NOT EXISTS build_webhook_delivery
+    ON build (projectid, triggerdelivery) WHERE triggerdelivery IS NOT NULL;
+CREATE INDEX IF NOT EXISTS build_project_revision ON build (projectid, revision);

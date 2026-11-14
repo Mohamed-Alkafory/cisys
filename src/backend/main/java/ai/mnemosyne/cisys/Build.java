@@ -29,6 +29,24 @@ public class Build extends PanacheEntity {
   @Enumerated(EnumType.STRING)
   public Status status;
 
+  /** How this build was started. Existing rows and manual requests are {@link Trigger#MANUAL}. */
+  public enum Trigger {
+    MANUAL,
+    PUSH
+  }
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 20)
+  public Trigger trigger = Trigger.MANUAL;
+
+  /** The provider's delivery ID, used to ignore redelivered webhooks. */
+  @Column(length = 100)
+  public String triggerDelivery;
+
+  /** The pusher name from the provider payload; display only. */
+  @Column(length = 255)
+  public String triggerActor;
+
   public Instant requestedAt;
 
   @Column(length = 2048)

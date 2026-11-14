@@ -53,6 +53,8 @@ public class BuildResource {
       Integer exitCode,
       boolean logTruncated,
       boolean pinned,
+      Build.Trigger trigger,
+      @JsonInclude(JsonInclude.Include.NON_NULL) String triggerActor,
       @JsonInclude(JsonInclude.Include.NON_NULL) String workflow) {}
 
   private BuildResponse response(Build build) {
@@ -76,6 +78,8 @@ public class BuildResource {
         build.exitCode,
         build.logTruncated,
         build.pinned,
+        build.trigger == null ? Build.Trigger.MANUAL : build.trigger,
+        build.triggerActor,
         withWorkflow ? build.workflow : null);
   }
 
