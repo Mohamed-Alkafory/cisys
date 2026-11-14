@@ -349,6 +349,11 @@ class WorkflowTest {
         assertEquals("USER 0", lines.get(1));
         assertTrue(lines.get(3).startsWith("RUN [\"sh\",\"-c\",\". /etc/os-release"), lines.get(3));
         assertEquals("\"JSON processor\",\"jq\",\"Compiler\",\"gcc\"]", installs(lines.get(3)));
+        // Fresh package metadata, already installed packages upgraded, and the resulting versions logged.
+        for (String part : List.of("apk add --no-cache --upgrade", "apt-get update", "dnf install -y -q --refresh", "dnf upgrade -y -q",
+                "zypper --non-interactive refresh", "installed $packages")) {
+            assertTrue(lines.get(3).contains(part), part);
+        }
         assertTrue(lines.get(4).contains("/etc/cisys-environment"), lines.get(4));
         assertEquals("USER 65534:65534", lines.get(6));
         assertTrue(lines.get(9).contains("\"clone\""), lines.get(9));

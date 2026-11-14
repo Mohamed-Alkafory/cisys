@@ -8,6 +8,8 @@
 
 package ai.mnemosyne.cisys;
 import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.arc.Arc;
+import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -63,6 +65,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
   retryCompletions();
  }
  private synchronized void retryCompletions(){
+  // After shutdown there is no transaction manager; the next start marks the build failed.
+  if(!running()){if(!completions.isEmpty())Log.warnf("Not saving the result of builds %s: the server has stopped",completions.keySet());return;}
   for(Completion result:completions.values()){
    try{
     QuarkusTransaction.requiringNew().run(()->persistCompletion(result));
@@ -271,19 +275,24 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
     exit=result.code();
     status=exit==0?"PASSED":"FAILED";
    }
+  } catch(InterruptedException e){
+   if(log!=null)log.line("Build stopped: the server is shutting down");else captureError=e;
   } catch(IllegalArgumentException e){
    if(log!=null)log.line("Build failed: "+e.getMessage());else captureError=e;
   } catch(Exception e){
-   if(log!=null)log.line("Build failed during checkout or container execution ("+e.getClass().getSimpleName()+"). Check the runner configuration.");
+   if(log!=null)log.line(stopping?"Build stopped: the server is shutting down"
+       :"Build failed during checkout or container execution ("+e.getClass().getSimpleName()+"). Check the runner configuration.");
    else captureError=e;
   }
   finally {
+   // A shutdown interrupts the build; the cleanup and the result must still run, so clear the flag until done.
+   boolean interrupted=Thread.interrupted();
    // The image only exists to run the workflow.
    try{command(List.of(runtime,"rmi","-f",name),60,4096);}catch(Exception ignored){}
    if(dir!=null)try{delete(dir);}catch(Exception ignored){}
    // A log failure must not stop the status update.
    try{
-    if(log!=null){
+    if(log!=null && running()){
      if(captureError==null)captureError=log.failure();
      if(captureError!=null)log.line("[log capture failed: "+captureError.getClass().getSimpleName()+"]");
      log.close();
@@ -292,6 +301,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
    }catch(Throwable t){if(captureError==null)captureError=t;}
    if(captureError!=null){truncated=true;Log.errorf(captureError,"Log capture failed for build %d",id);}
    complete(new Completion(id,Build.Status.valueOf(status),revision,exit,digest,truncated,Instant.now()));
+   if(interrupted)Thread.currentThread().interrupt();
   }
  }
  /** Every local image with its full ID, for resolving a workflow's base image. */
@@ -377,5 +387,21 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  }
 
  static void delete(Path dir)throws IOException{try(var files=Files.walk(dir)){for(Path f:files.sorted(Comparator.reverseOrder()).toList())Files.deleteIfExists(f);}}
- @PreDestroy synchronized void stop(){stopping=true;executor.shutdownNow();}
+ /** Whether the CDI container, and with it the database and transactions, is still available. */
+ static boolean running(){var c=Arc.container();return c!=null && c.isRunning();}
+ /** Seconds a shutdown waits for running builds to save their log and result. */
+ static final int STOP_SECONDS=30;
+ /** Runs while every bean still works, so interrupted builds can save their log and result. */
+ void onShutdown(@Observes ShutdownEvent event){stop();}
+ /**
+  * Interrupts the running builds and waits for them to finish their cleanup. Not synchronized: a build's cleanup
+  * takes this object's lock to save its result.
+  */
+ @PreDestroy void stop(){
+  stopping=true;
+  executor.shutdownNow();
+  try{
+   if(!executor.awaitTermination(STOP_SECONDS,TimeUnit.SECONDS))Log.warnf("Builds still running after %d seconds of shutdown",STOP_SECONDS);
+  }catch(InterruptedException e){Thread.currentThread().interrupt();}
+ }
 }

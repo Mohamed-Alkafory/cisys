@@ -272,21 +272,36 @@ public record Workflow(String name, String container, List<Variable> environment
 
     /**
      * Shell code that finds the image's package manager, sets {@code pm} to it (empty when there is none) and defines
-     * {@code install PACKAGE...}.
+     * {@code install PACKAGE...} and {@code installed PACKAGE...}.
+     * <p>
+     * {@code install} always reads fresh package metadata, never the image's cached copy, and installs the newest
+     * version; a package the image already has is upgraded to it. {@code installed} logs the version each package
+     * ended up at.
      */
     private static final String PACKAGE_MANAGER = """
             . /etc/os-release 2>/dev/null
             for pm in apk apt-get dnf microdnf yum zypper ''; do [ -z "$pm" ] || ! command -v "$pm" >/dev/null 2>&1 || break; done
             install() {
               case "$pm" in
-                apk) apk add --no-cache "$@" ;;
+                apk) apk add --no-cache --upgrade "$@" ;;
                 apt-get) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates "$@" && rm -rf /var/lib/apt/lists/* ;;
-                dnf) dnf install -y -q "$@" && dnf clean all ;;
-                microdnf) microdnf install -y "$@" && microdnf clean all ;;
-                yum) yum install -y -q "$@" && yum clean all ;;
-                zypper) zypper --non-interactive install "$@" && zypper clean ;;
+                dnf) dnf install -y -q --refresh "$@" && dnf upgrade -y -q "$@" && dnf clean all ;;
+                microdnf) microdnf install -y --refresh "$@" && microdnf upgrade -y "$@" && microdnf clean all ;;
+                yum) yum clean expire-cache -q && yum install -y -q "$@" && yum update -y -q "$@" && yum clean all ;;
+                zypper) zypper --non-interactive refresh && zypper --non-interactive install "$@" && zypper --non-interactive update "$@" && zypper clean ;;
                 *) return 1 ;;
               esac
+            }
+            installed() {
+              for p in "$@"; do
+                n=${p%%[=<>]*}
+                case "$pm" in
+                  apk) v=$(apk list --installed "$n" 2>/dev/null | cut -d' ' -f1 | head -n 1) ;;
+                  apt-get) v=$(dpkg-query -W -f='${Package} ${Version}' "${n%%:*}" 2>/dev/null) ;;
+                  *) v=$(rpm -q "$n" 2>/dev/null || rpm -q --whatprovides "$n" 2>/dev/null) ;;
+                esac
+                echo "==> Installed: ${v:-$p}"
+              done
             }
             """;
 
@@ -307,6 +322,7 @@ public record Workflow(String name, String container, List<Variable> environment
             packages=
             while [ "$#" -gt 1 ]; do echo "==> Dependency: $1 ($2) with $pm"; packages="$packages $2"; shift 2; done
             install $packages || { rc=$?; echo "==> Could not install$packages"; exit "$rc"; }
+            installed $packages
             """;
 
     private static void install(StringBuilder f, List<Dependency> dependencies) {

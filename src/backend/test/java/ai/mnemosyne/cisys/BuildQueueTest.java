@@ -102,6 +102,27 @@ class BuildQueueTest {
    assertEquals(List.of(first.id,second.id),order);
   }finally{release.countDown();worker.stop();}
  }
+ @Test void stopWaitsForRunningBuildsToSaveTheirResult()throws Exception{
+  Build running=submit();
+  CountDownLatch entered=new CountDownLatch(1);
+  BuildRunner worker=new BuildRunner(){
+   @Override void execute(Build b){
+    entered.countDown();
+    try{Thread.sleep(60_000);}
+    catch(InterruptedException e){
+     // The interrupted build's cleanup is slow and needs the lock that saving a result takes.
+     try{Thread.sleep(500);}catch(InterruptedException again){Thread.currentThread().interrupt();}
+     complete(new Completion(b.id,Build.Status.FAILED,null,null,null,false,java.time.Instant.now()));
+    }
+   }
+  };
+  worker.logs=logs;worker.concurrency=1;worker.queueLimit=100;worker.recover(null);
+  worker.dispatch();assertTrue(entered.await(10,TimeUnit.SECONDS));
+  worker.stop();
+  // stop() returns only after the build saved its result, while the database is still there.
+  Build saved=read(running.id);
+  assertEquals(Build.Status.FAILED,saved.status);assertNotNull(saved.finishedAt);
+ }
  @Test void failedCompletionIsRetriedWithoutRerunningAndQueueResumes()throws Exception{
   Build first=submit(),second=submit();
   CountDownLatch attempted=new CountDownLatch(1),secondDone=new CountDownLatch(1);

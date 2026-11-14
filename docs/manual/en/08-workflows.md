@@ -119,11 +119,12 @@ jobs:
         run: make
 ```
 
-The build finds out what the container is and installs with its package manager: `apk` (Alpine), `apt-get` (Debian, Ubuntu), `dnf` (Fedora), `microdnf` or `yum` (Red Hat Enterprise Linux, UBI, CentOS) or `zypper` (openSUSE). The log shows the container and the package manager, then one line per dependency:
+The build finds out what the container is and installs with its package manager: `apk` (Alpine), `apt-get` (Debian, Ubuntu), `dnf` (Fedora), `microdnf` or `yum` (Red Hat Enterprise Linux, UBI, CentOS) or `zypper` (openSUSE). The log shows the container and the package manager, then one line per dependency and the version it was installed at:
 
 ```
 ==> Container: Debian GNU/Linux 13 (trixie), package manager: apt-get
 ==> Dependency: JSON processor (jq) with apt-get
+==> Installed: jq 1.7.1-6+deb13u4
 ```
 
 * `value` is the package name in the container's distribution, so it depends on `container`: Java is `openjdk25` on Alpine, `openjdk-25-jdk-headless` on Debian and `java-25-openjdk-devel` on Fedora. A version can be given as the package manager writes it, for example `git=1:2.47.3-0+deb13u1` for `apt-get`.
@@ -132,6 +133,7 @@ The build finds out what the container is and installs with its package manager:
 * Packages are installed as root, with network access. The steps themselves still run as `65534:65534` without network.
 * All dependencies are installed together, in one step, before the branch is cloned, so every job and step can use them. `dependencies` on a job or a step is rejected.
 * A package that does not exist, or a container without a supported package manager, fails the build with `==> Could not install …` or `==> Cannot install dependencies …`.
+* Dependencies are always up to date. The package manager reads fresh package metadata on every build, never what the image cached, and installs the newest version. A package the image already has is upgraded. The log shows the version each one ended up at, for example `==> Installed: jq 1.7.1-6+deb13u4`. To stay on one version, give it in `value`.
 * Packages are downloaded on every build. A `container` image that already has them starts faster.
 
 ### The container image
