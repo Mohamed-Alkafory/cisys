@@ -43,4 +43,18 @@ public class ProjectAccess {
       return false;
     return identity.hasRole("admin") || jwt.getSubject().equals(p.ownerSubject);
   }
+
+  /** Whether the build is queued or running and {@link #mayCancel} allows it. */
+  boolean canCancel(Project p, Build b) {
+    return (b.status == Build.Status.QUEUED || b.status == Build.Status.RUNNING) && mayCancel(p, b);
+  }
+
+  /** Admins, the project's owner and whoever requested the build. */
+  boolean mayCancel(Project p, Build b) {
+    if (canSeePrivate(p)) return true;
+    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null)
+      return false;
+    return (identity.hasRole("lead") || identity.hasRole("admin"))
+        && jwt.getSubject().equals(b.requestedBy);
+  }
 }

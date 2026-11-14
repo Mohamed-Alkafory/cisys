@@ -63,6 +63,7 @@ public class ProjectPageResource {
       boolean logTruncated,
       boolean pinned,
       boolean canPin,
+      boolean canCancel,
       @com.fasterxml.jackson.annotation.JsonInclude(
               com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
           String workflow) {}
@@ -82,7 +83,8 @@ public class ProjectPageResource {
                 .list();
     // Whoever may see a private project may also pin its builds.
     boolean canPin = access.canSeePrivate(p);
-    List<PageBuild> builds = rows.stream().map(b -> pageBuild(b, canPin, false)).toList();
+    List<PageBuild> builds =
+        rows.stream().map(b -> pageBuild(b, canPin, access.canCancel(p, b), false)).toList();
     return new ProjectPage(
         new ProjectInfo(p.id, p.name, p.repositoryUrl, p.privateRepository), builds);
   }
@@ -97,11 +99,12 @@ public class ProjectPageResource {
     Project p = access.visible(name);
     Build b = Build.findById(buildId);
     if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
-    return pageBuild(b, access.canSeePrivate(p), true);
+    return pageBuild(b, access.canSeePrivate(p), access.canCancel(p, b), true);
   }
 
   /** The workflow file is sent for a single build only, as it can be up to 64 KiB. */
-  private static PageBuild pageBuild(Build b, boolean canPin, boolean withWorkflow) {
+  private static PageBuild pageBuild(
+      Build b, boolean canPin, boolean canCancel, boolean withWorkflow) {
     return new PageBuild(
         b.id,
         b.projectId,
@@ -116,6 +119,7 @@ public class ProjectPageResource {
         b.logTruncated,
         b.pinned,
         canPin,
+        canCancel,
         withWorkflow ? b.workflow : null);
   }
 

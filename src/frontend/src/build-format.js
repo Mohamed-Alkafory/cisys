@@ -23,7 +23,7 @@ export function branchFromSegment(segment) {
 export function duration(build) {
   if (build.status === "QUEUED") return "queued";
   if (!build.finishedAt) return "running";
-  if (!build.startedAt) return "unknown";
+  if (!build.startedAt) return build.status === "CANCELLED" ? "—" : "unknown";
   const seconds = Math.max(
     0,
     Math.round((new Date(build.finishedAt) - new Date(build.startedAt)) / 1000),

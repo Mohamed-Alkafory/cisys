@@ -22,7 +22,8 @@ public class Build extends PanacheEntity {
     QUEUED,
     RUNNING,
     PASSED,
-    FAILED
+    FAILED,
+    CANCELLED
   }
 
   @Enumerated(EnumType.STRING)
@@ -59,6 +60,10 @@ public class Build extends PanacheEntity {
   /** Pinned builds are kept by retention cleanup. */
   @Column(nullable = false)
   public boolean pinned;
+
+  /** Set on a running build; the runner stops it and records it as cancelled. */
+  @Column(nullable = false)
+  public boolean cancelRequested;
 
   public Instant startedAt;
   public Instant finishedAt;
