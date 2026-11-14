@@ -14,7 +14,7 @@ The **Lead** role is for people who run projects. Leads can do everything a memb
 
 ## Admin
 
-The **Admin** role manages the installation. Admins can see every project including private projects of other users, start, pin and cancel builds, use credential references for private Git repositories, manage the build images, change the branding, and change the settings such as build retention, the build queue, the hosts build steps may reach and the checkout limits.
+The **Admin** role manages the installation. Admins can see every project including private projects of other users, start, pin and cancel builds, use credential references for private Git repositories, manage the build images, change the branding, and change the settings such as build retention, the build queue, the hosts build steps may reach, the checkout limits and the build resource limits.
 
 ## Access summary
 

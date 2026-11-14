@@ -355,7 +355,8 @@ class BuildQueueTest {
             return new BuildRunner.Result(
                 0,
                 false,
-                "localhost/cisys-build-3\ndocker.io/library/alpine\nlocalhost/cisys-build-x\n");
+                "localhost/cisys-build-3\nlocalhost/cisys-build-4-prepare\n"
+                    + "docker.io/library/alpine\nlocalhost/cisys-build-x\n");
           return new BuildRunner.Result(0, false, "");
         };
     restarted.logs = logs;
@@ -369,7 +370,8 @@ class BuildQueueTest {
               List.of("podman", "rm", "-f", "cisys-build-1"),
               List.of("podman", "rm", "-f", "cisys-build-2"),
               List.of("podman", "images", "--format", "{{.Repository}}"),
-              List.of("podman", "rmi", "-f", "localhost/cisys-build-3")),
+              List.of("podman", "rmi", "-f", "localhost/cisys-build-3"),
+              List.of("podman", "rmi", "-f", "localhost/cisys-build-4-prepare")),
           calls);
       assertFalse(Files.exists(stale), "the stale checkout is removed");
       assertTrue(Files.exists(keep), "unrelated directories are kept");

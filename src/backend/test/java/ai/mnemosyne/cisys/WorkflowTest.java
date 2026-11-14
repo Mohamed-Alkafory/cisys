@@ -361,6 +361,39 @@ class WorkflowTest {
   }
 
   @Test
+  void dockerPreparationInstallsToolsAndDependenciesWithNetwork() {
+    List<String> lines =
+        Workflow.parse(DEPENDENCIES).prepareContainerfile(ID, false).lines().toList();
+    assertEquals("FROM " + ID, lines.get(0));
+    assertEquals("USER 0", lines.get(1));
+    assertTrue(
+        lines.get(2).contains("for tool in git make podman podman-compose; do"), lines.get(2));
+    assertTrue(
+        lines.get(3).contains("\"JSON processor\",\"jq\",\"Compiler\",\"gcc\"]"), lines.get(3));
+    assertEquals(4, lines.size(), String.join("\n", lines));
+  }
+
+  @Test
+  void dockerStepsStageRunsFromThePreparedImageWithoutNetworkFlags() {
+    Workflow w = Workflow.parse(VALID.replace("        wait: 8180\n", "        run: make wait\n"));
+    List<String> lines = w.stepsContainerfile("cisys-build-1-prepare", false).lines().toList();
+    assertEquals("FROM cisys-build-1-prepare", lines.get(0));
+    assertTrue(lines.stream().noneMatch(l -> l.contains("--network")), String.join("\n", lines));
+    // Tools and dependencies are in the preparation image, not in this file.
+    assertTrue(
+        lines.stream().noneMatch(l -> l.contains("/etc/os-release")), String.join("\n", lines));
+    assertTrue(
+        lines.stream().anyMatch(l -> l.startsWith("COPY --chown=65534:65534 ")), file(lines));
+    assertTrue(
+        lines.stream().anyMatch(l -> l.startsWith("RUN [\"sh\",\"-c\",\". /etc/cisys-environment")),
+        file(lines));
+  }
+
+  private static String file(List<String> lines) {
+    return String.join("\n", lines);
+  }
+
+  @Test
   void jobWithAWaitStepIsOneRun() {
     var runs = Workflow.parse(VALID).runs(Workflow.WAIT_SECONDS);
     assertEquals(1, runs.size());

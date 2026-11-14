@@ -325,6 +325,15 @@ public record Workflow(
    * {@link #PROXY}.
    */
   String containerfile(String baseId, boolean network, int waitSeconds) {
+    return containerfile(baseId, network, waitSeconds, true, true);
+  }
+
+  /**
+   * The first Docker legacy-builder stage: installs the tools and the workflow's dependencies with
+   * network. The second stage builds from this image with network off, because that builder has no
+   * per-{@code RUN} network flag.
+   */
+  String prepareContainerfile(String baseId, boolean network) {
     if (!baseId.matches("[0-9a-f]{64}"))
       throw new IllegalArgumentException("Not an image ID: " + baseId);
     StringBuilder f = new StringBuilder();
@@ -334,9 +343,43 @@ public record Workflow(
         .append(exec("sh", "-c", network ? INSTALL_NETWORK_TOOLS : INSTALL_TOOLS))
         .append('\n');
     install(f, dependencies);
+    checkSize(f);
+    return f.toString();
+  }
+
+  /**
+   * The second Docker legacy-builder stage. The build disables network for every {@code RUN}, so
+   * this file has no per-{@code RUN} flags.
+   */
+  String stepsContainerfile(String preparedImage, boolean network, int waitSeconds) {
+    return containerfile(preparedImage, network, waitSeconds, false, false);
+  }
+
+  String stepsContainerfile(String preparedImage, boolean network) {
+    return stepsContainerfile(preparedImage, network, WAIT_SECONDS);
+  }
+
+  private String containerfile(
+      String baseId,
+      boolean network,
+      int waitSeconds,
+      boolean installToolsAndDependencies,
+      boolean perRunNetworkFlags) {
+    if (installToolsAndDependencies && !baseId.matches("[0-9a-f]{64}"))
+      throw new IllegalArgumentException("Not an image ID: " + baseId);
+    StringBuilder f = new StringBuilder();
+    f.append("FROM ").append(baseId).append('\n');
+    f.append("USER 0\n");
+    if (installToolsAndDependencies) {
+      f.append("RUN ")
+          .append(exec("sh", "-c", network ? INSTALL_NETWORK_TOOLS : INSTALL_TOOLS))
+          .append('\n');
+      install(f, dependencies);
+    }
+    String run = perRunNetworkFlags ? "RUN --network=none " : "RUN ";
     // The variables travel as an argument, so neither the Containerfile parser nor a shell
     // interprets them here.
-    f.append("RUN --network=none ")
+    f.append(run)
         .append(
             exec(
                 "sh",
@@ -361,18 +404,22 @@ public record Workflow(
         .append(' ')
         .append(WORKSPACE)
         .append(" /workspace\n");
-    for (String run : runs(waitSeconds)) {
-      f.append("RUN --network=none ")
+    for (String step : runs(waitSeconds)) {
+      f.append(run)
           .append(
               exec(
                   "sh",
                   "-c",
-                  ". " + ENVIRONMENT_FILE + " || exit 1\n" + (network ? PROXY : "") + run))
+                  ". " + ENVIRONMENT_FILE + " || exit 1\n" + (network ? PROXY : "") + step))
           .append('\n');
     }
-    if (f.length() > MAX_CONTAINERFILE)
-      throw new InvalidWorkflowException("The workflow is too large to run");
+    checkSize(f);
     return f.toString();
+  }
+
+  private static void checkSize(StringBuilder file) {
+    if (file.length() > MAX_CONTAINERFILE)
+      throw new InvalidWorkflowException("The workflow is too large to run");
   }
 
   /**

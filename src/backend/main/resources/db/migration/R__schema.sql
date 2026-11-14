@@ -133,3 +133,8 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxcheckoutfiles integer;
 
 -- Set on a running build until the runner has stopped it.
 ALTER TABLE build ADD COLUMN IF NOT EXISTS cancelrequested boolean NOT NULL DEFAULT false;
+
+-- Null uses the configured build resource limits.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildmemorymib integer;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildcpus integer;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildpids integer;

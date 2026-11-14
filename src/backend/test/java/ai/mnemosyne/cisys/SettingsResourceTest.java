@@ -213,4 +213,80 @@ class SettingsResourceTest {
       given().contentType("application/json").body(body).put(CHECKOUT).then().statusCode(400);
     }
   }
+
+  private static final String PERFORMANCE = "/api/settings/performance";
+
+  static void clearPerformance() {
+    QuarkusTransaction.requiringNew()
+        .run(() ->
+            Settings.update(
+                "maxBuildMemoryMib = null, maxBuildCpus = null, maxBuildPids = null"
+                    + " where id = 1"));
+  }
+
+  @Test
+  void anonymousCannotReadPerformance() {
+    given().get(PERFORMANCE).then().statusCode(401);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  void leadCannotReadOrUpdatePerformance() {
+    given().get(PERFORMANCE).then().statusCode(403);
+    given()
+        .contentType("application/json")
+        .body("{\"maxMemoryMib\":512,\"maxCpus\":2,\"maxPids\":256}")
+        .put(PERFORMANCE)
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void adminSavesPerformanceOverConfiguredDefaults() {
+    given()
+        .get(PERFORMANCE)
+        .then()
+        .statusCode(200)
+        .body("maxMemoryMib", equalTo(1024), "maxCpus", equalTo(1), "maxPids", equalTo(512));
+    try {
+      given()
+          .contentType("application/json")
+          .body("{\"maxMemoryMib\":2048,\"maxCpus\":2,\"maxPids\":256}")
+          .put(PERFORMANCE)
+          .then()
+          .statusCode(200)
+          .body("maxMemoryMib", equalTo(2048), "maxCpus", equalTo(2), "maxPids", equalTo(256));
+      given()
+          .get(PERFORMANCE)
+          .then()
+          .statusCode(200)
+          .body("maxMemoryMib", equalTo(2048), "maxCpus", equalTo(2), "maxPids", equalTo(256));
+    } finally {
+      clearPerformance();
+    }
+    given()
+        .get(PERFORMANCE)
+        .then()
+        .statusCode(200)
+        .body("maxMemoryMib", equalTo(1024), "maxCpus", equalTo(1), "maxPids", equalTo(512));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void rejectsInvalidPerformance() {
+    for (String body :
+        new String[] {
+          "{\"maxMemoryMib\":63,\"maxCpus\":1,\"maxPids\":512}",
+          "{\"maxMemoryMib\":65537,\"maxCpus\":1,\"maxPids\":512}",
+          "{\"maxMemoryMib\":1024,\"maxCpus\":0,\"maxPids\":512}",
+          "{\"maxMemoryMib\":1024,\"maxCpus\":17,\"maxPids\":512}",
+          "{\"maxMemoryMib\":1024,\"maxCpus\":1,\"maxPids\":15}",
+          "{\"maxMemoryMib\":1024,\"maxCpus\":1,\"maxPids\":32769}",
+          "{\"maxMemoryMib\":1024,\"maxCpus\":1}",
+          "{}"
+        }) {
+      given().contentType("application/json").body(body).put(PERFORMANCE).then().statusCode(400);
+    }
+  }
 }

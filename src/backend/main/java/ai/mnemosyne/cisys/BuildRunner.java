@@ -67,6 +67,34 @@ public class BuildRunner {
     return false;
   }
 
+  /** The legacy builder enforces the resource flags; BuildKit accepts but ignores them. */
+  static final Map<String, String> LEGACY_BUILDER = Map.of("DOCKER_BUILDKIT", "0");
+
+  /** Resource flags understood by both the Docker legacy builder and Podman's build. */
+  static List<String> resourceLimits(int memoryMib, int cpus, int pids) {
+    return List.of(
+        "--memory=" + memoryMib + "m",
+        "--cpu-period=100000",
+        "--cpu-quota=" + (cpus * 100_000L),
+        "--ulimit=nproc=" + pids + ":" + pids);
+  }
+
+  /** One image build command; the caller appends the build context last. */
+  List<String> buildCommand(Path file, String tag, int[] limits) {
+    List<String> build =
+        new ArrayList<>(List.of(runtime, "build", "--no-cache", "-f", file.toString(), "-t", tag));
+    if (runtime.equals("podman"))
+      build.addAll(List.of("--pull=never", "--layers=false", "--security-opt=no-new-privileges"));
+    build.addAll(resourceLimits(limits[2], limits[3], limits[4]));
+    return build;
+  }
+
+  /** The seconds left on a build budget, so the Docker preparation and steps share it. */
+  static int remainingSeconds(long deadlineNanos) {
+    long seconds = TimeUnit.NANOSECONDS.toSeconds(deadlineNanos - System.nanoTime());
+    return (int) Math.max(1, seconds);
+  }
+
   @ConfigProperty(name = "cisys.build.concurrency", defaultValue = "1")
   int concurrency;
 
@@ -98,6 +126,30 @@ public class BuildRunner {
   int maxCheckoutFiles() {
     Integer v = Settings.current().maxCheckoutFiles;
     return v != null ? v : maxCheckoutFiles;
+  }
+
+  @ConfigProperty(name = "cisys.build.max-memory-mib", defaultValue = "1024")
+  int maxMemoryMib = 1024;
+
+  @ConfigProperty(name = "cisys.build.max-cpus", defaultValue = "1")
+  int maxCpus = 1;
+
+  @ConfigProperty(name = "cisys.build.max-pids", defaultValue = "512")
+  int maxPids = 512;
+
+  int maxMemoryMib() {
+    Integer v = Settings.current().maxBuildMemoryMib;
+    return v != null ? v : maxMemoryMib;
+  }
+
+  int maxCpus() {
+    Integer v = Settings.current().maxBuildCpus;
+    return v != null ? v : maxCpus;
+  }
+
+  int maxPids() {
+    Integer v = Settings.current().maxBuildPids;
+    return v != null ? v : maxPids;
   }
 
   private final ExecutorService executor = Executors.newCachedThreadPool();
@@ -254,6 +306,8 @@ public class BuildRunner {
       throw new IllegalArgumentException("Build concurrency and queue limit must be positive");
     if (maxCheckoutMib < 1 || maxCheckoutFiles < 1)
       throw new IllegalArgumentException("Checkout size and file limits must be positive");
+    if (maxMemoryMib < 1 || maxCpus < 1 || maxPids < 1)
+      throw new IllegalArgumentException("Build memory, CPU and process limits must be positive");
     cleanupOrphans();
     List<Build> interrupted =
         QuarkusTransaction.requiringNew()
@@ -312,7 +366,7 @@ public class BuildRunner {
       return r.output()
           .lines()
           .map(String::strip)
-          .filter(n -> n.matches("(localhost/)?cisys-build-[0-9]+"))
+          .filter(n -> n.matches("(localhost/)?cisys-build-[0-9]+(-prepare)?"))
           .distinct()
           .toList();
     } catch (Exception e) {
@@ -564,7 +618,11 @@ public class BuildRunner {
 
   private void run(Long id, String url, BuildResource.RunRequest request) {
     Path dir = null;
-    String name = "cisys-build-" + id, revision = null, status = "FAILED", digest = null;
+    String name = "cisys-build-" + id,
+        prepare = name + "-prepare",
+        revision = null,
+        status = "FAILED",
+        digest = null;
     Integer exit = null;
     boolean truncated = false;
     Throwable captureError = null;
@@ -585,7 +643,10 @@ public class BuildRunner {
       }
       int[] limits =
           QuarkusTransaction.requiringNew()
-              .call(() -> new int[] {maxCheckoutMib(), maxCheckoutFiles()});
+              .call(() ->
+                  new int[] {
+                    maxCheckoutMib(), maxCheckoutFiles(), maxMemoryMib(), maxCpus(), maxPids()
+                  });
       dir = Files.createTempDirectory(checkoutRoot(), "cisys-");
       // The image copies this checkout, so what it gets is what was measured against the limits.
       Path context = Files.createDirectory(dir.resolve("context"));
@@ -630,33 +691,66 @@ public class BuildRunner {
               + ")");
       BuildLogs.Writer buildLog = log;
       proxy = network(dir, allowlist, buildLog::line);
-      Path file = Files.writeString(dir.resolve("Containerfile"), containerfile);
-      List<String> build =
-          new ArrayList<>(
-              List.of(
-                  runtime,
-                  "build",
-                  "--no-cache",
-                  "--pull=never",
-                  "-f",
-                  file.toString(),
-                  "-t",
-                  name));
-      if (runtime.equals("podman"))
-        build.addAll(
-            List.of(
-                "--layers=false",
-                "--security-opt=no-new-privileges",
-                "--memory=1g",
-                "--cpu-period=100000",
-                "--cpu-quota=100000"));
-      else build.add("--progress=plain");
-      if (proxy != null)
-        build.add("--volume=" + proxy.directory() + ":" + Workflow.PROXY_DIR + ":ro,Z");
-      build.add(context.toString());
-      if (handle.cancelled) throw new CancellationException();
-      Streamed result = stream(build, 600, log, logMaxBytes, p -> started(handle, p));
-      captureError = result.readerError();
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(600);
+      Streamed result;
+      if (runtime.equals("podman")) {
+        Path file = Files.writeString(dir.resolve("Containerfile"), containerfile);
+        List<String> build = buildCommand(file, name, limits);
+        if (proxy != null)
+          build.add("--volume=" + proxy.directory() + ":" + Workflow.PROXY_DIR + ":ro,Z");
+        build.add(context.toString());
+        if (handle.cancelled) throw new CancellationException();
+        result = stream(build, 600, log, logMaxBytes, p -> started(handle, p));
+      } else {
+        // The Docker legacy builder enforces the resource flags, but it has no per-RUN network
+        // flag. Tools and dependencies are installed first with network, then the steps build
+        // from that image with network off. BuildKit ignores the resource flags.
+        Path prepareFile =
+            Files.writeString(
+                dir.resolve("Containerfile.prepare"),
+                workflow.prepareContainerfile(from.id(), !allowlist.isEmpty()));
+        List<String> prepareBuild = buildCommand(prepareFile, prepare, limits);
+        prepareBuild.add(context.toString());
+        if (handle.cancelled) throw new CancellationException();
+        Streamed prepared =
+            stream(
+                prepareBuild,
+                remainingSeconds(deadline),
+                log,
+                logMaxBytes,
+                p -> started(handle, p),
+                LEGACY_BUILDER);
+        if (prepared.readerError() != null) captureError = prepared.readerError();
+        if (prepared.truncated()) {
+          truncated = true;
+          log.line(
+              "[output truncated after "
+                  + logMaxBytes
+                  + " bytes; "
+                  + (prepared.totalBytes() - logMaxBytes)
+                  + " further bytes discarded]");
+        }
+        if (prepared.timeout() || prepared.code() != 0) result = prepared;
+        else {
+          Path file =
+              Files.writeString(
+                  dir.resolve("Containerfile"),
+                  workflow.stepsContainerfile(prepare, !allowlist.isEmpty()));
+          List<String> build = buildCommand(file, name, limits);
+          build.add("--network=none");
+          build.add(context.toString());
+          if (handle.cancelled) throw new CancellationException();
+          result =
+              stream(
+                  build,
+                  remainingSeconds(deadline),
+                  log,
+                  logMaxBytes,
+                  p -> started(handle, p),
+                  LEGACY_BUILDER);
+        }
+      }
+      if (result.readerError() != null) captureError = result.readerError();
       if (result.truncated()) {
         truncated = true;
         log.line(
@@ -718,6 +812,12 @@ public class BuildRunner {
         command(List.of(runtime, "rmi", "-f", name), 60, 4096);
       } catch (Exception ignored) {
       }
+      // Docker builds prepare tools and dependencies in an intermediate image.
+      if (!runtime.equals("podman"))
+        try {
+          command(List.of(runtime, "rmi", "-f", prepare), 60, 4096);
+        } catch (Exception ignored) {
+        }
       if (proxy != null)
         try {
           proxy.close();
@@ -904,6 +1004,18 @@ public class BuildRunner {
     return stream(args, timeout, sink, maxBytes, 30_000, 5_000, started);
   }
 
+  /** As above, with extra environment variables for the container command. */
+  static Streamed stream(
+      List<String> args,
+      int timeout,
+      LogSink sink,
+      long maxBytes,
+      Consumer<Process> started,
+      Map<String, String> environment)
+      throws Exception {
+    return stream(args, timeout, sink, maxBytes, 30_000, 5_000, started, environment);
+  }
+
   static Streamed stream(
       List<String> args,
       int timeout,
@@ -928,7 +1040,22 @@ public class BuildRunner {
       long forceMillis,
       Consumer<Process> started)
       throws Exception {
-    Process p = new ProcessBuilder(args).redirectErrorStream(true).start();
+    return stream(args, timeout, sink, maxBytes, drainMillis, forceMillis, started, Map.of());
+  }
+
+  static Streamed stream(
+      List<String> args,
+      int timeout,
+      LogSink sink,
+      long maxBytes,
+      long drainMillis,
+      long forceMillis,
+      Consumer<Process> started,
+      Map<String, String> environment)
+      throws Exception {
+    ProcessBuilder builder = new ProcessBuilder(args).redirectErrorStream(true);
+    builder.environment().putAll(environment);
+    Process p = builder.start();
     p.getOutputStream().close();
     started.accept(p);
     InputStream raw = p.getInputStream();

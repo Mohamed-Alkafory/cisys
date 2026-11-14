@@ -35,7 +35,12 @@ public class SettingsResource {
       MAX_CONCURRENT = 16,
       MAX_QUEUED = 1000,
       MAX_CHECKOUT_MIB = 102400,
-      MAX_CHECKOUT_FILES = 1000000;
+      MAX_CHECKOUT_FILES = 1000000,
+      MIN_MEMORY_MIB = 64,
+      MAX_MEMORY_MIB = 65536,
+      MAX_CPUS = 16,
+      MIN_PIDS = 16,
+      MAX_PIDS = 32768;
 
   @Inject SecurityIdentity identity;
   @Inject BuildRunner runner;
@@ -46,6 +51,9 @@ public class SettingsResource {
   public record Queue(Integer maxConcurrent, Integer maxQueued) {}
 
   public record Checkout(Integer maxSizeMib, Integer maxFiles) {}
+
+  /** Limits applied to every build container. */
+  public record Performance(Integer maxMemoryMib, Integer maxCpus, Integer maxPids) {}
 
   @GET
   @Path("/retention")
@@ -134,6 +142,39 @@ public class SettingsResource {
     s.maxCheckoutMib = input.maxSizeMib();
     s.maxCheckoutFiles = input.maxFiles();
     return new Checkout(s.maxCheckoutMib, s.maxCheckoutFiles);
+  }
+
+  @GET
+  @Path("/performance")
+  public Performance performance() {
+    requireAdmin();
+    return new Performance(runner.maxMemoryMib(), runner.maxCpus(), runner.maxPids());
+  }
+
+  @PUT
+  @Path("/performance")
+  @Transactional
+  public Performance updatePerformance(Performance input) {
+    requireAdmin();
+    if (input == null
+        || input.maxMemoryMib() == null
+        || input.maxMemoryMib() < MIN_MEMORY_MIB
+        || input.maxMemoryMib() > MAX_MEMORY_MIB)
+      throw new BadRequestException(
+          "Memory must be between " + MIN_MEMORY_MIB + " and " + MAX_MEMORY_MIB + " MiB");
+    if (input.maxCpus() == null || input.maxCpus() < 1 || input.maxCpus() > MAX_CPUS)
+      throw new BadRequestException("CPUs must be between 1 and " + MAX_CPUS);
+    if (input.maxPids() == null || input.maxPids() < MIN_PIDS || input.maxPids() > MAX_PIDS)
+      throw new BadRequestException("Processes must be between " + MIN_PIDS + " and " + MAX_PIDS);
+    Settings s = Settings.findById(1L);
+    if (s == null) {
+      s = new Settings();
+      s.persist();
+    }
+    s.maxBuildMemoryMib = input.maxMemoryMib();
+    s.maxBuildCpus = input.maxCpus();
+    s.maxBuildPids = input.maxPids();
+    return new Performance(s.maxBuildMemoryMib, s.maxBuildCpus, s.maxBuildPids);
   }
 
   private static WebApplicationException badRequest(String message) {

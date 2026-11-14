@@ -75,6 +75,9 @@ erDiagram
         INTEGER max_queued_builds
         INTEGER max_checkout_mib
         INTEGER max_checkout_files
+        INTEGER max_build_memory_mib
+        INTEGER max_build_cpus
+        INTEGER max_build_pids
     }
 
     PROJECT ||--o{ BUILD : has

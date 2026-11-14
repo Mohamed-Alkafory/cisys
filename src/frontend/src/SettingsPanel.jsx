@@ -75,6 +75,32 @@ const SECTIONS = {
       },
     ],
   },
+  performance: {
+    title: "Performance",
+    fields: [
+      {
+        key: "maxMemoryMib",
+        id: "performance-memory",
+        label: "Memory limit (MiB)",
+        min: 64,
+        max: 65536,
+      },
+      {
+        key: "maxCpus",
+        id: "performance-cpus",
+        label: "CPU limit (cores)",
+        min: 1,
+        max: 16,
+      },
+      {
+        key: "maxPids",
+        id: "performance-pids",
+        label: "Process limit",
+        min: 16,
+        max: 32768,
+      },
+    ],
+  },
 };
 
 function SettingsTab({ api, section }) {

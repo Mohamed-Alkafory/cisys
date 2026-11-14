@@ -41,6 +41,15 @@ public class Settings extends PanacheEntityBase {
   /** Null uses cisys.build.max-checkout-files. */
   public Integer maxCheckoutFiles;
 
+  /** Null uses cisys.build.max-memory-mib. */
+  public Integer maxBuildMemoryMib;
+
+  /** Null uses cisys.build.max-cpus. */
+  public Integer maxBuildCpus;
+
+  /** Null uses cisys.build.max-pids. */
+  public Integer maxBuildPids;
+
   public static Settings current() {
     Settings s = findById(1L);
     return s == null ? new Settings() : s;

@@ -176,7 +176,7 @@ A build turns the workflow into a Containerfile and builds an image from it with
 4. **Checkout.** The checkout from step 1 is copied into `/workspace`, owned by the unprivileged user `65534:65534`, so the image builds exactly the recorded commit, within the checkout limits. The working tree is **on the branch being tested**, with its `.git` directory, so `git status`, `git log -1` and `git rev-parse HEAD` work. `HOME` is `/tmp`.
 5. **Steps.** The jobs and steps run in order as `65534:65534`, in `/workspace`, **without network** (except through the egress proxy, see **Network for steps**), with the workflow's, the job's and the step's `environment` variables set. The log marks every job and step with `==> Job:` and `==> Step:` lines.
 6. **Result.** The first failing step stops the build. The log shows `==> Step failed:` with the step name and exit code, and the build records that exit code and the status `FAILED`. When every step succeeds, the build is `PASSED`.
-7. **Cleanup.** The image is removed when the build ends. The log, the workflow text, the commit ID and the base image digest are kept.
+7. **Cleanup.** The images are removed when the build ends. The log, the workflow text, the commit ID and the base image digest are kept.
 
 The whole image build has ten minutes. After that it is stopped and reported as timed out.
 
