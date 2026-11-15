@@ -77,6 +77,17 @@ mvn quarkus:dev
 
 The backend listens on <http://localhost:8080>. The Quarkus configuration is in `src/backend/main/resources/application.properties`.
 
+It also serves the monitoring endpoints of the Quarkus health and metrics extensions on the management interface, a separate HTTP server on <http://localhost:9000>:
+
+| URL | Purpose |
+| :--- | :------ |
+| <http://localhost:9000/health> | All health checks |
+| <http://localhost:9000/health/live> | Liveness |
+| <http://localhost:9000/health/ready> | Readiness, including the database check |
+| <http://localhost:9000/metrics> | Metrics in the Prometheus exposition format |
+
+The management interface has no authentication by default and ignores an `Authorization` header. In a production build it binds to `0.0.0.0` like the main HTTP server, because `quarkus.management.host` is not overridden; do not expose port `9000` to untrusted networks, keep it on an internal network or behind a firewall. Set `quarkus.management.host` or `QUARKUS_MANAGEMENT_HOST` to bind it to another address. See [SECURITY.md](SECURITY.md).
+
 ### Frontend
 
 In a second terminal:

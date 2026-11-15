@@ -104,6 +104,7 @@ The local setup uses the following ports. All of them are bound to the loopback 
 | :----- | :------------------ | :---------------------- | :----------------------------- |
 | `5173` | Frontend            | <http://localhost:5173> | `make run`                     |
 | `8080` | Backend API         | <http://localhost:8080> | `make run`                     |
+| `9000` | Management          | <http://localhost:9000> | `make run`                     |
 | `8180` | Keycloak            | <http://localhost:8180> | `make platform-start`          |
 | `5432` | PostgreSQL          | `localhost:5432`        | `make platform-start`          |
 | `5005` | Java debugger       | `localhost:5005`        | `make run` (development mode)  |

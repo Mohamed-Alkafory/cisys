@@ -52,6 +52,17 @@ These credentials, HTTP, and Keycloak development mode are for a trusted local m
 
 Private projects and their build logs are visible only to their creator and admins. Starting builds requires the Lead or Admin role. Changing branding, and using Git credential references, require the Admin role. The full endpoint mapping is in `docs/SECURITY.md`.
 
+## Monitoring
+
+The backend answers four monitoring endpoints without a token on the management interface, a separate HTTP server on port `9000`, so a probe or a Prometheus agent can use them:
+
+* <http://localhost:9000/health> — all health checks
+* <http://localhost:9000/health/live> — the application is running
+* <http://localhost:9000/health/ready> — the application can serve requests, including the database check
+* <http://localhost:9000/metrics> — metrics in the Prometheus exposition format
+
+They are separate from the API, which keeps its own authentication. The management interface has no authentication by default, so an `Authorization` header is ignored. In a production build it binds to `0.0.0.0`, so do not expose port `9000` to untrusted networks; keep it on an internal network or behind a firewall. Set `quarkus.management.host` or `QUARKUS_MANAGEMENT_HOST` to change the address.
+
 ## Build runner
 
 Builds execute repository-controlled code through the local container engine. Read the **Builds** chapter, including the trust boundary, before enabling the runner.

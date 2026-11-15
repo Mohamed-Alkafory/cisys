@@ -60,6 +60,24 @@ The private flag controls visibility inside cisys; it does not grant or restrict
 * The backend validates bearer access tokens and reads roles from `realm_access/roles`.
 * CORS allows `http://localhost:5173` only. Change `quarkus.http.cors.origins` for any other frontend origin.
 
+## Health and metrics
+
+The backend serves four monitoring endpoints from the Quarkus health and metrics extensions on the **management interface**, a separate HTTP server on port `9000`:
+
+| Endpoint | Purpose |
+| :------- | :------ |
+| `GET /health` | All health checks of the application |
+| `GET /health/live` | The application is running |
+| `GET /health/ready` | The application can serve requests |
+| `GET /metrics` | Metrics in the Prometheus exposition format |
+
+* They are plain HTTP routes, not Jakarta REST resources. The `@Authenticated` rules of the API do not reach them, and the public rate limiter (`PublicRateLimitFilter`, bound with `@PublicRateLimited` to the anonymous `/api` resources) does not count them. Every other endpoint keeps the authentication described above.
+* The management interface has no authentication by default: it installs no authentication mechanism and ignores an `Authorization` header. A token does not protect it. Do not expose port `9000` to untrusted networks; keep it on an internal network or behind a firewall.
+* In a production build the management interface binds to `0.0.0.0`, like the main HTTP server. Override the address with `quarkus.management.host` or the environment variable `QUARKUS_MANAGEMENT_HOST` to bind it to `localhost` or an internal address.
+* `/health/ready` includes the check **Database connections health check**, which validates the PostgreSQL connection. It reports `DOWN` when the database is unreachable, so it is the readiness signal of the instance. `/health/live` stays `UP` while the application runs, so it is the liveness signal.
+* `/metrics` reports operational information about the process, among it the JVM memory and threads, the HTTP request counters and the database connection pool. It is unauthenticated on purpose, because there is no authentication on the management interface.
+* The Health UI at `/health-ui` is disabled with `quarkus.smallrye-health.ui.enabled=false`.
+
 ## Build runner
 
 The runner is always on. It lets leads and admins run code from a Git repository in a container on the backend host, using only images an admin has allowed on the **Images** page.
