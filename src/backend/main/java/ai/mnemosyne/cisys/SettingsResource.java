@@ -52,11 +52,13 @@ public class SettingsResource {
   /** The build queue and how long one build may take. */
   public record Builds(Integer maxConcurrent, Integer maxQueued, Integer timeoutMinutes) {}
 
+  /** Limits on a build's repository checkout. */
   public record Checkout(Integer maxSizeMib, Integer maxFiles) {}
 
   /** Limits applied to every build container. */
   public record Performance(Integer maxMemoryMib, Integer maxCpus, Integer maxPids) {}
 
+  /** The retention limits. */
   @GET
   @Path("/retention")
   public Retention retention() {
@@ -65,6 +67,7 @@ public class SettingsResource {
     return new Retention(s.retentionDays, s.retentionMaxBuilds);
   }
 
+  /** Saves the retention limits. */
   @PUT
   @Path("/retention")
   @Transactional
@@ -87,6 +90,7 @@ public class SettingsResource {
     return new Retention(s.retentionDays, s.retentionMaxBuilds);
   }
 
+  /** The concurrency, queue and timeout limits for builds. */
   @GET
   @Path("/builds")
   public Builds builds() {
@@ -94,6 +98,7 @@ public class SettingsResource {
     return new Builds(runner.concurrency(), runner.queueLimit(), runner.timeoutMinutes());
   }
 
+  /** Saves the concurrency, queue and timeout limits. */
   @PUT
   @Path("/builds")
   @Transactional
@@ -122,6 +127,7 @@ public class SettingsResource {
     return new Builds(s.maxConcurrentBuilds, s.maxQueuedBuilds, s.buildTimeoutMinutes);
   }
 
+  /** The checkout limits. */
   @GET
   @Path("/checkout")
   public Checkout checkout() {
@@ -129,6 +135,7 @@ public class SettingsResource {
     return new Checkout(runner.maxCheckoutMib(), runner.maxCheckoutFiles());
   }
 
+  /** Saves the checkout limits. */
   @PUT
   @Path("/checkout")
   @Transactional
@@ -152,6 +159,7 @@ public class SettingsResource {
     return new Checkout(s.maxCheckoutMib, s.maxCheckoutFiles);
   }
 
+  /** The container limits. */
   @GET
   @Path("/performance")
   public Performance performance() {
@@ -159,6 +167,7 @@ public class SettingsResource {
     return new Performance(runner.maxMemoryMib(), runner.maxCpus(), runner.maxPids());
   }
 
+  /** Saves the container limits. */
   @PUT
   @Path("/performance")
   @Transactional

@@ -34,6 +34,7 @@ public class StatsResource {
   @ConfigProperty(name = "cisys.stats.cache-seconds", defaultValue = "30")
   long cacheSeconds;
 
+  /** The totals; {@code successRate} is null until a build has passed or failed. */
   public record PublicStats(
       long projects,
       long builds,
@@ -48,6 +49,7 @@ public class StatsResource {
 
   private volatile Cached cached;
 
+  /** The statistics, cached for {@code cisys.stats.cache-seconds}. */
   @GET
   @Path("/public")
   @PermitAll

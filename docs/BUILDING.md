@@ -202,7 +202,7 @@ The targets are
 * `check` - Run the frontend checks (lint and build), as CI does
 * `format` - Format the backend and the whole `src/frontend` folder (Prettier)
 * `format-check` - Check formatting of all files without changing them, as CI does
-* `checkstyle` - Run the minimal Checkstyle rules (see `checkstyle.xml`)
+* `checkstyle` - Run the Checkstyle rules, including JavaDoc on public and protected types and methods (see `checkstyle.xml`)
 * `build` - Build the frontend
 * `run` - Run the backend and the frontend in development mode
 * `test` - Run the frontend lint, the formatting and Checkstyle checks and the backend test cases

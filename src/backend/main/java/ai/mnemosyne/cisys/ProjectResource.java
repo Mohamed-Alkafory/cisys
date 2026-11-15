@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.hibernate.exception.ConstraintViolationException;
 
+/** Projects, and the signed-in user's session. */
 @Path("/api")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -55,12 +56,15 @@ public class ProjectResource {
   static final String NAME_RULE =
       "Project names use letters, digits, '.', '_' and '-', and start with a letter or digit";
 
+  /** A project to create. */
   public record CreateProject(
       String name, String repositoryUrl, boolean privateRepository, String credentialRef) {}
 
+  /** The new values of a project. */
   public record UpdateProject(
       String name, String repositoryUrl, boolean privateRepository, String credentialRef) {}
 
+  /** A project's credential reference. */
   public record Credential(String credentialRef) {}
 
   /**
@@ -87,6 +91,7 @@ public class ProjectResource {
         identity.hasRole("admin") ? p.credentialRef : null);
   }
 
+  /** The signed-in user's name, subject and roles. */
   @GET
   @Path("/session")
   public Map<String, Object> session() {
@@ -102,6 +107,7 @@ public class ProjectResource {
         identity.getRoles());
   }
 
+  /** All projects for admins; public and owned projects for everyone else. */
   @GET
   @Path("/projects")
   public List<ProjectResponse> list() {
@@ -113,6 +119,7 @@ public class ProjectResource {
     return projects.stream().map(this::response).toList();
   }
 
+  /** Creates a project. Leads and admins only. */
   @POST
   @Path("/projects")
   @Transactional

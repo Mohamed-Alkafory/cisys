@@ -39,16 +39,20 @@ public class NetworkHostResource {
 
   @Inject SecurityIdentity identity;
 
+  /** A host an admin allows. */
   public record Input(String name, String host) {}
 
+  /** An allowed host. */
   public record View(Long id, String name, String host, String createdBy, Instant createdAt) {}
 
+  /** The allowed hosts. */
   @GET
   public List<View> list() {
     requireAdmin();
     return views();
   }
 
+  /** Allows a host; 409 when it is already allowed. */
   @POST
   @Transactional
   public Response create(Input input) {
@@ -60,6 +64,7 @@ public class NetworkHostResource {
     return Response.status(201).entity(view(add(name, host))).build();
   }
 
+  /** Changes an allowed host. */
   @PUT
   @Path("/{id}")
   @Transactional
@@ -76,6 +81,7 @@ public class NetworkHostResource {
     return view(h);
   }
 
+  /** Removes an allowed host. */
   @DELETE
   @Path("/{id}")
   @Transactional
@@ -85,6 +91,7 @@ public class NetworkHostResource {
     return Response.noContent().build();
   }
 
+  /** The {@link NetworkTemplate}s. */
   @GET
   @Path("/templates")
   public List<NetworkTemplate> templates() {

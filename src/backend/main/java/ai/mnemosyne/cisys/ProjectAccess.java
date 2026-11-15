@@ -24,6 +24,10 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 public class ProjectAccess {
   @Inject SecurityIdentity identity;
 
+  /**
+   * The project named {@code name}, ignoring case; 404 when it is missing or the caller cannot see
+   * it.
+   */
   public Project visible(String name) {
     Project p =
         Project.<Project>find("lower(name) = ?1", name.trim().toLowerCase(Locale.ROOT))

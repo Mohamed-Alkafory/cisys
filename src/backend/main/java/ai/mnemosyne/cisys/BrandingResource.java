@@ -26,6 +26,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.Base64;
 
+/** Reads and saves the {@link Branding}. */
 @Path("/api/branding")
 @Authenticated
 @Produces(MediaType.APPLICATION_JSON)
@@ -40,6 +41,7 @@ public class BrandingResource {
   public record PublicBranding(
       String name, String headerColor, String headingColor, String buttonColor) {}
 
+  /** The branding an admin saves. */
   public record Input(
       String name,
       String headerColor,
@@ -48,6 +50,7 @@ public class BrandingResource {
       String logo,
       String background) {}
 
+  /** The saved branding, or the defaults. */
   @GET
   public Branding get() {
     requireRole();
@@ -55,6 +58,7 @@ public class BrandingResource {
     return b == null ? new Branding() : b;
   }
 
+  /** The name and colors, for pages shown before sign-in. */
   @GET
   @Path("/public")
   @PermitAll
@@ -77,6 +81,7 @@ public class BrandingResource {
     return Response.ok(bytes, type).header("Cache-Control", "no-cache").build();
   }
 
+  /** Saves the branding. Admins only. */
   @PUT
   @Transactional
   public Branding update(Input input) {

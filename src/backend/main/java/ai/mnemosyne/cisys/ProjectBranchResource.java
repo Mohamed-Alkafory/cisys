@@ -35,8 +35,10 @@ public class ProjectBranchResource {
   @Inject GitRepositoryService repositories;
   @Inject EntityManager entityManager;
 
+  /** The branch names, or none and the reason. */
   public record Branches(List<String> branches, String reason) {}
 
+  /** Lists the branches; 400 when the repository is not allowed, 502 when it cannot be read. */
   @GET
   public Response list(@PathParam("name") String name) {
     Project project = access.visible(name);

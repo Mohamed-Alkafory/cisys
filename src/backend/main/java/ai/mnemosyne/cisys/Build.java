@@ -23,6 +23,7 @@ public class Build extends PanacheEntity {
 
   public String requestedBy;
 
+  /** Where a build is; QUEUED and RUNNING are not final. */
   public enum Status {
     QUEUED,
     RUNNING,

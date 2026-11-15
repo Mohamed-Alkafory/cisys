@@ -22,6 +22,7 @@ public class AllowedImage extends PanacheEntityBase {
 
   public static final String PATTERN = "[A-Za-z0-9][A-Za-z0-9_./:@-]{0,200}";
 
+  /** Whether builds may use the image {@code name}. */
   public static boolean isAllowed(String name) {
     return name != null && findById(name) != null;
   }

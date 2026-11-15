@@ -43,6 +43,7 @@ public class ProjectPageResource {
   @ConfigProperty(name = "cisys.public.log-max-bytes", defaultValue = "2097152")
   long publicLogMaxBytes;
 
+  /** The project, as the page shows it. */
   public record ProjectInfo(
       Long id, String name, String repositoryUrl, boolean privateRepository) {}
 
@@ -72,8 +73,10 @@ public class ProjectPageResource {
               com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
           String dockerfile) {}
 
+  /** A project and its newest builds. */
   public record ProjectPage(ProjectInfo project, List<PageBuild> builds) {}
 
+  /** The project and its 50 newest builds, on {@code branch} when given. */
   @GET
   public ProjectPage page(@PathParam("name") String name, @QueryParam("branch") String branch) {
     Project p = access.visible(name);

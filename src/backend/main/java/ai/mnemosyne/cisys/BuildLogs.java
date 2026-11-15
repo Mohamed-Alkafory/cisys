@@ -67,6 +67,7 @@ public class BuildLogs {
     failWrites = fail;
   }
 
+  /** Opens the build's log for appending, creating it on first use. */
   public Writer open(long buildId) {
     long oid =
         QuarkusTransaction.requiringNew()
@@ -100,6 +101,7 @@ public class BuildLogs {
     return w.failure();
   }
 
+  /** Streams the whole log. */
   public void streamTo(long buildId, OutputStream out) throws IOException {
     streamTo(buildId, out, 0, -1);
   }
@@ -268,11 +270,13 @@ public class BuildLogs {
       }
     }
 
+    /** Appends {@code text} and a newline. */
     public synchronized void line(String text) {
       byte[] b = (text + "\n").getBytes(StandardCharsets.UTF_8);
       append(b, 0, b.length);
     }
 
+    /** The storage failure, or null. */
     public synchronized Throwable failure() {
       return failure;
     }

@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
+/** Lists, starts, cancels and pins a project's builds. */
 @Path("/api/projects/{projectId}/builds")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -94,6 +95,7 @@ public class BuildResource {
     return p;
   }
 
+  /** The project's 50 newest builds. */
   @GET
   public List<BuildResponse> list(@PathParam("projectId") Long id) {
     visible(id);
@@ -102,6 +104,7 @@ public class BuildResource {
         .toList();
   }
 
+  /** One build of the project. */
   @GET
   @Path("/{buildId}")
   public BuildResponse detail(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
@@ -135,6 +138,7 @@ public class BuildResource {
     return LogResponses.stream(logs, buildId, size, range);
   }
 
+  /** Pins a build so retention cleanup keeps it. */
   @PUT
   @Path("/{buildId}/pin")
   @Transactional
@@ -142,6 +146,7 @@ public class BuildResource {
     return setPinned(id, buildId, true);
   }
 
+  /** Unpins a build so retention cleanup may remove it. */
   @DELETE
   @Path("/{buildId}/pin")
   @Transactional
@@ -181,6 +186,7 @@ public class BuildResource {
         true);
   }
 
+  /** Queues a build of a branch. Leads and admins only. */
   @POST
   public BuildResponse start(@PathParam("projectId") Long id, RunRequest input) {
     Project p = visible(id);

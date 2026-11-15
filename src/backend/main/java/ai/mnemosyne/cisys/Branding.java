@@ -12,6 +12,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 
+/** The instance's name, colors and images, set by admins. A singleton row with id 1. */
 @Entity
 public class Branding {
   @Id public Long id = 1L;

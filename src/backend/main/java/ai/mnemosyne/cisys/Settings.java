@@ -53,6 +53,7 @@ public class Settings extends PanacheEntityBase {
   /** Null uses cisys.build.timeout-minutes. */
   public Integer buildTimeoutMinutes;
 
+  /** The saved settings, or the defaults. */
   public static Settings current() {
     Settings s = findById(1L);
     return s == null ? new Settings() : s;

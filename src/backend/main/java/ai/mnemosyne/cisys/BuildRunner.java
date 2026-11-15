@@ -32,6 +32,7 @@ import java.util.function.Consumer;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+/** Queues builds and runs each one in a container, within the configured limits. */
 @ApplicationScoped
 public class BuildRunner {
   @Inject BuildLogs logs;

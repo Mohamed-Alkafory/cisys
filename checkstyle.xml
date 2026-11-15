@@ -4,14 +4,38 @@
     "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
 <!-- Complements google-java-format, which enforces indentation and import
-     order. Enabled rules: FileTabCharacter, UnusedImports, RedundantImport and
-     OneStatementPerLine. NeedBraces and AvoidStarImport are not enabled yet -->
+     order. Enabled rules: FileTabCharacter, UnusedImports, RedundantImport,
+     OneStatementPerLine and JavaDoc on public and protected types and methods
+     outside tests. NeedBraces and AvoidStarImport are not enabled yet -->
 <module name="Checker">
   <property name="charset" value="UTF-8"/>
   <module name="FileTabCharacter"/>
+  <module name="SuppressionSingleFilter">
+    <property name="files" value="[\\/]test[\\/]"/>
+    <property name="checks" value="MissingJavadoc(Type|Method)"/>
+  </module>
   <module name="TreeWalker">
     <module name="UnusedImports"/>
     <module name="RedundantImport"/>
     <module name="OneStatementPerLine"/>
+    <module name="MissingJavadocType">
+      <property name="scope" value="protected"/>
+    </module>
+    <module name="MissingJavadocMethod">
+      <property name="scope" value="protected"/>
+      <property name="allowMissingPropertyJavadoc" value="true"/>
+      <property name="tokens" value="METHOD_DEF, ANNOTATION_FIELD_DEF, COMPACT_CTOR_DEF"/>
+    </module>
+    <module name="JavadocMethod">
+      <property name="accessModifiers" value="public, protected"/>
+      <property name="allowMissingParamTags" value="true"/>
+      <property name="allowMissingReturnTag" value="true"/>
+    </module>
+    <module name="SummaryJavadoc"/>
+    <module name="JavadocParagraph"/>
+    <module name="NonEmptyAtclauseDescription"/>
+    <module name="AtclauseOrder"/>
+    <module name="JavadocBlockTagLocation"/>
+    <module name="InvalidJavadocPosition"/>
   </module>
 </module>

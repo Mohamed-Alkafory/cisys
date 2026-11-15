@@ -17,6 +17,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.*;
 
+/** The images builds may use, and the images on the build host. */
 @Path("/api/images")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -25,10 +26,13 @@ public class ImageResource {
   @Inject SecurityIdentity identity;
   @Inject BuildRunner runner;
 
+  /** The images allowed for builds. */
   public record Selection(List<String> images) {}
 
+  /** An image to pull to the build host. */
   public record Pull(String name) {}
 
+  /** An image on the build host, and whether builds may use it. */
   public record LocalImage(String name, String id, String size, String created, boolean allowed) {}
 
   /** The images allowed for builds, for the build form. */

@@ -12,6 +12,7 @@ import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 
+/** A Git repository that cisys builds. */
 @Entity
 public class Project extends PanacheEntity {
   @Column(nullable = false, length = 100, unique = true)

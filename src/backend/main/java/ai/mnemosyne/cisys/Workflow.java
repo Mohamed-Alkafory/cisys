@@ -49,7 +49,7 @@ import java.util.List;
  *         wait: 8180
  * </pre>
  *
- * A step either runs a shell command ({@code run}) or waits until a TCP port accepts connections
+ * <p>A step either runs a shell command ({@code run}) or waits until a TCP port accepts connections
  * ({@code wait}). A build turns the workflow into a Containerfile, see {@link
  * #containerfile(String)}.
  */

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 
+/** The branches of a project's repository, for its members. */
 @Path("/api/projects/{projectId}/branches")
 @Produces(MediaType.APPLICATION_JSON)
 @Authenticated
@@ -31,6 +32,7 @@ public class BranchResource {
   @Inject SecurityIdentity identity;
   @Inject GitRepositoryService repositories;
 
+  /** The branch names, or none and the reason, such as {@code private_repository}. */
   public record Branches(List<String> branches, String reason) {}
 
   private Project visible(Long id) {
@@ -46,6 +48,7 @@ public class BranchResource {
     return p;
   }
 
+  /** Lists the branches; 400 when the repository is not allowed, 502 when it cannot be read. */
   @GET
   public Response list(@PathParam("projectId") Long projectId) {
     Project project = visible(projectId);
