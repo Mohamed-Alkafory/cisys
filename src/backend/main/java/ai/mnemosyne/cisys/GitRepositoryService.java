@@ -110,7 +110,8 @@ public class GitRepositoryService {
   /** Never follow redirects; certificate verification is off only for hosts an admin allowed. */
   static void configureTransport(StoredConfig cfg, boolean verifyTls) throws IOException {
     cfg.setString("http", null, "followRedirects", "false");
-    if (!verifyTls) cfg.setString("http", null, "sslVerify", "false");
+    // Written both ways so a reused repository cannot keep an earlier "false".
+    cfg.setString("http", null, "sslVerify", verifyTls ? "true" : "false");
     cfg.save();
   }
 

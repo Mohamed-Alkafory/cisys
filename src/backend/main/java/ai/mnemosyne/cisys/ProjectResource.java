@@ -35,6 +35,7 @@ import org.hibernate.exception.ConstraintViolationException;
 public class ProjectResource {
   @Inject SecurityIdentity identity;
   @Inject RepositoryUrlValidator repositoryUrls;
+  @Inject RepositoryMirror mirrors;
 
   private JsonWebToken token() {
     if (identity.getPrincipal() instanceof JsonWebToken jwt) return jwt;
@@ -222,7 +223,24 @@ public class ProjectResource {
     if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0)
       throw conflict("A build is queued or running. Delete the project when its builds finish.");
     Build.delete("projectId", id);
+    ProjectBranch.delete("projectId", id);
     p.delete();
+    // A poll build cannot be active here, so the mirror can go with the project. Wait briefly for
+    // the poller; if the lock cannot be taken the next tick's orphan sweep removes the mirror.
+    var lock = mirrors.lock(id);
+    boolean locked = false;
+    try {
+      locked = lock.tryLock(5, java.util.concurrent.TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+    if (locked) {
+      try {
+        mirrors.delete(id);
+      } finally {
+        lock.unlock();
+      }
+    }
     return Response.noContent().build();
   }
 
@@ -284,6 +302,8 @@ public class ProjectResource {
     } catch (PersistenceException e) {
       throw conflict("A project with this name or repository URL already exists");
     }
+    // A different repository has different history; seed its branches again instead of building it.
+    if (urlChanged) ProjectBranch.delete("projectId", id);
     return Response.ok(response(p)).build();
   }
 

@@ -17,10 +17,13 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.quarkus.test.security.jwt.Claim;
 import io.quarkus.test.security.jwt.JwtSecurity;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class ProjectResourceTest {
+  @Inject RepositoryMirror mirrors;
+
   @Test
   void anonymousCannotListProjects() {
     given().when().get("/api/projects").then().statusCode(401);
@@ -536,6 +539,41 @@ class ProjectResourceTest {
   @Test
   @TestSecurity(user = "lead", roles = "lead")
   @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void changingTheRepositoryUrlResetsThePollingCursors() {
+    Long id = project("lead-id", false);
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          ProjectBranch row = new ProjectBranch();
+          row.projectId = id;
+          row.branch = "main";
+          row.lastSeenRevision = "a".repeat(40);
+          row.persist();
+        });
+    assertNotNull(QuarkusTransaction.requiringNew().call(() -> ProjectBranch.of(id, "main")));
+
+    String name = "moved-" + java.util.UUID.randomUUID();
+    String url = "https://github.com/moved/" + java.util.UUID.randomUUID() + ".git";
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\""
+                + name
+                + "\",\"repositoryUrl\":\""
+                + url
+                + "\",\"privateRepository\":false}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200);
+
+    assertNull(
+        QuarkusTransaction.requiringNew().call(() -> ProjectBranch.of(id, "main")),
+        "a new repository URL must make the poller seed again");
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
   void ownerUpdatesOwnProject() {
     Long id = project("lead-id", false);
     String name = "updated-" + java.util.UUID.randomUUID();
@@ -796,6 +834,35 @@ class ProjectResourceTest {
   @JwtSecurity(claims = {@Claim(key = "sub", value = "outsider-id")})
   void unrelatedRoleCannotReadProjects() {
     given().when().get("/api/projects").then().statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void deletingAProjectWaitsBrieflyForThePollerLock() throws Exception {
+    Long id = project("lead-id", false);
+    java.nio.file.Path dir = mirrors.path(id);
+    java.nio.file.Files.createDirectories(dir);
+    var lock = mirrors.lock(id);
+    java.util.concurrent.CountDownLatch held = new java.util.concurrent.CountDownLatch(1);
+    Thread holder =
+        new Thread(() -> {
+          lock.lock();
+          held.countDown();
+          try {
+            Thread.sleep(3000);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          } finally {
+            lock.unlock();
+          }
+        });
+    holder.start();
+    assertTrue(held.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+    given().when().delete("/api/projects/" + id).then().statusCode(204);
+    holder.join();
+    assertFalse(java.nio.file.Files.exists(dir), "the mirror is removed once the lock is free");
   }
 
   private static Long project(String owner, boolean priv) {

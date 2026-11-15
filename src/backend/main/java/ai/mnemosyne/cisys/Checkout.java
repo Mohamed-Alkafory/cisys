@@ -26,6 +26,7 @@ import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.CoreConfig;
 import org.eclipse.jgit.lib.EmptyProgressMonitor;
 import org.eclipse.jgit.lib.FileMode;
+import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectInserter;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevWalk;
@@ -55,13 +56,9 @@ final class Checkout {
       int maxMib,
       int maxFiles)
       throws Exception {
-    return fetch(dir, url, branch, credentials, verifyTls, maxMib, maxFiles, () -> false);
+    return fetch(dir, url, branch, credentials, verifyTls, maxMib, maxFiles, null, () -> false);
   }
 
-  /**
-   * Returns the commit ID. {@code dir} must not exist; it is removed again when the checkout fails.
-   * The fetch stops once {@code cancelled} returns true.
-   */
   static String fetch(
       Path dir,
       String url,
@@ -72,7 +69,28 @@ final class Checkout {
       int maxFiles,
       BooleanSupplier cancelled)
       throws Exception {
+    return fetch(dir, url, branch, credentials, verifyTls, maxMib, maxFiles, null, cancelled);
+  }
+
+  /**
+   * Returns the commit ID. {@code dir} must not exist; it is removed again when the checkout fails.
+   * The fetch stops once {@code cancelled} returns true. When {@code expectedRevision} is set, the
+   * checkout is that commit, not the branch's current tip, so a poll build builds exactly the
+   * commit the branch pointed at when it was seen.
+   */
+  static String fetch(
+      Path dir,
+      String url,
+      String branch,
+      CredentialsProvider credentials,
+      boolean verifyTls,
+      int maxMib,
+      int maxFiles,
+      String expectedRevision,
+      BooleanSupplier cancelled)
+      throws Exception {
     String ref = Constants.R_REMOTES + "origin/" + branch;
+    String revision = normalizeRevision(expectedRevision);
     Files.createDirectory(dir);
     try (LimitedRepository repo =
             new LimitedRepository(dir.resolve(".git").toFile(), maxMib * MIB);
@@ -84,28 +102,71 @@ final class Checkout {
       cfg.setString("branch", branch, "remote", "origin");
       cfg.setString("branch", branch, "merge", Constants.R_HEADS + branch);
       GitRepositoryService.configureTransport(cfg, verifyTls);
-      var fetch =
-          git.fetch()
-              .setRemote(url)
-              .setRefSpecs(new RefSpec("+refs/heads/" + branch + ":" + ref))
-              .setDepth(1)
-              .setTimeout(60)
-              .setProgressMonitor(
-                  new EmptyProgressMonitor() {
-                    @Override
-                    public boolean isCancelled() {
-                      return cancelled.getAsBoolean();
-                    }
-                  });
-      if (credentials != null) fetch.setCredentialsProvider(credentials);
-      try {
-        fetch.call();
-      } catch (Exception e) {
-        if (repo.exceeded) throw tooLarge(maxMib);
-        throw e;
+      boolean localSource = url != null && url.startsWith("file:");
+      boolean haveRevision = false;
+      if (revision != null && localSource) {
+        // A mirror keeps the commit after its branch is deleted or renamed, so ask for the exact
+        // commit first instead of requiring the branch ref.
+        try {
+          fetch(git, url, new RefSpec(revision), credentials, cancelled, 1);
+          haveRevision = has(repo, revision);
+        } catch (Exception e) {
+          if (repo.exceeded) throw tooLarge(maxMib);
+        }
       }
-      checkTree(repo, ref, maxMib, maxFiles);
-      git.checkout().setName(branch).setCreateBranch(true).setStartPoint(ref).call();
+      if (!haveRevision) {
+        try {
+          fetch(
+              git,
+              url,
+              new RefSpec("+refs/heads/" + branch + ":" + ref),
+              credentials,
+              cancelled,
+              1);
+        } catch (Exception e) {
+          if (repo.exceeded) throw tooLarge(maxMib);
+          if (revision == null) throw e;
+        }
+      }
+      String target = ref;
+      if (revision != null) {
+        target = revision;
+        ObjectId resolved = repo.resolve(ref);
+        if (!haveRevision && (resolved == null || !revision.equals(resolved.name()))) {
+          // The branch moved after the push. Ask for the commit itself; providers that allow
+          // reachable SHA fetches give us exactly that commit.
+          try {
+            fetch(git, url, new RefSpec(revision), credentials, cancelled, 1);
+          } catch (Exception e) {
+            if (repo.exceeded) throw tooLarge(maxMib);
+          }
+          if (!has(repo, revision)) {
+            // Fall back to the branch's history when the provider does not allow SHA fetches.
+            // The first fetch was shallow, so this one must also unshallow; fetching without a
+            // depth otherwise leaves the old shallow boundary in place and the commit missing.
+            try {
+              fetch(
+                  git,
+                  url,
+                  new RefSpec("+refs/heads/" + branch + ":" + ref),
+                  credentials,
+                  cancelled,
+                  0);
+            } catch (Exception e) {
+              if (repo.exceeded) throw tooLarge(maxMib);
+            }
+          }
+          if (!has(repo, revision))
+            throw new IllegalArgumentException(
+                "Commit " + revision + " is not reachable on branch " + branch);
+        }
+      }
+      checkTree(repo, target, maxMib, maxFiles);
+      if (revision == null) {
+        git.checkout().setName(branch).setCreateBranch(true).setStartPoint(ref).call();
+      } else {
+        git.checkout().setName(revision).call();
+      }
       // Smudge filters from the server's Git configuration can still change what is written.
       checkWritten(dir, maxMib, maxFiles);
       return repo.resolve(Constants.HEAD).name();
@@ -117,6 +178,44 @@ final class Checkout {
       }
       throw e;
     }
+  }
+
+  private static void fetch(
+      Git git,
+      String url,
+      RefSpec spec,
+      CredentialsProvider credentials,
+      BooleanSupplier cancelled,
+      int depth)
+      throws Exception {
+    var fetch =
+        git.fetch()
+            .setRemote(url)
+            .setRefSpecs(spec)
+            .setTimeout(60)
+            .setProgressMonitor(
+                new EmptyProgressMonitor() {
+                  @Override
+                  public boolean isCancelled() {
+                    return cancelled.getAsBoolean();
+                  }
+                });
+    if (depth > 0) fetch.setDepth(depth);
+    else fetch.setUnshallow(true);
+    if (credentials != null) fetch.setCredentialsProvider(credentials);
+    fetch.call();
+  }
+
+  /** A full, lower-case SHA-1, or null when no revision was requested. */
+  static String normalizeRevision(String revision) {
+    if (revision == null || revision.isBlank()) return null;
+    String value = revision.strip().toLowerCase(java.util.Locale.ROOT);
+    if (!value.matches("[0-9a-f]{40}")) throw new IllegalArgumentException("Invalid commit ID");
+    return value;
+  }
+
+  private static boolean has(Repository repo, String revision) throws IOException {
+    return repo.getObjectDatabase().has(ObjectId.fromString(revision));
   }
 
   /** Sizes are those of the files as checked out, after line ending conversion. */

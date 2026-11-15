@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 class SettingsResourceTest {
   @Inject BuildRunner runner;
+  @Inject CommitPoller poller;
 
   private static final String PATH = "/api/settings/retention";
   static final String DEFAULTS = "{\"maxAgeDays\":30,\"maxBuilds\":50}";
@@ -301,6 +302,153 @@ class SettingsResourceTest {
           "{}"
         }) {
       given().contentType("application/json").body(body).put(PERFORMANCE).then().statusCode(400);
+    }
+  }
+
+  private static final String POLLING = "/api/settings/polling";
+
+  static void clearPolling() {
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Settings s = Settings.findById(1L);
+          if (s == null) return;
+          s.pollEnabled = true;
+          s.pollGranularity = Settings.Granularity.PER_COMMIT;
+          s.pollScope = Settings.Scope.WORKFLOW;
+          s.pollIntervalSeconds = null;
+        });
+  }
+
+  @Test
+  void anonymousCannotReadPolling() {
+    given().get(POLLING).then().statusCode(401);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  void leadCannotReadOrUpdatePolling() {
+    given().get(POLLING).then().statusCode(403);
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"enabled\":false,\"granularity\":\"TIP\",\"scope\":\"MAIN_ONLY\",\"intervalSeconds\":60}")
+        .put(POLLING)
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void adminSavesPolling() {
+    given()
+        .get(POLLING)
+        .then()
+        .statusCode(200)
+        .body(
+            "enabled",
+            equalTo(true),
+            "granularity",
+            equalTo("PER_COMMIT"),
+            "scope",
+            equalTo("WORKFLOW"),
+            "intervalSeconds",
+            equalTo(60));
+    try {
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"enabled\":false,\"granularity\":\"TIP\",\"scope\":\"MAIN_ONLY\",\"intervalSeconds\":120}")
+          .put(POLLING)
+          .then()
+          .statusCode(200)
+          .body(
+              "enabled",
+              equalTo(false),
+              "granularity",
+              equalTo("TIP"),
+              "scope",
+              equalTo("MAIN_ONLY"),
+              "intervalSeconds",
+              equalTo(120));
+      given()
+          .get(POLLING)
+          .then()
+          .statusCode(200)
+          .body("enabled", equalTo(false), "granularity", equalTo("TIP"));
+    } finally {
+      clearPolling();
+    }
+    given()
+        .get(POLLING)
+        .then()
+        .statusCode(200)
+        .body("enabled", equalTo(true), "granularity", equalTo("PER_COMMIT"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void clampsAConfiguredDefaultIntervalToTheAcceptedRange() {
+    CommitPoller target = io.quarkus.arc.ClientProxy.unwrap(poller);
+    java.time.Duration original = target.pollEvery;
+    try {
+      clearPolling();
+      target.pollEvery = java.time.Duration.ofSeconds(1);
+      given().get(POLLING).then().statusCode(200).body("intervalSeconds", equalTo(5));
+      target.pollEvery = java.time.Duration.ofSeconds(90000);
+      given().get(POLLING).then().statusCode(200).body("intervalSeconds", equalTo(86400));
+    } finally {
+      target.pollEvery = original;
+      clearPolling();
+    }
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void acceptsAndClearsThePollingIntervalBoundaries() {
+    try {
+      for (int seconds : new int[] {5, 86400}) {
+        given()
+            .contentType("application/json")
+            .body(
+                "{\"enabled\":true,\"granularity\":\"PER_COMMIT\",\"scope\":\"WORKFLOW\",\"intervalSeconds\":"
+                    + seconds
+                    + "}")
+            .put(POLLING)
+            .then()
+            .statusCode(200)
+            .body("intervalSeconds", equalTo(seconds));
+      }
+      // Null means "use cisys.poll.every", so the endpoint echoes the effective default again.
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"enabled\":true,\"granularity\":\"PER_COMMIT\",\"scope\":\"WORKFLOW\",\"intervalSeconds\":null}")
+          .put(POLLING)
+          .then()
+          .statusCode(200)
+          .body("intervalSeconds", equalTo(60));
+      assertEquals(
+          null,
+          QuarkusTransaction.requiringNew().call(() -> Settings.current().pollIntervalSeconds),
+          "a null interval must be stored as null, not pinned to the default");
+    } finally {
+      clearPolling();
+    }
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void rejectsInvalidPolling() {
+    for (String body :
+        new String[] {
+          "{\"granularity\":\"TIP\",\"scope\":\"WORKFLOW\",\"intervalSeconds\":60}",
+          "{\"enabled\":true,\"scope\":\"WORKFLOW\",\"intervalSeconds\":60}",
+          "{\"enabled\":true,\"granularity\":\"TIP\",\"intervalSeconds\":60}",
+          "{\"enabled\":true,\"granularity\":\"TIP\",\"scope\":\"WORKFLOW\",\"intervalSeconds\":4}",
+          "{\"enabled\":true,\"granularity\":\"TIP\",\"scope\":\"WORKFLOW\",\"intervalSeconds\":86401}",
+          "{}"
+        }) {
+      given().contentType("application/json").body(body).put(POLLING).then().statusCode(400);
     }
   }
 }

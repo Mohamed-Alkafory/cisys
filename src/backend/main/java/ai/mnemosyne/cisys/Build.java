@@ -35,6 +35,20 @@ public class Build extends PanacheEntity {
   @Enumerated(EnumType.STRING)
   public Status status;
 
+  /** How this build was started. Existing rows and manual requests are {@link Trigger#MANUAL}. */
+  public enum Trigger {
+    MANUAL,
+    POLL
+  }
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 20)
+  public Trigger trigger = Trigger.MANUAL;
+
+  /** Display only. Poll builds have no actor. */
+  @Column(length = 255)
+  public String triggerActor;
+
   public Instant requestedAt;
 
   @Column(length = 2048)

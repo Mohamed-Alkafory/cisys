@@ -13,11 +13,13 @@ Leads and admins select **Build** next to a branch on a project page. That runs 
 * **Branch**: the branch to fetch
 * **Credential reference** (admins only, optional): see below
 
+An admin can also turn on **Automatic builds** under **Settings** → **Builds**. A timer then looks for new commits on the project's watched branches and starts a build for each; see **Automatic builds** below. Automatic builds are on by default, for the whole instance, and are only for repositories you trust.
+
 Members can view build history and logs for the projects they can access. Private projects and their logs are visible only to their creator and admins.
 
 ## How a build runs
 
-1. The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build, and its commit ID is recorded. The checkout must stay within the size and file limits.
+1. The branch is fetched afresh with JGit at depth 1, so a force push is reflected in the next build, and its commit ID is recorded. An automatic build checks out the exact commit the timer queued from the project's local mirror, not the branch tip. If that commit is gone, the build fails rather than falling back to the branch tip; if the mirror directory itself is gone, the build fetches the exact commit from the project's repository instead. The checkout must stay within the size and file limits.
 2. The branch's `.cisys/workflows/ci.yml` is read and stored with the build, then validated. A branch without the file, an invalid file, or a `container` image that is not on the build host or that an admin has not allowed on the **Images** page fails the build with a message in the log.
 3. The workflow becomes a Containerfile. The image installs `git`, `make`, `podman` and `podman-compose` if they are missing and the workflow's `dependencies`, copies the checkout from step 1, and runs the steps as `65534:65534` without network. When admins allow hosts under **Settings** → **Network**, steps reach those hosts over HTTPS through the egress proxy and nothing else (Podman only). Podman builds with `no-new-privileges` and no layer cache. Docker uses its legacy builder, which honors the resource limits that BuildKit ignores: it first builds an image with the tools and dependencies, then builds the steps from that image with network off. See **Workflows**.
 4. The status is `PASSED` when the image build succeeds, otherwise `FAILED` with the exit code of the failing step. A build that exceeds the timeout is stopped and reported as timed out, with the timeout in the log. The image is removed afterwards.
@@ -36,13 +38,34 @@ On restart, interrupted `RUNNING` builds become `FAILED`, or `CANCELLED` when a 
 
 Admins, the project's creator and whoever started a build can cancel it while it is `QUEUED` or `RUNNING` with the cancel button on its build page. A queued build becomes `CANCELLED` at once and never runs. For a running build, the runner stops the fetch or the image build within about a second, forcibly after ten more seconds, removes the image and records `CANCELLED` with `Build cancelled` at the end of the log. A cancellation that arrives while the build is finishing still wins. Cancelling a finished build returns HTTP 409.
 
+## Automatic builds
+
+**Automatic builds** are one global setting for the whole instance, not a per-project option; only an admin can change them. They are on by default. cisys then polls each project's repository on a timer with plain Git and queues a build for a new commit. It needs no push hook and no provider API, so GitHub, GitLab, self-hosted and private repositories all work the same way, and no provider needs to reach cisys.
+
+The settings are global:
+
+* **Automatic builds**: on or off.
+* **Granularity**: **One build per commit** (default) queues every new commit, oldest first; **Tip only** queues just the branch tip when it moves.
+* **Branches**: **All branches with `.cisys/workflows/ci.yml`** (default) or **main or master only**. In both cases a branch is watched only when its tip has the workflow file; a commit whose tree has no workflow file is skipped but does not stop the branch.
+* **Poll interval (seconds)**: how often the timer checks; the default comes from `cisys.poll.every` (`POLL_EVERY`, default 60 s).
+
+The first time a branch is seen, its tip is recorded but nothing is built, so turning automatic builds on never builds a repository's history. (A branch whose tip has no workflow file has no cursor either, so the commit that adds the file is a first sighting: it is seeded, not built.) Afterwards only the commits that appeared since the last time cisys looked are queued. A commit already built for the project is skipped whatever its status and whatever branch reaches it. Manual builds are unaffected and may share a commit.
+
+All detection uses the project's own bare mirror, a fetch of every branch with forced refs and no garbage collection, so a commit a queued build still needs stays readable even after it leaves the remote. The poller and the runner support one backend instance, and `cisys.poll.mirror-dir` must be on that instance's local storage, not on storage shared by several instances. The mirror lives under `cisys.poll.mirror-dir` (`POLL_MIRROR_DIR`, default `~/.cisys/mirrors`), outside the temporary checkout directory, and is removed when the project is deleted or automatic builds are turned off. Its size is limited per project by `cisys.poll.mirror-max-mib` (`POLL_MIRROR_MAX_MIB`, default 4096; `0` turns the limit off); exceeding the limit stops that project's polling until the mirror is cleaned up. Private projects use the same `CISYS_GIT_*` credential reference as manual builds.
+
+The last-seen commit of a branch moves only after a commit was queued or found to have been built, so a full build queue slows polling down instead of losing commits: the branch is retried on the next tick. A project that cannot be fetched (bad URL, host rule, authentication, network) is logged once and retried later, and one failing project never stops the tick. The build page shows **Poll** as the trigger.
+
+Turning automatic builds off deletes every mirror and last-seen cursor, so that nothing is built for what happened while it was off. If a project has a queued or running poll build, its mirror is kept until that build finishes, because the build reads its commits from the mirror at run time.
+
+Repository URLs use the same rules as manual builds (HTTPS, allowed hosts and ports). Automatic builds execute the repository's code in a container on the backend host; enable them only for repositories you trust.
+
 ## Workflow file
 
 The workflow file format, how the image is built, and its limits are described in the **Workflows** chapter.
 
 ## What a build records
 
-Each build stores the requested branch, the text of the workflow file it read (shown on the build page), the full name of the base image it found, the credential reference name if one was used (shown to admins only), the base image digest when the container runtime reports one, the commit ID, the exit code of the image build, which is that of the failing step (none when the build timed out, was cancelled or never ran), who started it, and when it started and finished; the duration is derived from these times.
+Each build stores the requested branch, the text of the workflow file it read (shown on the build page), the full name of the base image it found, the credential reference name if one was used (shown to admins only), the base image digest when the container runtime reports one, the commit ID, how it was started (manual or polled), the exit code of the image build, which is that of the failing step (none when the build timed out, was cancelled or never ran), who started it, and when it started and finished; the duration is derived from these times.
 
 ## Build logs
 

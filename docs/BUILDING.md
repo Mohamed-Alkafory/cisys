@@ -126,6 +126,11 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | `PUBLIC_RATE_LIMIT_REQUESTS` | `120` | Anonymous requests per client per window; `0` disables the limiter |
 | `PUBLIC_RATE_LIMIT_WINDOW_SECONDS` | `60` | Length of the anonymous rate-limit window |
 | `PUBLIC_RATE_LIMIT_MAX_CLIENTS` | `10000` | Upper bound on tracked client addresses |
+| `POLL_EVERY` | `60s` | How often automatic builds poll each project's repository |
+| `POLL_TICK` | `10s` | How often the timer checks whether the interval has elapsed |
+| `POLL_MAX_COMMITS` | `1000` | Safety net for commits queued per branch in one tick |
+| `POLL_MIRROR_DIR` | `~/.cisys/mirrors` | One bare mirror per project; must not be under `java.io.tmpdir` |
+| `POLL_MIRROR_MAX_MIB` | `4096` | Mirror size limit per project in MiB; `0` turns it off |
 | `DB_URL`            | `jdbc:postgresql://localhost:5432/cisys` | JDBC URL                                             |
 | `DB_USER`           | `cisys`                                  | Database user                                        |
 | `DB_PASSWORD`       | `cisys`                                  | Database password                                    |

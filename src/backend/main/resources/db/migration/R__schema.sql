@@ -185,3 +185,34 @@ BEGIN
         ALTER TABLE build ADD CONSTRAINT build_project_number UNIQUE (projectid, number);
     END IF;
 END $$;
+
+-- Automatic builds poll the repository on a timer. The workflow file stays execution-only.
+
+-- How a build was started. Existing builds were started by hand.
+ALTER TABLE build ADD COLUMN IF NOT EXISTS trigger character varying(20) NOT NULL DEFAULT 'MANUAL';
+ALTER TABLE build ADD COLUMN IF NOT EXISTS triggeractor character varying(255);
+
+-- Settings for the poller: on by default, per commit by default, every workflow branch by default.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS pollenabled boolean NOT NULL DEFAULT true;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS pollgranularity character varying(20) NOT NULL DEFAULT 'PER_COMMIT';
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS pollscope character varying(20) NOT NULL DEFAULT 'WORKFLOW';
+-- Null uses cisys.poll.every.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS pollintervalseconds integer;
+
+-- The last commit queued for each watched branch. A missing row seeds the tip without building.
+CREATE TABLE IF NOT EXISTS projectbranch (
+    id bigint NOT NULL,
+    projectid bigint NOT NULL,
+    branch character varying(255) NOT NULL,
+    lastseenrevision character varying(64) NOT NULL,
+    CONSTRAINT projectbranch_pkey PRIMARY KEY (id),
+    CONSTRAINT uk_projectbranch UNIQUE (projectid, branch)
+);
+CREATE SEQUENCE IF NOT EXISTS projectbranch_seq START WITH 1 INCREMENT BY 50;
+
+-- A polled commit is built at most once per project, however many branches reach it and across
+-- restarts, so the cursor can be advanced without a second build. Manual builds may share a
+-- revision. The partial index also serves the per-project revision lookup.
+CREATE UNIQUE INDEX IF NOT EXISTS build_project_poll_revision
+    ON build (projectid, revision)
+    WHERE trigger = 'POLL' AND revision IS NOT NULL;

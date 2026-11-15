@@ -11,6 +11,8 @@ package ai.mnemosyne.cisys;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 
 /**
@@ -52,6 +54,33 @@ public class Settings extends PanacheEntityBase {
 
   /** Null uses cisys.build.timeout-minutes. */
   public Integer buildTimeoutMinutes;
+
+  /** Whether the timer queues builds for new commits. On by default. */
+  @Column(nullable = false)
+  public boolean pollEnabled = true;
+
+  /** Per commit by default; TIP queues only the tip of a moved branch. */
+  public enum Granularity {
+    PER_COMMIT,
+    TIP
+  }
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 20)
+  public Granularity pollGranularity = Granularity.PER_COMMIT;
+
+  /** WORKFLOW watches every branch whose tip has a workflow file; MAIN_ONLY adds main or master. */
+  public enum Scope {
+    WORKFLOW,
+    MAIN_ONLY
+  }
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 20)
+  public Scope pollScope = Scope.WORKFLOW;
+
+  /** Null uses cisys.poll.every. */
+  public Integer pollIntervalSeconds;
 
   /** The saved settings, or the defaults. */
   public static Settings current() {

@@ -45,6 +45,7 @@ public class SettingsResource {
 
   @Inject SecurityIdentity identity;
   @Inject BuildRunner runner;
+  @Inject CommitPoller polls;
 
   /** 0 turns a limit off. */
   public record Retention(Integer maxAgeDays, Integer maxBuilds) {}
@@ -57,6 +58,15 @@ public class SettingsResource {
 
   /** Limits applied to every build container. */
   public record Performance(Integer maxMemoryMib, Integer maxCpus, Integer maxPids) {}
+
+  /**
+   * Automatic builds: on/off, per-commit or tip-only, all workflow branches or main/master only.
+   */
+  public record Polling(
+      Boolean enabled,
+      Settings.Granularity granularity,
+      Settings.Scope scope,
+      Integer intervalSeconds) {}
 
   /** The retention limits. */
   @GET
@@ -192,6 +202,54 @@ public class SettingsResource {
     s.maxBuildCpus = input.maxCpus();
     s.maxBuildPids = input.maxPids();
     return new Performance(s.maxBuildMemoryMib, s.maxBuildCpus, s.maxBuildPids);
+  }
+
+  private static final int MIN_POLL_SECONDS = CommitPoller.MIN_INTERVAL_SECONDS,
+      MAX_POLL_SECONDS = CommitPoller.MAX_INTERVAL_SECONDS;
+
+  /** The automatic-build settings. */
+  @GET
+  @Path("/polling")
+  public Polling polling() {
+    requireAdmin();
+    Settings s = Settings.current();
+    return new Polling(s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s));
+  }
+
+  /** Saves the automatic-build settings. */
+  @PUT
+  @Path("/polling")
+  @Transactional
+  public Polling updatePolling(Polling input) {
+    requireAdmin();
+    if (input == null || input.enabled() == null)
+      throw new BadRequestException("Automatic builds must be on or off");
+    if (input.granularity() == null) throw new BadRequestException("Granularity is required");
+    if (input.scope() == null) throw new BadRequestException("Scope is required");
+    if (input.intervalSeconds() != null
+        && (input.intervalSeconds() < MIN_POLL_SECONDS
+            || input.intervalSeconds() > MAX_POLL_SECONDS))
+      throw new BadRequestException(
+          "Poll interval must be between "
+              + MIN_POLL_SECONDS
+              + " and "
+              + MAX_POLL_SECONDS
+              + " seconds");
+    Settings s = Settings.findById(1L);
+    if (s == null) {
+      s = new Settings();
+      s.persist();
+    }
+    s.pollEnabled = input.enabled();
+    s.pollGranularity = input.granularity();
+    s.pollScope = input.scope();
+    s.pollIntervalSeconds = input.intervalSeconds();
+    return new Polling(s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s));
+  }
+
+  /** The stored interval, or the configured default so the form always has a number. */
+  private int effectiveInterval(Settings s) {
+    return s.pollIntervalSeconds != null ? s.pollIntervalSeconds : polls.defaultIntervalSeconds();
   }
 
   private static WebApplicationException badRequest(String message) {

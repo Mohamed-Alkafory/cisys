@@ -9,7 +9,6 @@
 package ai.mnemosyne.cisys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -85,12 +84,16 @@ class GitRepositoryServiceTest {
   }
 
   @Test
-  void onlySkipsCertificateVerificationWhenAsked() throws Exception {
+  void writesCertificateVerificationExplicitlyOnEveryFetch() throws Exception {
     try (Git git = Git.init().setDirectory(temp.resolve("transport").toFile()).call()) {
       var cfg = git.getRepository().getConfig();
+      cfg.setString("http", null, "sslVerify", "false");
       GitRepositoryService.configureTransport(cfg, true);
       assertEquals("false", cfg.getString("http", null, "followRedirects"));
-      assertNull(cfg.getString("http", null, "sslVerify"));
+      assertEquals(
+          "true",
+          cfg.getString("http", null, "sslVerify"),
+          "a reused repository must not keep an earlier 'false'");
       GitRepositoryService.configureTransport(cfg, false);
       assertEquals("false", cfg.getString("http", null, "sslVerify"));
     }

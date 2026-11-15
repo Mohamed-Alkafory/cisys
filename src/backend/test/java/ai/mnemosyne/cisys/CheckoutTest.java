@@ -9,6 +9,7 @@
 package ai.mnemosyne.cisys;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.file.Files;
@@ -48,6 +49,11 @@ class CheckoutTest {
 
   private String fetch(int maxMib, int maxFiles) throws Exception {
     return Checkout.fetch(dir(), source.toUri().toString(), "main", null, true, maxMib, maxFiles);
+  }
+
+  private String fetch(String revision) throws Exception {
+    return Checkout.fetch(
+        dir(), source.toUri().toString(), "main", null, true, 1, 100, revision, () -> false);
   }
 
   private void assertRejected(String message, int maxMib, int maxFiles) throws Exception {
@@ -131,5 +137,37 @@ class CheckoutTest {
     for (int i = 0; i < 6; i++) Files.writeString(source.resolve("f" + i), "x");
     commit();
     assertRejected("Repository checkout exceeds the limit of 5 files", 1, 5);
+  }
+
+  @Test
+  void checksOutThePushedCommitWhenTheBranchHasMoved() throws Exception {
+    Files.writeString(source.resolve("README"), "first\n");
+    String first = commit();
+    Files.writeString(source.resolve("README"), "second\n");
+    String second = commit();
+    assertNotEquals(first, second);
+
+    assertEquals(first, fetch(first));
+    assertEquals("first\n", Files.readString(dir().resolve("README")));
+  }
+
+  @Test
+  void checksOutTheBranchTipWhenThePushedCommitIsTheTip() throws Exception {
+    Files.writeString(source.resolve("README"), "hello\n");
+    String revision = commit();
+    assertEquals(revision, fetch(revision));
+    assertEquals("hello\n", Files.readString(dir().resolve("README")));
+  }
+
+  @Test
+  void rejectsACommitThatIsNotReachable() throws Exception {
+    Files.writeString(source.resolve("README"), "hello\n");
+    commit();
+    IllegalArgumentException e =
+        assertThrows(IllegalArgumentException.class, () -> fetch("a".repeat(40)));
+    assertEquals("Commit " + "a".repeat(40) + " is not reachable on branch main", e.getMessage());
+    try (var left = Files.list(parent)) {
+      assertEquals(0, left.count());
+    }
   }
 }

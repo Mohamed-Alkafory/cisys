@@ -33,6 +33,7 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `GET`/`PUT /api/settings/retention`       | no                        | no                   | yes   |
 | `GET`/`PUT /api/settings/builds`          | no                        | no                   | yes   |
 | `GET`/`PUT /api/settings/checkout`        | no                        | no                   | yes   |
+| `GET`/`PUT /api/settings/polling`         | no                        | no                   | yes   |
 | `GET /api/images` (allowed images)        | yes                       | yes                  | yes   |
 | `PUT /api/images`                         | no                        | no                   | yes   |
 | `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |
@@ -53,6 +54,8 @@ User subjects are returned to admins only:
 The public project page and the public statistics never include them.
 
 The private flag controls visibility inside cisys; it does not grant or restrict Git access.
+
+Automatic builds fetch each project's repository on a server-side timer; nothing in the repository or a provider needs to reach cisys, so there is no inbound push endpoint to authenticate. Polling uses the same host, port and redirect rules as a manual build, and it revalidates the URL immediately before every fetch because DNS can change after a project was saved.
 
 ## Authentication
 
@@ -133,6 +136,18 @@ Known gaps
 * Runner and Podman operation on Windows/WSL has not been verified.
 * Credentials are not scoped to individual projects; only admins may reference one.
 * DNS rebinding between the address check and JGit's own connection is not fully prevented, because JGit resolves the host again when it connects.
+
+### Automatic builds
+
+Automatic builds are a global, admin-only switch. A server-side timer polls each project's repository and queues a build for every new commit; no push hook, provider API or inbound endpoint is involved, so the same code path serves GitHub, GitLab, self-hosted and private repositories.
+
+* The timer keeps one bare mirror per project under `cisys.poll.mirror-dir` (`POLL_MIRROR_DIR`), outside the temporary build area and rejected if it is under `java.io.tmpdir`; directories are owner-only where the OS supports it. It fetches all branch heads with forced refs and no automatic garbage collection, so a commit a queued build still needs stays readable even after it leaves the remote; each project's mirror has its own lock, and the URL rules above are revalidated before every fetch. The size limit is checked after the fetch completes, so one fetch can exceed it before polling stops for that project.
+* With the default settings (on, all branches whose tip has `ci.yml`, one build per commit), anyone who can push a commit to such a branch can make the backend run its container build. Treat repository write access as build-trigger access.
+* A private project without a `CISYS_GIT_*` credential reference is skipped and logged once, never polled anonymously. A project whose fetch keeps failing is logged once and retried later; one failing project never stops the tick for the others.
+* The first sighting of a branch seeds its tip without building, so enabling automatic builds never builds history, and a commit already built for the project is never queued twice, whatever branch reaches it. The last-seen commit of a branch advances only after a commit was queued or found to have been built, so a full build queue slows polling down instead of dropping commits.
+* A build whose commit is missing from the mirror fails with a clear message rather than building the branch tip. Turning automatic builds off deletes every mirror and cursor, except for projects with a queued or running poll build, which keep their mirror until that build finishes.
+
+**Trust boundary:** automatic execution runs the repository's code in a container on the backend host. That the commit was discovered by cisys says nothing about whether the code is safe. Keep automatic builds for trusted repositories, and do not expose the rest of the application, until isolated build workers exist.
 
 ### Git credentials
 

@@ -14,8 +14,10 @@ import { Label } from "./components/ui/label";
 import NetworkPanel from "./NetworkPanel";
 import { Card, CardContent } from "./components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
+import { Separator } from "./components/ui/separator";
 import PageHeader from "./components/layout/PageHeader";
 import BrandingPanel from "./BrandingPanel";
+import PollingPanel from "./PollingPanel";
 
 const SECTIONS = {
   retention: {
@@ -226,6 +228,13 @@ export default function SettingsPanel({ api, branding, saveBranding }) {
             className="data-[state=inactive]:hidden"
           >
             <SettingsTab api={api} section={value} />
+            {value === "builds" && (
+              <>
+                <Separator className="my-6" />
+                <PollingPanel api={api} />
+                <Separator className="my-6" />
+              </>
+            )}
           </TabsContent>
         ))}
         <TabsContent
