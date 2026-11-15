@@ -324,40 +324,46 @@ class WorkflowTest {
 
   @Test
   void containerfileCopiesTheCheckoutThenRunsEachStepWithoutNetwork() {
-    List<String> lines =
+    String file =
         Workflow.parse(VALID.replace("        wait: 8180\n", "        run: make wait\n"))
-            .containerfile(ID)
-            .lines()
-            .toList();
-    assertEquals("FROM " + ID, lines.get(0));
-    assertEquals("USER 0", lines.get(1));
-    assertTrue(lines.get(2).startsWith("RUN [\"sh\",\"-c\",\". /etc/os-release"), lines.get(2));
+            .containerfile(ID);
+    List<Instruction> in = instructions(file);
+    assertEquals("FROM " + ID, in.get(0).line());
+    assertEquals("USER 0", in.get(1).line());
+    // Every RUN is a quoted heredoc, so it reads as the shell it runs.
+    assertEquals("RUN <<'CISYS'", in.get(2).line());
+    assertTrue(in.get(2).body().startsWith(". /etc/os-release"), in.get(2).body());
     assertTrue(
-        lines.get(2).contains("for tool in git make podman podman-compose; do"), lines.get(2));
+        in.get(2).body().contains("for tool in git make podman podman-compose; do"),
+        in.get(2).body());
     // Root writes the variables read-only, before switching to the build user.
+    assertEquals("RUN --network=none <<'CISYS'", in.get(3).line());
     assertEquals(
-        "RUN --network=none [\"sh\",\"-c\",\"printf '%s' \\\"$1\\\" > /etc/cisys-environment && chown 0:0 /etc/cisys-environment && chmod 444 /etc/cisys-environment\",\"environment\",\"export MODE='test'\\nexport PORT='8180'\\n\"]",
-        lines.get(3));
-    assertEquals("USER 65534:65534", lines.get(5));
-    assertEquals("WORKDIR /workspace", lines.get(6));
+        """
+        cat > /etc/cisys-environment <<'ENVIRONMENT'
+        export MODE='test'
+        export PORT='8180'
+        ENVIRONMENT
+        chown 0:0 /etc/cisys-environment && chmod 444 /etc/cisys-environment
+        """,
+        in.get(3).body());
+    assertEquals("mkdir -p /workspace && chown 65534:65534 /workspace\n", in.get(4).body());
+    assertEquals("USER 65534:65534", in.get(5).line());
+    assertEquals("WORKDIR /workspace", in.get(6).line());
     // The image gets the checkout that was measured against the limits; it does not fetch the
     // branch again.
-    assertEquals("COPY --chown=65534:65534 workspace /workspace", lines.get(8));
+    assertEquals("COPY --chown=65534:65534 workspace /workspace", in.get(8).line());
+    assertFalse(file.contains("git clone") || file.contains("secret"), file);
+    List<Instruction> steps = in.subList(9, in.size());
+    assertEquals(4, steps.size(), file);
+    for (Instruction step : steps) {
+      assertEquals("RUN --network=none <<'CISYS'", step.line());
+      assertTrue(step.body().startsWith(". /etc/cisys-environment || exit 1\n"), step.body());
+    }
     assertTrue(
-        lines.stream().noneMatch(l -> l.contains("git clone") || l.contains("secret")),
-        String.join("\n", lines));
-    List<String> steps = lines.subList(9, lines.size());
-    assertEquals(4, steps.size(), String.join("\n", lines));
-    assertTrue(
-        steps.stream()
-            .allMatch(l ->
-                l.startsWith(
-                    "RUN --network=none [\"sh\",\"-c\",\". /etc/cisys-environment || exit 1\\n")),
-        String.join("\n", steps));
-    assertTrue(
-        steps.get(0).contains("==> Job: Build and test")
-            && steps.get(0).contains("make platform-start"),
-        steps.get(0));
+        steps.get(0).body().contains("echo '==> Job: Build and test'\n")
+            && steps.get(0).body().contains("sh -c 'make platform-start'"),
+        steps.get(0).body());
   }
 
   @Test
@@ -418,16 +424,39 @@ class WorkflowTest {
               run: make
       """;
 
-  private static String installs(String line) {
-    return line.substring(line.indexOf(",\"dependencies\",") + 16);
+  /** One Dockerfile instruction; {@code body} is the text of a heredoc {@code RUN}, else null. */
+  record Instruction(String line, String body) {}
+
+  private static final java.util.regex.Pattern HEREDOC =
+      java.util.regex.Pattern.compile("RUN .*<<'([A-Z_0-9]+)'");
+
+  /** Splits a Dockerfile into its instructions, as the builder reads it. */
+  static List<Instruction> instructions(String file) {
+    List<Instruction> result = new java.util.ArrayList<>();
+    List<String> lines = file.lines().toList();
+    for (int i = 0; i < lines.size(); i++) {
+      var heredoc = HEREDOC.matcher(lines.get(i));
+      if (!heredoc.matches()) {
+        result.add(new Instruction(lines.get(i), null));
+        continue;
+      }
+      StringBuilder body = new StringBuilder();
+      int start = i;
+      while (!lines.get(++i).equals(heredoc.group(1))) body.append(lines.get(i)).append('\n');
+      result.add(new Instruction(lines.get(start), body.toString()));
+    }
+    return result;
   }
 
   @Test
   void dependenciesAreInstalledAsRootBeforeTheCheckout() {
-    List<String> lines = Workflow.parse(DEPENDENCIES).containerfile(ID).lines().toList();
-    assertEquals("USER 0", lines.get(1));
-    assertTrue(lines.get(3).startsWith("RUN [\"sh\",\"-c\",\". /etc/os-release"), lines.get(3));
-    assertEquals("\"JSON processor\",\"jq\",\"Compiler\",\"gcc\"]", installs(lines.get(3)));
+    List<Instruction> in = instructions(Workflow.parse(DEPENDENCIES).containerfile(ID));
+    assertEquals("USER 0", in.get(1).line());
+    String install = in.get(3).body();
+    // The names and packages are the script's arguments, quoted for the shell.
+    assertTrue(
+        install.startsWith("set -- 'JSON processor' 'jq' 'Compiler' 'gcc'\n. /etc/os-release"),
+        install);
     // Fresh package metadata, already installed packages upgraded, and the resulting versions
     // logged.
     for (String part :
@@ -438,13 +467,12 @@ class WorkflowTest {
             "dnf upgrade -y -q",
             "zypper --non-interactive refresh",
             "installed $packages")) {
-      assertTrue(lines.get(3).contains(part), part);
+      assertTrue(install.contains(part), part);
     }
-    assertTrue(lines.get(4).contains("/etc/cisys-environment"), lines.get(4));
-    assertEquals("USER 65534:65534", lines.get(6));
-    assertTrue(lines.get(9).startsWith("COPY "), lines.get(9));
-    assertEquals(
-        1, lines.stream().filter(l -> l.equals("USER 0")).count(), String.join("\n", lines));
+    assertTrue(in.get(4).body().contains("/etc/cisys-environment"), in.get(4).body());
+    assertEquals("USER 65534:65534", in.get(6).line());
+    assertTrue(in.get(9).line().startsWith("COPY "), in.get(9).line());
+    assertEquals(1, in.stream().filter(i -> i.line().equals("USER 0")).count(), in.toString());
   }
 
   @Test
@@ -501,42 +529,68 @@ class WorkflowTest {
   @Test
   void withNetworkStepsUseTheProxyAndStillHaveNoNetwork() {
     Workflow w = Workflow.parse(VALID.replace("        wait: 8180\n", "        run: make wait\n"));
-    List<String> plain = w.containerfile(ID).lines().toList();
-    List<String> lines = w.containerfile(ID, true).lines().toList();
-    assertEquals(plain.size(), lines.size());
+    List<Instruction> plain = instructions(w.containerfile(ID));
+    List<Instruction> in = instructions(w.containerfile(ID, true));
+    assertEquals(plain.size(), in.size());
     assertTrue(
-        lines.get(2).contains("for tool in git make podman podman-compose socat; do"),
-        lines.get(2));
+        in.get(2).body().contains("for tool in git make podman podman-compose socat; do"),
+        in.get(2).body());
     // Everything up to the steps, the checkout included, is unchanged.
-    assertEquals(plain.subList(3, 9), lines.subList(3, 9));
-    List<String> steps = lines.subList(9, lines.size());
+    assertEquals(plain.subList(3, 9), in.subList(3, 9));
     String forward =
         "socat TCP-LISTEN:3128,bind=127.0.0.1,reuseaddr,fork UNIX-CONNECT:/run/cisys/proxy.sock";
-    for (String step : steps) {
+    for (Instruction step : in.subList(9, in.size())) {
+      String body = step.body();
+      assertEquals("RUN --network=none <<'CISYS'", step.line());
+      // The socket is tried first, so an unreachable proxy fails the step with the reason.
       assertTrue(
-          step.startsWith(
-              "RUN --network=none [\"sh\",\"-c\",\". /etc/cisys-environment || exit 1\\n"
-                  + forward),
-          step);
+          body.startsWith(
+              ". /etc/cisys-environment || exit 1\n"
+                  + "err=$(socat -u OPEN:/dev/null UNIX-CONNECT:/run/cisys/proxy.sock 2>&1) || {"),
+          body);
+      assertTrue(body.contains("==> Network proxy unreachable: /run/cisys/proxy.sock"), body);
+      assertTrue(body.contains("\n" + forward), body);
       assertTrue(
-          step.contains(
-              "unset ALL_PROXY all_proxy HTTP_PROXY http_proxy FTP_PROXY ftp_proxy NO_PROXY no_proxy\\nexport HTTPS_PROXY=http://127.0.0.1:3128 https_proxy=http://127.0.0.1:3128"),
-          step);
-      assertTrue(step.contains("-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=3128"), step);
-      assertTrue(step.contains("0100007F:0C38"), step);
+          body.contains(
+              "unset ALL_PROXY all_proxy HTTP_PROXY http_proxy FTP_PROXY ftp_proxy NO_PROXY no_proxy\nexport HTTPS_PROXY=http://127.0.0.1:3128 https_proxy=http://127.0.0.1:3128"),
+          body);
+      assertTrue(
+          body.contains(
+              "-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=3128 -Daether.connector.http.useSystemProperties=true"),
+          body);
+      assertTrue(body.contains("0100007F:0C38"), body);
       assertFalse(
-          step.contains("HTTP_PROXY=") || step.contains("http_proxy="),
-          "plain HTTP is not proxied: " + step);
+          body.contains("HTTP_PROXY=") || body.contains("http_proxy="),
+          "plain HTTP is not proxied: " + body);
     }
   }
 
   @Test
-  void argumentsCannotEscapeTheExecForm() {
+  void textCannotEscapeTheHeredoc() {
+    // A name with a quote and a newline, and a command with a line equal to the delimiter.
     String file =
-        workflow("      - name: \"a\\\"]\\nRUN evil\"\n        run: echo \"\\\\\\n\"\n")
+        workflow(
+                "      - name: \"a'\\\"]\\nRUN evil\"\n        run: \"echo x\\nCISYS\\nRUN evil\"\n")
             .containerfile(ID);
-    assertEquals(10, file.lines().count(), file);
-    assertTrue(file.lines().noneMatch(l -> l.startsWith("RUN evil")), file);
+    List<Instruction> in = instructions(file);
+    assertEquals(10, in.size(), file);
+    assertTrue(in.stream().noneMatch(i -> i.line().startsWith("RUN evil")), file);
+    // The step's RUN picks a delimiter that no line of it equals.
+    assertEquals("RUN --network=none <<'CISYS_1'", in.get(9).line());
+    assertTrue(in.get(9).body().contains("\nCISYS\nRUN evil"), in.get(9).body());
+  }
+
+  @Test
+  void dockerFilesKeepTheExecForm() {
+    // Docker's legacy builder has no heredocs.
+    Workflow w = Workflow.parse(DEPENDENCIES);
+    String prepare = w.prepareContainerfile(ID, false);
+    String steps = w.stepsContainerfile("cisys-build-1-prepare", false);
+    assertFalse(prepare.contains("<<'") || steps.contains("<<'"), prepare + steps);
+    assertTrue(
+        prepare.lines().anyMatch(l -> l.startsWith("RUN [\"sh\",\"-c\",\". /etc/os-release")),
+        prepare);
+    assertTrue(prepare.contains(",\"dependencies\",\"JSON processor\",\"jq\","), prepare);
   }
 
   @Test

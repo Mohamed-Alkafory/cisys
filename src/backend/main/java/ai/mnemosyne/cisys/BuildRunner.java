@@ -152,6 +152,15 @@ public class BuildRunner {
     return v != null ? v : maxPids;
   }
 
+  @ConfigProperty(name = "cisys.build.timeout-minutes", defaultValue = "10")
+  int timeoutMinutes = 10;
+
+  /** Minutes a build's image build may take. */
+  int timeoutMinutes() {
+    Integer v = Settings.current().buildTimeoutMinutes;
+    return v != null ? v : timeoutMinutes;
+  }
+
   private final ExecutorService executor = Executors.newCachedThreadPool();
   private final Map<Long, Completion> completions = new ConcurrentHashMap<>();
 
@@ -308,6 +317,7 @@ public class BuildRunner {
       throw new IllegalArgumentException("Checkout size and file limits must be positive");
     if (maxMemoryMib < 1 || maxCpus < 1 || maxPids < 1)
       throw new IllegalArgumentException("Build memory, CPU and process limits must be positive");
+    if (timeoutMinutes < 1) throw new IllegalArgumentException("Build timeout must be positive");
     cleanupOrphans();
     List<Build> interrupted =
         QuarkusTransaction.requiringNew()
@@ -556,8 +566,18 @@ public class BuildRunner {
     if (!"podman".equals(runtime))
       throw new IllegalArgumentException("Network access is not supported with " + runtime);
     try {
-      return EgressProxy.start(
-          dir.resolve("proxy"), networkPolicy(allowlist), resolver, EgressProxy.TCP, log);
+      EgressProxy.Policy policy = networkPolicy(allowlist);
+      // What the proxy will allow, so a denied or unreachable host can be read against it.
+      log.accept(
+          "==> Network: HTTPS through the proxy to "
+              + String.join(", ", allowlist.entries())
+              + " on port"
+              + (policy.ports().size() == 1 ? " " : "s ")
+              + policy.ports().stream()
+                  .sorted()
+                  .map(String::valueOf)
+                  .collect(java.util.stream.Collectors.joining(", ")));
+      return EgressProxy.start(dir.resolve("proxy"), policy, resolver, EgressProxy.TCP, log);
     } catch (Exception e) {
       Log.errorf(e, "Could not start the network proxy");
       throw new IllegalArgumentException("Network access could not be set up");
@@ -646,7 +666,12 @@ public class BuildRunner {
           QuarkusTransaction.requiringNew()
               .call(() ->
                   new int[] {
-                    maxCheckoutMib(), maxCheckoutFiles(), maxMemoryMib(), maxCpus(), maxPids()
+                    maxCheckoutMib(),
+                    maxCheckoutFiles(),
+                    maxMemoryMib(),
+                    maxCpus(),
+                    maxPids(),
+                    timeoutMinutes()
                   });
       dir = Files.createTempDirectory(checkoutRoot(), "cisys-");
       // The image copies this checkout, so what it gets is what was measured against the limits.
@@ -686,6 +711,15 @@ public class BuildRunner {
       // rules.
       NetworkAllowlist allowlist = QuarkusTransaction.requiringNew().call(NetworkHost::allowlist);
       String containerfile = workflow.containerfile(from.id(), !allowlist.isEmpty());
+      // Stored before it runs, so the build page shows what ran, also when it failed.
+      String shown =
+          runtime.equals("podman")
+              ? containerfile
+              : dockerfiles(
+                  workflow.prepareContainerfile(from.id(), !allowlist.isEmpty()),
+                  workflow.stepsContainerfile(prepare, !allowlist.isEmpty()));
+      QuarkusTransaction.requiringNew()
+          .run(() -> Build.update("dockerfile = ?1 where id = ?2", shown, id));
       log.line(
           "Workflow "
               + workflow.name()
@@ -696,26 +730,35 @@ public class BuildRunner {
               + ")");
       BuildLogs.Writer buildLog = log;
       proxy = network(dir, allowlist, buildLog::line);
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(600);
+      // Read when the build starts, so a changed setting applies to the next build.
+      int timeoutSeconds = limits[5] * 60;
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
       Streamed result;
       if (runtime.equals("podman")) {
-        Path file = Files.writeString(dir.resolve("Containerfile"), containerfile);
+        Path file = Files.writeString(dir.resolve("Dockerfile"), containerfile);
         List<String> build = buildCommand(file, name, limits);
-        if (proxy != null)
+        if (proxy != null) {
           build.add("--volume=" + proxy.directory() + ":" + Workflow.PROXY_DIR + ":ro,Z");
+          // SELinux does not let a container connect to a socket that a host process serves, and
+          // has no boolean for it. Builds with network therefore run without SELinux labels; they
+          // stay rootless, without privileges and without network of their own.
+          build.add("--security-opt=label=disable");
+        }
         build.add(context.toString());
+        header(log, "Dockerfile", containerfile, build);
         if (handle.cancelled) throw new CancellationException();
-        result = stream(build, 600, log, logMaxBytes, p -> started(handle, p));
+        result = stream(build, timeoutSeconds, log, logMaxBytes, p -> started(handle, p));
       } else {
         // The Docker legacy builder enforces the resource flags, but it has no per-RUN network
         // flag. Tools and dependencies are installed first with network, then the steps build
         // from that image with network off. BuildKit ignores the resource flags.
         Path prepareFile =
             Files.writeString(
-                dir.resolve("Containerfile.prepare"),
+                dir.resolve("Dockerfile.prepare"),
                 workflow.prepareContainerfile(from.id(), !allowlist.isEmpty()));
         List<String> prepareBuild = buildCommand(prepareFile, prepare, limits);
         prepareBuild.add(context.toString());
+        header(log, "Dockerfile.prepare", Files.readString(prepareFile), prepareBuild);
         if (handle.cancelled) throw new CancellationException();
         Streamed prepared =
             stream(
@@ -739,11 +782,12 @@ public class BuildRunner {
         else {
           Path file =
               Files.writeString(
-                  dir.resolve("Containerfile"),
+                  dir.resolve("Dockerfile"),
                   workflow.stepsContainerfile(prepare, !allowlist.isEmpty()));
           List<String> build = buildCommand(file, name, limits);
           build.add("--network=none");
           build.add(context.toString());
+          header(log, "Dockerfile", Files.readString(file), build);
           if (handle.cancelled) throw new CancellationException();
           result =
               stream(
@@ -767,7 +811,12 @@ public class BuildRunner {
       }
       digest = digest(from.id());
       if (handle.cancelled) throw new CancellationException();
-      if (result.timeout()) log.line("Build timed out");
+      if (result.timeout())
+        log.line(
+            "Build timed out after "
+                + limits[5]
+                + (limits[5] == 1 ? " minute" : " minutes")
+                + "; an admin can change the timeout under Settings > Builds");
       else {
         // The image build stops at the first failing RUN and exits with its exit code.
         exit = result.code();
@@ -855,6 +904,25 @@ public class BuildRunner {
               id, Build.Status.valueOf(status), revision, exit, digest, truncated, Instant.now()));
       if (interrupted) Thread.currentThread().interrupt();
     }
+  }
+
+  /**
+   * The Dockerfiles a build runs, as one text for the build page: Docker builds run a preparation
+   * Dockerfile and then the steps' Dockerfile.
+   */
+  static String dockerfiles(String prepare, String steps) {
+    return "# Dockerfile.prepare\n" + prepare + "\n# Dockerfile\n" + steps;
+  }
+
+  /**
+   * Writes the generated Dockerfile, as it was written, and the command that builds it to the build
+   * log, so a failing build can be read against what actually ran. Neither holds a secret: the
+   * backend clones the branch itself and copies the checkout in, so no Git token reaches the build.
+   */
+  static void header(BuildLogs.Writer log, String title, String dockerfile, List<String> command) {
+    log.line("==> " + title + ":");
+    dockerfile.lines().forEach(log::line);
+    log.line("==> Command: " + String.join(" ", command));
   }
 
   /** Every local image with its full ID, for resolving a workflow's base image. */

@@ -121,6 +121,8 @@ CREATE INDEX IF NOT EXISTS build_queue_order ON build (requestedat, id) WHERE st
 ALTER TABLE build DROP COLUMN IF EXISTS command;
 -- The workflow file each build read, kept with the build.
 ALTER TABLE build ADD COLUMN IF NOT EXISTS workflow character varying(65536);
+-- The Dockerfile each build generated from its workflow, shown on the build page.
+ALTER TABLE build ADD COLUMN IF NOT EXISTS dockerfile character varying(401000);
 
 -- Null uses the configured queue limits.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxconcurrentbuilds integer;
@@ -162,3 +164,5 @@ ALTER TABLE build ADD COLUMN IF NOT EXISTS cancelrequested boolean NOT NULL DEFA
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildmemorymib integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildcpus integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildpids integer;
+-- Null uses the configured build timeout.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS buildtimeoutminutes integer;

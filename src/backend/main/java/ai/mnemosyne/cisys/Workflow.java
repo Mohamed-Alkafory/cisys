@@ -284,15 +284,21 @@ public record Workflow(
 
   /**
    * Starts the forwarder and points the usual proxy settings at it. The step still has no network:
-   * the forwarded socket is its only way out, and the proxy decides what it may reach.
+   * the forwarded socket is its only way out, and the proxy decides what it may reach. The socket
+   * is tried once first, so a step that cannot reach it, for example because SELinux denies the
+   * connection, fails with the reason instead of with errors from its own tools. Maven's resolver
+   * ignores the Java proxy properties unless {@code aether.connector.http.useSystemProperties} is
+   * set.
    */
   static final String PROXY =
       """
+      err=$(socat -u OPEN:/dev/null UNIX-CONNECT:%2$s/%3$s 2>&1) || { echo "==> Network proxy unreachable: %2$s/%3$s: ${err##*: }"; [ -z "${err##*denied*}" ] && echo '==> The host denied the connection; on an SELinux host the build container may not connect to the proxy socket'; exit 1; }
       socat TCP-LISTEN:%1$d,bind=127.0.0.1,reuseaddr,fork UNIX-CONNECT:%2$s/%3$s 2>/dev/null &
       i=0; until grep -Eqs '^ *[0-9]+: 0100007F:%4$04X [0-9A-F]+:[0-9A-F]+ 0A ' /proc/net/tcp; do i=$((i+1)); if [ "$i" -ge 100 ]; then echo '==> Network proxy did not start'; exit 1; fi; sleep 0.1; done
       unset ALL_PROXY all_proxy HTTP_PROXY http_proxy FTP_PROXY ftp_proxy NO_PROXY no_proxy
       export HTTPS_PROXY=http://127.0.0.1:%1$d https_proxy=http://127.0.0.1:%1$d
-      export JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=%1$d${JAVA_TOOL_OPTIONS:+ $JAVA_TOOL_OPTIONS}"
+      export JAVA_TOOL_OPTIONS="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=%1$d -Daether.connector.http.useSystemProperties=true${JAVA_TOOL_OPTIONS:+ $JAVA_TOOL_OPTIONS}"
+      echo '==> Network: HTTPS_PROXY=http://127.0.0.1:%1$d; the step has no DNS, so a tool that ignores the proxy fails with an unknown host'
       """
           .formatted(PROXY_PORT, PROXY_DIR, EgressProxy.SOCKET, PROXY_PORT);
 
@@ -339,10 +345,8 @@ public record Workflow(
     StringBuilder f = new StringBuilder();
     f.append("FROM ").append(baseId).append('\n');
     f.append("USER 0\n");
-    f.append("RUN ")
-        .append(exec("sh", "-c", network ? INSTALL_NETWORK_TOOLS : INSTALL_TOOLS))
-        .append('\n');
-    install(f, dependencies);
+    run(f, false, "", network ? INSTALL_NETWORK_TOOLS : INSTALL_TOOLS, "tools");
+    install(f, false, dependencies);
     checkSize(f);
     return f.toString();
   }
@@ -370,32 +374,46 @@ public record Workflow(
     StringBuilder f = new StringBuilder();
     f.append("FROM ").append(baseId).append('\n');
     f.append("USER 0\n");
+    // Podman reads heredocs, so its file is readable shell; Docker's legacy builder does not, so
+    // its files keep the exec form.
+    boolean readable = perRunNetworkFlags;
     if (installToolsAndDependencies) {
-      f.append("RUN ")
-          .append(exec("sh", "-c", network ? INSTALL_NETWORK_TOOLS : INSTALL_TOOLS))
-          .append('\n');
-      install(f, dependencies);
+      run(f, readable, "", network ? INSTALL_NETWORK_TOOLS : INSTALL_TOOLS, "tools");
+      install(f, readable, dependencies);
     }
-    String run = perRunNetworkFlags ? "RUN --network=none " : "RUN ";
-    // The variables travel as an argument, so neither the Containerfile parser nor a shell
-    // interprets them here.
-    f.append(run)
-        .append(
-            exec(
-                "sh",
-                "-c",
-                "printf '%s' \"$1\" > "
-                    + ENVIRONMENT_FILE
-                    + " && chown 0:0 "
-                    + ENVIRONMENT_FILE
-                    + " && chmod 444 "
-                    + ENVIRONMENT_FILE,
-                "environment",
-                exports()))
-        .append('\n');
-    f.append("RUN ")
-        .append(exec("sh", "-c", "mkdir -p /workspace && chown " + BUILD_USER + " /workspace"))
-        .append('\n');
+    String flags = perRunNetworkFlags ? "--network=none " : "";
+    String protect = " && chown 0:0 " + ENVIRONMENT_FILE + " && chmod 444 " + ENVIRONMENT_FILE;
+    if (readable) {
+      // A quoted heredoc: neither the Containerfile parser nor the shell interprets the variables.
+      String exports = exports();
+      String end = delimiter("ENVIRONMENT", exports);
+      run(
+          f,
+          true,
+          flags,
+          "cat > "
+              + ENVIRONMENT_FILE
+              + " <<'"
+              + end
+              + "'\n"
+              + exports
+              + end
+              + "\n"
+              + protect.substring(4)
+              + "\n",
+          "environment");
+    } else {
+      // The variables travel as an argument, so neither the Containerfile parser nor a shell
+      // interprets them here.
+      run(
+          f,
+          false,
+          flags,
+          "printf '%s' \"$1\" > " + ENVIRONMENT_FILE + protect,
+          "environment",
+          exports());
+    }
+    run(f, readable, "", "mkdir -p /workspace && chown " + BUILD_USER + " /workspace", "workspace");
     f.append("USER ").append(BUILD_USER).append('\n');
     f.append("WORKDIR /workspace\n");
     f.append("ENV HOME=/tmp GIT_TERMINAL_PROMPT=0\n");
@@ -405,13 +423,12 @@ public record Workflow(
         .append(WORKSPACE)
         .append(" /workspace\n");
     for (String step : runs(waitSeconds)) {
-      f.append(run)
-          .append(
-              exec(
-                  "sh",
-                  "-c",
-                  ". " + ENVIRONMENT_FILE + " || exit 1\n" + (network ? PROXY : "") + step))
-          .append('\n');
+      run(
+          f,
+          readable,
+          flags,
+          ". " + ENVIRONMENT_FILE + " || exit 1\n" + (network ? PROXY : "") + step,
+          "step");
     }
     checkSize(f);
     return f.toString();
@@ -434,13 +451,21 @@ public record Workflow(
    *
    * <p>{@code install} always reads fresh package metadata, never the image's cached copy, and
    * installs the newest version; a package the image already has is upgraded to it. {@code
-   * installed} logs the version each package ended up at.
+   * installed} logs the version each package ended up at. The package manager's own output, such as
+   * the notes a package prints after its installation, is only shown when the installation fails.
    */
   private static final String PACKAGE_MANAGER =
       """
       . /etc/os-release 2>/dev/null
       for pm in apk apt-get dnf microdnf yum zypper ''; do [ -z "$pm" ] || ! command -v "$pm" >/dev/null 2>&1 || break; done
       install() {
+        packages "$@" > /tmp/.cisys-install.log 2>&1
+        rc=$?
+        [ "$rc" -eq 0 ] || cat /tmp/.cisys-install.log
+        rm -f /tmp/.cisys-install.log
+        return "$rc"
+      }
+      packages() {
         case "$pm" in
           apk) apk add --no-cache --upgrade "$@" ;;
           apt-get) apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates "$@" && rm -rf /var/lib/apt/lists/* ;;
@@ -481,6 +506,7 @@ public record Workflow(
         [ -n "$pm" ] || { echo '==> Cannot install%2$s: the container has no supported package manager'; exit 1; }
         echo "==> Installing$missing with $pm"
         install $missing || { rc=$?; echo "==> Could not install$missing"; exit "$rc"; }
+        installed $missing
         for tool in %1$s; do command -v "$tool" >/dev/null 2>&1 || { echo "==> $tool is missing after the installation"; exit 1; }; done
         """
             .formatted(String.join(" ", tools), String.join(", ", tools).replaceFirst("^", " "));
@@ -500,15 +526,51 @@ public record Workflow(
           installed $packages
           """;
 
-  private static void install(StringBuilder f, List<Dependency> dependencies) {
+  private static void install(StringBuilder f, boolean readable, List<Dependency> dependencies) {
     if (dependencies == null || dependencies.isEmpty()) return;
-    List<String> args =
-        new java.util.ArrayList<>(List.of("sh", "-c", INSTALL_DEPENDENCIES, "dependencies"));
+    List<String> args = new java.util.ArrayList<>();
     for (Dependency d : dependencies) {
       args.add(d.name());
       args.add(d.value());
     }
-    f.append("RUN ").append(exec(args.toArray(String[]::new))).append('\n');
+    run(f, readable, "", INSTALL_DEPENDENCIES, "dependencies", args.toArray(String[]::new));
+  }
+
+  /**
+   * Appends a {@code RUN} of {@code script} with the positional arguments {@code args}. {@code
+   * readable} writes a quoted heredoc, which reads as plain shell and is passed on as it is;
+   * otherwise the exec (JSON) form, for builders without heredocs. Either way neither the
+   * Containerfile parser nor a shell interprets the script or the arguments on the way in.
+   */
+  private static void run(
+      StringBuilder f, boolean readable, String flags, String script, String name, String... args) {
+    f.append("RUN ").append(flags);
+    if (!readable) {
+      List<String> exec = new java.util.ArrayList<>(List.of("sh", "-c", script, name));
+      exec.addAll(List.of(args));
+      f.append(exec(exec.toArray(String[]::new))).append('\n');
+      return;
+    }
+    StringBuilder body = new StringBuilder();
+    if (args.length > 0) {
+      body.append("set --");
+      for (String arg : args) body.append(' ').append(quote(arg));
+      body.append('\n');
+    }
+    body.append(script);
+    if (body.charAt(body.length() - 1) != '\n') body.append('\n');
+    String end = delimiter("CISYS", body.toString());
+    f.append("<<'").append(end).append("'\n").append(body).append(end).append('\n');
+  }
+
+  /**
+   * {@code base}, or {@code base} with a number, so that no line of {@code body} is equal to it.
+   */
+  static String delimiter(String base, String body) {
+    java.util.Set<String> lines = new java.util.HashSet<>(body.lines().toList());
+    String end = base;
+    for (int i = 1; lines.contains(end); i++) end = base + "_" + i;
+    return end;
   }
 
   private static final JsonMapper JSON = new JsonMapper();

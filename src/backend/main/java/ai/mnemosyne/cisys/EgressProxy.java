@@ -45,6 +45,10 @@ import java.util.stream.Collectors;
 final class EgressProxy implements AutoCloseable {
   static final String SOCKET = "proxy.sock";
   static final int MAX_CONNECTIONS = 64;
+
+  /** Distinct destinations reported as connected in the build log; later ones are not listed. */
+  static final int MAX_REPORTED = 200;
+
   static final int MAX_HEADER = 8192;
   static final long HEADER_MILLIS = 10_000;
   static final int CONNECT_MILLIS = 10_000;
@@ -99,6 +103,10 @@ final class EgressProxy implements AutoCloseable {
       Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().factory());
   private final Semaphore slots = new Semaphore(MAX_CONNECTIONS);
   private final Set<Channel> open = ConcurrentHashMap.newKeySet();
+
+  /** Destinations already reported as connected, so each appears in the build log once. */
+  private final Set<String> reached = ConcurrentHashMap.newKeySet();
+
   private ServerSocketChannel server;
   private boolean created;
   private volatile boolean closed;
@@ -227,6 +235,8 @@ final class EgressProxy implements AutoCloseable {
       }
       open.add(upstream);
       deadline.cancel(false);
+      if (reached.size() < MAX_REPORTED && reached.add(parts[1]))
+        log.accept("==> Network connected: " + parts[1] + " (" + address.getHostAddress() + ")");
       reply(client, "200 Connection established");
       // Bytes the client sent after the request head belong to the tunnel.
       ByteBuffer early = ByteBuffer.wrap(header.array(), end + 4, header.position() - end - 4);

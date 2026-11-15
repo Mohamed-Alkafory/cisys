@@ -133,6 +133,7 @@ The build finds out what the container is and installs with its package manager:
 * Packages are installed as root, with network access. The steps themselves still run as `65534:65534` without network, except through the proxy described under **Network for steps**.
 * All dependencies are installed together, in one step, before the checkout is copied in, so every job and step can use them. `dependencies` on a job or a step is rejected.
 * A package that does not exist, or a container without a supported package manager, fails the build with `==> Could not install …` or `==> Cannot install dependencies …`.
+* The package manager's own output is kept out of the log unless the installation fails; then it is shown before `==> Could not install …`. Notes that packages print after installing, such as Alpine's Podman note about `/etc/subuid` and cgroups, therefore do not appear.
 * Dependencies are always up to date. The package manager reads fresh package metadata on every build, never what the image cached, and installs the newest version. A package the image already has is upgraded. The log shows the version each one ended up at, for example `==> Installed: jq 1.7.1-6+deb13u4`. To stay on one version, give it in `value`.
 * Packages are downloaded on every build. A `container` image that already has them starts faster.
 
@@ -172,13 +173,14 @@ A build turns the workflow into a Containerfile and builds an image from it with
 
 1. **Read.** The backend fetches the branch and records its commit ID. It reads `.cisys/workflows/ci.yml` and stores the text with the build, then validates it.
 2. **Base.** `container` is looked up among the local images, and the image starts `FROM` its ID. Nothing is pulled.
+   The build log then shows the generated Dockerfile, as it was written, under `==> Dockerfile:` and the command that builds it under `==> Command:`, so a failing step can be read against exactly what ran. With Podman every `RUN` is a quoted heredoc (`RUN <<'CISYS'` … `CISYS`), so the file reads as the shell it runs: the tool installation, the dependencies (passed as `set -- 'name' 'package' …`), the environment file and each step. Nothing in it is expanded by the builder. If a line of a step equals the delimiter, that `RUN` uses `CISYS_1` instead. Docker's legacy builder has no heredocs, so with Docker each `RUN` is in the JSON exec form, and the preparation image's `Dockerfile.prepare` is shown first. Neither contains a secret: the backend clones the branch itself.
 3. **Tools and dependencies.** `git`, `make`, `podman` and `podman-compose` are installed as root if the image lacks them, then the workflow's `dependencies`. This step has network access.
 4. **Checkout.** The checkout from step 1 is copied into `/workspace`, owned by the unprivileged user `65534:65534`, so the image builds exactly the recorded commit, within the checkout limits. The working tree is **on the branch being tested**, with its `.git` directory, so `git status`, `git log -1` and `git rev-parse HEAD` work. `HOME` is `/tmp`.
 5. **Steps.** The jobs and steps run in order as `65534:65534`, in `/workspace`, **without network** (except through the egress proxy, see **Network for steps**), with the workflow's, the job's and the step's `environment` variables set. The log marks every job and step with `==> Job:` and `==> Step:` lines.
 6. **Result.** The first failing step stops the build. The log shows `==> Step failed:` with the step name and exit code, and the build records that exit code and the status `FAILED`. When every step succeeds, the build is `PASSED`.
 7. **Cleanup.** The images are removed when the build ends. The log, the workflow text, the commit ID and the base image digest are kept.
 
-The whole image build has ten minutes. After that it is stopped and reported as timed out.
+The whole image build has the build timeout, ten minutes by default. After that it is stopped and reported as timed out. Admins set the timeout under **Settings** → **Builds**; see **Builds**.
 
 ### Steps and shells
 
@@ -196,7 +198,10 @@ That page lists the allowed hosts like the **Projects** page lists projects: eac
 Once the list has hosts, every step gets a proxy for HTTPS:
 
 * The step itself still has no network. The only way out is a socket to the backend's egress proxy. Each step starts `socat` on `127.0.0.1:3128` to forward to it, and the build installs `socat` along with the other tools.
-* `ALL_PROXY`, `HTTP_PROXY`, `FTP_PROXY` and `NO_PROXY` (in both cases) are cleared, and `HTTPS_PROXY` and `https_proxy` are set to `http://127.0.0.1:3128`, so `npm`, `pip`, `cargo`, `curl` and Git over HTTPS use the proxy. Java tools such as Maven and Gradle get `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=3128` through `JAVA_TOOL_OPTIONS`.
+* The build log shows what the network allows and what was used: `==> Network: HTTPS through the proxy to …` lists the allowed hosts and ports when the build starts, `==> Network connected: host:port (address)` appears once for each destination a step reached, and `==> Network denied: host:port (reason)` for each refusal. A tool that ignores the proxy never reaches it; it fails with an unknown host instead, as the step has no DNS.
+* Each step first checks that it can reach the socket. If it cannot, the step fails with `==> Network proxy unreachable: /run/cisys/proxy.sock: …` and the reason, rather than with errors from `npm` or Maven.
+* On SELinux hosts, such as Fedora and Red Hat Enterprise Linux, a container may not connect to a socket that the backend serves. Builds with network therefore run without SELinux labels (`--security-opt=label=disable`). They are still rootless, without privileges, as `65534:65534` and without network of their own. Builds without network keep their labels.
+* `ALL_PROXY`, `HTTP_PROXY`, `FTP_PROXY` and `NO_PROXY` (in both cases) are cleared, and `HTTPS_PROXY` and `https_proxy` are set to `http://127.0.0.1:3128`, so `npm`, `pip`, `cargo`, `curl` and Git over HTTPS use the proxy. Java tools such as Maven and Gradle get `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=3128` through `JAVA_TOOL_OPTIONS`, plus `-Daether.connector.http.useSystemProperties=true`, without which Maven ignores the proxy and fails with `Unknown host repo.maven.apache.org`. Maven Central is `repo.maven.apache.org`; add it under **Settings** → **Network**.
 * Only HTTPS goes through, on port 443 unless the server sets other ports in `cisys.build.network.ports`. Plain HTTP, SSH and other ports are refused. A refused connection is shown in the log as `==> Network denied: host:port (reason)`.
 * The proxy allows hosts on the list only, or every public host with `*`. It never connects to loopback, private, link-local or metadata addresses (such as `169.254.169.254`), the backend host's own addresses, or the database and Keycloak hosts, even when a listed name resolves to one of them.
 * This works with Podman only. With Docker, a build fails with `Network access is not supported with docker` while the list has hosts.
@@ -220,7 +225,7 @@ Never put secrets in a workflow file, because each build stores the file and sho
 
 ## On the build page
 
-The build page shows the workflow file the build read, under **Workflow**. A queued build shows *Not read yet*. A build that failed before it could read the file shows *None*. **Image** shows the full name of the base image the build found, for example `docker.io/library/alpine:3.23`.
+The build page shows the workflow file the build read, under **Workflow**, and the Dockerfile the build generated from it, under **Dockerfile** (with Docker, the preparation file comes first). A queued build shows *Not read yet* and *Not generated yet*. A build that failed before it got that far shows *None*. Entries with more than one line show only their first line; the arrow in front of it unfolds the rest. **Image** shows the full name of the base image the build found, for example `docker.io/library/alpine:3.23`.
 
 ## Limits
 

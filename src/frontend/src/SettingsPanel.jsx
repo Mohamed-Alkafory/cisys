@@ -37,22 +37,29 @@ const SECTIONS = {
       },
     ],
   },
-  queue: {
-    title: "Queue",
+  builds: {
+    title: "Builds",
     fields: [
       {
         key: "maxConcurrent",
-        id: "queue-concurrent",
+        id: "builds-concurrent",
         label: "Concurrent builds",
         min: 1,
         max: 16,
       },
       {
         key: "maxQueued",
-        id: "queue-queued",
+        id: "builds-queued",
         label: "Queued builds",
         min: 1,
         max: 1000,
+      },
+      {
+        key: "timeoutMinutes",
+        id: "builds-timeout",
+        label: "Timeout (minutes)",
+        min: 1,
+        max: 1440,
       },
     ],
   },

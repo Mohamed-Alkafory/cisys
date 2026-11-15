@@ -10,13 +10,33 @@ dependencies:
     value: nodejs
   - name: npm
     value: npm
+  - name: PostgreSQL
+    value: postgresql18
+  # The schema uses the lo extension.
+  - name: PostgreSQL extensions
+    value: postgresql18-contrib
 
 environment:
   - name: JAVA_HOME
     value: /usr/lib/jvm/java-25-openjdk
+  # Plain log output: no colors or download progress.
+  - name: MAVEN_ARGS
+    value: --batch-mode --no-transfer-progress
 
 jobs:
+  # One job with a wait step runs as one shell, so PostgreSQL keeps running for the tests.
   - job: Test
+    environment:
+      # A configured URL replaces Quarkus Dev Services, which would need a container runtime.
+      - name: QUARKUS_DATASOURCE_JDBC_URL
+        value: jdbc:postgresql://127.0.0.1:5432/cisys
     steps:
+      - name: Start PostgreSQL
+        run: |
+          initdb -D /tmp/pgdata -U cisys --auth=trust -E UTF8 > /tmp/initdb.log 2>&1 || { cat /tmp/initdb.log; exit 1; }
+          pg_ctl -D /tmp/pgdata -l /tmp/postgres.log -o "-h 127.0.0.1 -k /tmp" -w start
+          createdb -h 127.0.0.1 -U cisys cisys
+      - name: Wait for PostgreSQL
+        wait: 5432
       - name: Test
         run: make test

@@ -7,7 +7,14 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Pin, PinOff, Square } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  Pin,
+  PinOff,
+  Square,
+} from "lucide-react";
 import { Button } from "./components/ui/button";
 import {
   Card,
@@ -20,6 +27,41 @@ import PageHeader from "./components/layout/PageHeader";
 import BuildStatus from "./BuildStatus";
 import { BuildLogPanel } from "./BuildLogView";
 import { duration, startedAt } from "./build-format";
+
+/**
+ * Text that may span several lines. More than one line is folded to its first line, with a
+ * chevron to unfold it; one line is shown as it is.
+ */
+export function FoldedText({ text, label }) {
+  const [open, setOpen] = useState(false);
+  const lines = text.replace(/\n+$/, "").split("\n");
+  if (lines.length <= 1) {
+    return <pre className="folded-text-body">{text}</pre>;
+  }
+  return (
+    <div className="folded-text">
+      <button
+        type="button"
+        className="folded-text-toggle"
+        aria-expanded={open}
+        title={open ? `Hide ${label}` : `Show all ${lines.length} lines`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? (
+          <ChevronDown size={14} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={14} aria-hidden="true" />
+        )}
+        {open ? (
+          <span className="sr-only">Hide {label}</span>
+        ) : (
+          <code className="folded-text-first">{lines[0]}</code>
+        )}
+      </button>
+      {open && <pre className="folded-text-body">{text}</pre>}
+    </div>
+  );
+}
 
 /** Dedicated page for one build, including the expanded log. */
 /** `onNotFound()` is called when the build does not exist or the visitor may not see it. */
@@ -200,9 +242,19 @@ export default function ProjectBuild({
             <dt>Workflow</dt>
             <dd>
               {build.workflow ? (
-                <pre className="whitespace-pre-wrap">{build.workflow}</pre>
+                <FoldedText text={build.workflow} label="workflow" />
               ) : build.status === "QUEUED" ? (
                 "Not read yet"
+              ) : (
+                "None"
+              )}
+            </dd>
+            <dt>Dockerfile</dt>
+            <dd>
+              {build.dockerfile ? (
+                <FoldedText text={build.dockerfile} label="Dockerfile" />
+              ) : build.status === "QUEUED" ? (
+                "Not generated yet"
               ) : (
                 "None"
               )}

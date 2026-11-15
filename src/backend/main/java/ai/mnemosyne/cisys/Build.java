@@ -47,6 +47,15 @@ public class Build extends PanacheEntity {
   @Column(length = Workflow.MAX_BYTES)
   public String workflow;
 
+  /**
+   * The Dockerfile the build generated from the workflow and ran, as it was written. Docker builds
+   * have two, the preparation first; see {@link BuildRunner#dockerfiles}.
+   */
+  @Column(length = MAX_DOCKERFILES)
+  public String dockerfile;
+
+  static final int MAX_DOCKERFILES = 2 * Workflow.MAX_CONTAINERFILE + 1000;
+
   public String credentialRef;
 
   @Column(length = 300)

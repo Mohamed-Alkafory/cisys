@@ -34,6 +34,7 @@ public class SettingsResource {
       MAX_BUILDS = 10000,
       MAX_CONCURRENT = 16,
       MAX_QUEUED = 1000,
+      MAX_TIMEOUT_MINUTES = 1440,
       MAX_CHECKOUT_MIB = 102400,
       MAX_CHECKOUT_FILES = 1000000,
       MIN_MEMORY_MIB = 64,
@@ -48,7 +49,8 @@ public class SettingsResource {
   /** 0 turns a limit off. */
   public record Retention(Integer maxAgeDays, Integer maxBuilds) {}
 
-  public record Queue(Integer maxConcurrent, Integer maxQueued) {}
+  /** The build queue and how long one build may take. */
+  public record Builds(Integer maxConcurrent, Integer maxQueued, Integer timeoutMinutes) {}
 
   public record Checkout(Integer maxSizeMib, Integer maxFiles) {}
 
@@ -86,16 +88,16 @@ public class SettingsResource {
   }
 
   @GET
-  @Path("/queue")
-  public Queue queue() {
+  @Path("/builds")
+  public Builds builds() {
     requireAdmin();
-    return new Queue(runner.concurrency(), runner.queueLimit());
+    return new Builds(runner.concurrency(), runner.queueLimit(), runner.timeoutMinutes());
   }
 
   @PUT
-  @Path("/queue")
+  @Path("/builds")
   @Transactional
-  public Queue updateQueue(Queue input) {
+  public Builds updateBuilds(Builds input) {
     requireAdmin();
     if (input == null
         || input.maxConcurrent() == null
@@ -104,6 +106,11 @@ public class SettingsResource {
       throw new BadRequestException("Concurrent builds must be between 1 and " + MAX_CONCURRENT);
     if (input.maxQueued() == null || input.maxQueued() < 1 || input.maxQueued() > MAX_QUEUED)
       throw new BadRequestException("Queued builds must be between 1 and " + MAX_QUEUED);
+    if (input.timeoutMinutes() == null
+        || input.timeoutMinutes() < 1
+        || input.timeoutMinutes() > MAX_TIMEOUT_MINUTES)
+      throw new BadRequestException(
+          "Timeout must be between 1 and " + MAX_TIMEOUT_MINUTES + " minutes");
     Settings s = Settings.findById(1L);
     if (s == null) {
       s = new Settings();
@@ -111,7 +118,8 @@ public class SettingsResource {
     }
     s.maxConcurrentBuilds = input.maxConcurrent();
     s.maxQueuedBuilds = input.maxQueued();
-    return new Queue(s.maxConcurrentBuilds, s.maxQueuedBuilds);
+    s.buildTimeoutMinutes = input.timeoutMinutes();
+    return new Builds(s.maxConcurrentBuilds, s.maxQueuedBuilds, s.buildTimeoutMinutes);
   }
 
   @GET

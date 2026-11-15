@@ -66,7 +66,10 @@ public class ProjectPageResource {
       boolean canCancel,
       @com.fasterxml.jackson.annotation.JsonInclude(
               com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-          String workflow) {}
+          String workflow,
+      @com.fasterxml.jackson.annotation.JsonInclude(
+              com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+          String dockerfile) {}
 
   public record ProjectPage(ProjectInfo project, List<PageBuild> builds) {}
 
@@ -102,7 +105,10 @@ public class ProjectPageResource {
     return pageBuild(b, access.canSeePrivate(p), access.canCancel(p, b), true);
   }
 
-  /** The workflow file is sent for a single build only, as it can be up to 64 KiB. */
+  /**
+   * The workflow file and the generated Dockerfile are sent for a single build only, as they can be
+   * large.
+   */
   private static PageBuild pageBuild(
       Build b, boolean canPin, boolean canCancel, boolean withWorkflow) {
     return new PageBuild(
@@ -120,7 +126,8 @@ public class ProjectPageResource {
         b.pinned,
         canPin,
         canCancel,
-        withWorkflow ? b.workflow : null);
+        withWorkflow ? b.workflow : null,
+        withWorkflow ? b.dockerfile : null);
   }
 
   /**

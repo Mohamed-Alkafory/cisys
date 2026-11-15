@@ -168,7 +168,10 @@ class EgressProxyTest {
     }
     assertEquals(
         List.of(new InetSocketAddress(InetAddress.getByName("203.0.114.10"), 443)), connected);
-    assertTrue(log.isEmpty(), log.toString());
+    // Each destination is reported once, so the log shows what a step reached.
+    assertEquals(List.of("==> Network connected: registry.example.com:443 (203.0.114.10)"), log);
+    assertEquals("HTTP/1.1 200 Connection established", connect("registry.example.com:443"));
+    assertEquals(1, log.size(), log.toString());
   }
 
   @Test

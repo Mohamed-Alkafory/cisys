@@ -10,14 +10,18 @@ package ai.mnemosyne.cisys;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class SettingsResourceTest {
+  @Inject BuildRunner runner;
+
   private static final String PATH = "/api/settings/retention";
   static final String DEFAULTS = "{\"maxAgeDays\":30,\"maxBuilds\":50}";
 
@@ -81,12 +85,14 @@ class SettingsResourceTest {
     }
   }
 
-  private static final String QUEUE = "/api/settings/queue";
+  private static final String QUEUE = "/api/settings/builds";
 
   static void clearQueue() {
     QuarkusTransaction.requiringNew()
         .run(() ->
-            Settings.update("maxConcurrentBuilds = null, maxQueuedBuilds = null where id = 1"));
+            Settings.update(
+                "maxConcurrentBuilds = null, maxQueuedBuilds = null, buildTimeoutMinutes = null"
+                    + " where id = 1"));
   }
 
   @Test
@@ -100,7 +106,7 @@ class SettingsResourceTest {
     given().get(QUEUE).then().statusCode(403);
     given()
         .contentType("application/json")
-        .body("{\"maxConcurrent\":2,\"maxQueued\":10}")
+        .body("{\"maxConcurrent\":2,\"maxQueued\":10,\"timeoutMinutes\":30}")
         .put(QUEUE)
         .then()
         .statusCode(403);
@@ -113,20 +119,25 @@ class SettingsResourceTest {
         .get(QUEUE)
         .then()
         .statusCode(200)
-        .body("maxConcurrent", equalTo(1), "maxQueued", equalTo(100));
+        .body(
+            "maxConcurrent", equalTo(1), "maxQueued", equalTo(100), "timeoutMinutes", equalTo(10));
     try {
       given()
           .contentType("application/json")
-          .body("{\"maxConcurrent\":4,\"maxQueued\":10}")
+          .body("{\"maxConcurrent\":4,\"maxQueued\":10,\"timeoutMinutes\":45}")
           .put(QUEUE)
           .then()
           .statusCode(200)
-          .body("maxConcurrent", equalTo(4), "maxQueued", equalTo(10));
+          .body(
+              "maxConcurrent", equalTo(4), "maxQueued", equalTo(10), "timeoutMinutes", equalTo(45));
       given()
           .get(QUEUE)
           .then()
           .statusCode(200)
-          .body("maxConcurrent", equalTo(4), "maxQueued", equalTo(10));
+          .body(
+              "maxConcurrent", equalTo(4), "maxQueued", equalTo(10), "timeoutMinutes", equalTo(45));
+      // The runner uses the saved timeout for the next build.
+      assertEquals(45, (int) QuarkusTransaction.requiringNew().call(() -> runner.timeoutMinutes()));
     } finally {
       clearQueue();
     }
@@ -137,10 +148,13 @@ class SettingsResourceTest {
   void rejectsInvalidQueue() {
     for (String body :
         new String[] {
-          "{\"maxConcurrent\":0,\"maxQueued\":10}",
-          "{\"maxConcurrent\":17,\"maxQueued\":10}",
-          "{\"maxConcurrent\":1,\"maxQueued\":0}",
-          "{\"maxConcurrent\":1,\"maxQueued\":1001}",
+          "{\"maxConcurrent\":0,\"maxQueued\":10,\"timeoutMinutes\":10}",
+          "{\"maxConcurrent\":17,\"maxQueued\":10,\"timeoutMinutes\":10}",
+          "{\"maxConcurrent\":1,\"maxQueued\":0,\"timeoutMinutes\":10}",
+          "{\"maxConcurrent\":1,\"maxQueued\":1001,\"timeoutMinutes\":10}",
+          "{\"maxConcurrent\":1,\"maxQueued\":10,\"timeoutMinutes\":0}",
+          "{\"maxConcurrent\":1,\"maxQueued\":10,\"timeoutMinutes\":1441}",
+          "{\"maxConcurrent\":1,\"maxQueued\":10}",
           "{\"maxConcurrent\":1}",
           "{}"
         }) {

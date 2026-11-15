@@ -428,6 +428,37 @@ body {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.folded-text-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.folded-text-toggle svg {
+  flex: none;
+  color: var(--muted-foreground);
+}
+.folded-text-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.folded-text-first {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.folded-text-body {
+  margin: 0.35rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 800px) {
   .project-layout {
     grid-template-columns: 1fr;

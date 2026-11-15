@@ -50,6 +50,9 @@ public class Settings extends PanacheEntityBase {
   /** Null uses cisys.build.max-pids. */
   public Integer maxBuildPids;
 
+  /** Null uses cisys.build.timeout-minutes. */
+  public Integer buildTimeoutMinutes;
+
   public static Settings current() {
     Settings s = findById(1L);
     return s == null ? new Settings() : s;
