@@ -21,7 +21,7 @@ Every public project has a page at `/<name>/`, for example `http://localhost:517
 
 Selecting a branch in the left panel filters the build history to that branch. The page starts on `main`, or `master` for repositories that still use it. Each build row shows a green thumbs up for a passing build, a red thumbs down for a failing build, and a spinner while it runs, followed by the build number, branch, commit, start time, duration and exit code.
 
-Selecting a build opens its own page at `/<name>/<branch>/build/<id>`, for example `http://localhost:5173/cisys/master/build/51`, with the build details and the full log.
+Selecting a build opens its own page at `/<name>/<branch>/build/<id>`, for example `http://localhost:5173/cisys/master/build/51`, with the build details and the full log. The `<id>` is the internal build ID, not the build number.
 
 Private projects use the same page once you sign in as their owner or an administrator; everyone else is told the project does not exist. The branches panel reads the repository when the project has a credential reference (see below); without one it lists only the branches that already have builds.
 

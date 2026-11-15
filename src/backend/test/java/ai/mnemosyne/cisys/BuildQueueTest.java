@@ -592,4 +592,66 @@ class BuildQueueTest {
     assertNull(read(b.id));
     assertNotNull(read(newer.id));
   }
+
+  Long otherProject() {
+    return QuarkusTransaction.requiringNew()
+        .call(() -> {
+          Project p = new Project();
+          p.name = "queue-test-other";
+          p.ownerSubject = "owner";
+          p.repositoryUrl = "https://github.com/example/other.git";
+          p.persist();
+          return p.id;
+        });
+  }
+
+  @Test
+  void numbersCountWithinEachProject() {
+    Long other = otherProject();
+    assertEquals(1L, submit().number);
+    assertEquals(
+        1L, runner.submit(other, "owner", "https://github.com/example/o.git", request).number);
+    assertEquals(2L, submit().number);
+    assertEquals(
+        2L, runner.submit(other, "owner", "https://github.com/example/o.git", request).number);
+    assertEquals(3L, submit().number);
+  }
+
+  @Test
+  void concurrentAdmissionsGetDistinctNumbers() throws Exception {
+    Set<Long> numbers = new TreeSet<>();
+    try (var pool = Executors.newFixedThreadPool(8)) {
+      List<Callable<Build>> calls = new ArrayList<>();
+      for (int i = 0; i < 20; i++) calls.add(this::submit);
+      for (Future<Build> f : pool.invokeAll(calls)) assertTrue(numbers.add(f.get().number));
+    }
+    assertEquals(20, numbers.size());
+    assertEquals(1L, ((TreeSet<Long>) numbers).first());
+    assertEquals(20L, ((TreeSet<Long>) numbers).last());
+  }
+
+  @Test
+  void rejectedRequestsTakeNoNumber() {
+    runner.queueLimit = 1;
+    Build first = submit();
+    var e = assertThrows(WebApplicationException.class, this::submit);
+    assertEquals(429, e.getResponse().getStatus());
+    assertTrue(runner.cancel(first.id));
+    assertEquals(2L, submit().number);
+  }
+
+  @Test
+  void numbersSurviveRetentionAndRestart() {
+    for (int i = 0; i < 3; i++) assertTrue(runner.cancel(submit().id));
+    retention.purge(java.time.Instant.now(), 0, 1);
+    QuarkusTransaction.requiringNew().run(() -> Build.delete("projectId", project));
+    BuildRunner restarted = new BuildRunner();
+    restarted.logs = logs;
+    restarted.concurrency = 1;
+    restarted.queueLimit = 100;
+    assertEquals(
+        4L,
+        restarted.submit(project, "owner", "https://github.com/example/original.git", request)
+            .number);
+  }
 }

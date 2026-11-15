@@ -36,7 +36,7 @@ describe("BuildLogPanel", () => {
       <BuildLogPanel
         api={api}
         logPath={logPath}
-        build={{ id: 7, status: "QUEUED" }}
+        build={{ id: 7, number: 3, status: "QUEUED" }}
         showMeta={false}
       />,
     );
@@ -48,7 +48,7 @@ describe("BuildLogPanel", () => {
       <BuildLogPanel
         api={api}
         logPath={logPath}
-        build={{ id: 7, status: "RUNNING" }}
+        build={{ id: 7, number: 3, status: "RUNNING" }}
         showMeta={false}
       />,
     );
@@ -182,15 +182,15 @@ describe("BuildLogPanel", () => {
 
 describe("logFileName", () => {
   it("names the log after the project, branch and build", () => {
-    expect(logFileName("cisys", { id: 1, branch: "main" })).toBe(
+    expect(logFileName("cisys", { id: 51, number: 1, branch: "main" })).toBe(
       "cisys-main-1.log",
     );
   });
 
   it("makes a branch with a slash safe and leaves out missing parts", () => {
-    expect(logFileName("cisys", { id: 7, branch: "feature/x" })).toBe(
-      "cisys-feature_x-7.log",
-    );
-    expect(logFileName(undefined, { id: 3 })).toBe("3.log");
+    expect(
+      logFileName("cisys", { id: 52, number: 7, branch: "feature/x" }),
+    ).toBe("cisys-feature_x-7.log");
+    expect(logFileName(undefined, { id: 53, number: 3 })).toBe("3.log");
   });
 });

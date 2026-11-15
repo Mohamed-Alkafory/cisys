@@ -817,6 +817,7 @@ class ProjectResourceTest {
         .call(() -> {
           Build b = new Build();
           b.projectId = project;
+          b.number = Build.nextNumber(project);
           b.requestedBy = "lead-id";
           b.status = Build.Status.valueOf(status);
           b.branch = "main";

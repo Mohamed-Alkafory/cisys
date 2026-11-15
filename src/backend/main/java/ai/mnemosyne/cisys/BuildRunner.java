@@ -465,6 +465,7 @@ public class BuildRunner {
                     .build());
           Build b = new Build();
           b.projectId = projectId;
+          b.number = Build.nextNumber(projectId);
           b.requestedBy = actor;
           b.status = Build.Status.QUEUED;
           b.requestedAt = Instant.now();

@@ -155,7 +155,7 @@ export default function ProjectBuild({
   return (
     <main id="project-build" className="page-container">
       <PageHeader
-        title={`Build #${build.id}`}
+        title={`Build #${build.number}`}
         actions={
           <>
             {build.canCancel && (

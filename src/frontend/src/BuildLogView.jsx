@@ -66,7 +66,7 @@ export async function copyLog(api, logPath, sink, wait = sleep) {
  */
 export function logFileName(projectName, build) {
   return (
-    [projectName, build.branch, build.id]
+    [projectName, build.branch, build.number]
       .filter((part) => part != null && part !== "")
       .map((part) => String(part).replace(/[\\/:*?"<>|\s]+/g, "_"))
       .join("-") + ".log"
@@ -352,7 +352,7 @@ export default function BuildLogView({ api, logPath, build, onRefresh }) {
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
       <summary>
-        #{build.id} · {build.status}
+        #{build.number} · {build.status}
         {build.branch ? ` · ${build.branch}` : ""} · {startedAt(build)} ·{" "}
         {duration(build)}
         {build.revision ? ` · ${build.revision.slice(0, 12)}` : ""}

@@ -50,6 +50,7 @@ class ProjectPageResourceTest {
               p.persist();
               Build b = new Build();
               b.projectId = p.id;
+              b.number = Build.nextNumber(p.id);
               b.status = Build.Status.PASSED;
               b.branch = "main";
               b.requestedBy = "owner-id";
@@ -70,6 +71,7 @@ class ProjectPageResourceTest {
           Project p = Project.<Project>find("name = ?1", projectName).firstResult();
           Build b = new Build();
           b.projectId = p.id;
+          b.number = Build.nextNumber(p.id);
           b.status = Build.Status.PASSED;
           b.branch = branch;
           b.persist();
@@ -92,6 +94,8 @@ class ProjectPageResourceTest {
             hasSize(1),
             "builds[0].status",
             equalTo("PASSED"),
+            "builds[0].number",
+            equalTo(1),
             "builds[0].logTruncated",
             equalTo(false),
             "builds[0].pinned",

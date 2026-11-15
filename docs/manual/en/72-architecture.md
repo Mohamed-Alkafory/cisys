@@ -36,11 +36,13 @@ erDiagram
         STRING repository_url
         BOOLEAN private_repository
         STRING owner_subject
+        BIGINT build_counter
     }
 
     BUILD {
         BIGINT id PK
         BIGINT project_id
+        BIGINT number
         STRING requested_by
         STRING status
         STRING revision

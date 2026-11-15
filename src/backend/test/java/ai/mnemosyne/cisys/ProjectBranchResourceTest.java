@@ -62,6 +62,7 @@ class ProjectBranchResourceTest {
           Project p = Project.<Project>find("name = ?1", projectName).firstResult();
           Build b = new Build();
           b.projectId = p.id;
+          b.number = Build.nextNumber(p.id);
           b.status = Build.Status.PASSED;
           b.branch = branch;
           b.persist();

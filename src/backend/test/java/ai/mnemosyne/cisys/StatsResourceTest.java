@@ -79,6 +79,7 @@ class StatsResourceTest {
         .run(() -> {
           Build b = new Build();
           b.projectId = projectId;
+          b.number = Build.nextNumber(projectId);
           b.requestedBy = "stats-owner";
           b.status = Build.Status.valueOf(status);
           b.startedAt = startedAt;

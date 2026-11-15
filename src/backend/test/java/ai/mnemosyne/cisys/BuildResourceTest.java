@@ -67,6 +67,7 @@ class BuildResourceTest {
             .call(() -> {
               Build b = new Build();
               b.projectId = project;
+              b.number = Build.nextNumber(project);
               b.requestedBy = "owner-id";
               b.status = Build.Status.valueOf(status);
               b.branch = "main";
@@ -249,10 +250,12 @@ class BuildResourceTest {
             .call(() -> {
               Build legacy = new Build();
               legacy.projectId = projectId;
+              legacy.number = Build.nextNumber(projectId);
               legacy.status = Build.Status.PASSED;
               legacy.persist();
               Build build = new Build();
               build.projectId = projectId;
+              build.number = Build.nextNumber(projectId);
               build.status = Build.Status.PASSED;
               build.branch = "main";
               build.image = "alpine:3.23";
@@ -316,6 +319,7 @@ class BuildResourceTest {
         .statusCode(200)
         .body(not(containsString("secret-log-text")))
         .body(not(containsString("\"output\"")))
+        .body("[0].number", equalTo(1))
         .body("[0].branch", equalTo("main"))
         .body("[0].image", equalTo("alpine:3.23"))
         .body("[0].exitCode", equalTo(0))

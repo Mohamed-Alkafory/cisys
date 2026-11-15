@@ -16,6 +16,11 @@ import java.time.Instant;
 @Entity
 public class Build extends PanacheEntity {
   public Long projectId;
+
+  /** Shown to users; counts up within the project, while the id stays internal. */
+  @Column(nullable = false)
+  public Long number;
+
   public String requestedBy;
 
   public enum Status {
@@ -76,4 +81,19 @@ public class Build extends PanacheEntity {
 
   public Instant startedAt;
   public Instant finishedAt;
+
+  /**
+   * Takes the project's next build number from its counter in the unmapped buildcounter column. The
+   * counter row stays locked until the transaction ends, and a rollback gives the number back.
+   */
+  static long nextNumber(Long projectId) {
+    return ((Number)
+            getEntityManager()
+                .createNativeQuery(
+                    "update project set buildcounter = buildcounter + 1 where id = ?1"
+                        + " returning buildcounter")
+                .setParameter(1, projectId)
+                .getSingleResult())
+        .longValue();
+  }
 }

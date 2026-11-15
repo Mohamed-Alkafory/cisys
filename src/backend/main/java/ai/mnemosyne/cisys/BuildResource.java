@@ -40,6 +40,7 @@ public class BuildResource {
    */
   public record BuildResponse(
       Long id,
+      Long number,
       Long projectId,
       @JsonInclude(JsonInclude.Include.NON_NULL) String requestedBy,
       Build.Status status,
@@ -63,6 +64,7 @@ public class BuildResource {
     boolean admin = identity.hasRole("admin");
     return new BuildResponse(
         build.id,
+        build.number,
         build.projectId,
         admin ? build.requestedBy : null,
         build.status,
@@ -95,7 +97,7 @@ public class BuildResource {
   @GET
   public List<BuildResponse> list(@PathParam("projectId") Long id) {
     visible(id);
-    return Build.<Build>find("projectId = ?1 order by id desc", id).page(0, 50).list().stream()
+    return Build.<Build>find("projectId = ?1 order by number desc", id).page(0, 50).list().stream()
         .map(this::response)
         .toList();
   }

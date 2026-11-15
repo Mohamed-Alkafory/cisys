@@ -10,11 +10,13 @@ erDiagram
         STRING repository_url
         BOOLEAN private_repository
         STRING owner_subject
+        BIGINT build_counter
     }
 
     BUILD {
         BIGINT id PK
         BIGINT project_id
+        BIGINT number
         STRING requested_by
         STRING status
         STRING revision
@@ -56,6 +58,7 @@ erDiagram
 
 * `PROJECT.owner_subject` and `BUILD.requested_by` hold the Keycloak subject (`sub`) of the user.
 * `BUILD.project_id` is a plain column, not a foreign key constraint.
+* `BUILD.number` is unique within a project and taken from `PROJECT.build_counter`, which never goes back.
 * `BUILD.logoid` (type `lo`, from the `lo` extension) references the build log, stored as one PostgreSQL large object. It is not mapped in the `Build` entity. The `lo_manage` trigger unlinks the large object when the build is deleted, so no logs are orphaned.
 * `BUILD.status` is `QUEUED`, `RUNNING`, `PASSED`, `FAILED` or `CANCELLED`. `BUILD.cancel_requested` is set on a running build until the runner has stopped it.
 * `BRANDING` and `SETTINGS` are singleton rows with `id = 1`. Until `SETTINGS` is first saved, its defaults apply.

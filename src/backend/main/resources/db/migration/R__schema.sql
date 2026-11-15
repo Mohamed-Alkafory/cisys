@@ -166,3 +166,22 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildcpus integer;
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS maxbuildpids integer;
 -- Null uses the configured build timeout.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS buildtimeoutminutes integer;
+
+-- Builds are numbered per project; the counter never goes back, so deleted numbers are not reused.
+ALTER TABLE project ADD COLUMN IF NOT EXISTS buildcounter bigint NOT NULL DEFAULT 0;
+ALTER TABLE build ADD COLUMN IF NOT EXISTS number bigint;
+UPDATE build b SET number = n.number
+    FROM (SELECT id, coalesce((SELECT max(number) FROM build m WHERE m.projectid = u.projectid), 0)
+                     + row_number() OVER (PARTITION BY projectid ORDER BY requestedat NULLS LAST, id) AS number
+          FROM build u WHERE number IS NULL) n
+    WHERE b.id = n.id;
+UPDATE project p SET buildcounter = m.number
+    FROM (SELECT projectid, max(number) AS number FROM build GROUP BY projectid) m
+    WHERE p.id = m.projectid AND p.buildcounter < m.number;
+ALTER TABLE build ALTER COLUMN number SET NOT NULL;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'build_project_number') THEN
+        ALTER TABLE build ADD CONSTRAINT build_project_number UNIQUE (projectid, number);
+    END IF;
+END $$;

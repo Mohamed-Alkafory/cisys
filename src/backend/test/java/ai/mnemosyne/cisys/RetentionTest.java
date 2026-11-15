@@ -55,6 +55,7 @@ class RetentionTest {
         .call(() -> {
           Build b = new Build();
           b.projectId = project;
+          b.number = Build.nextNumber(project);
           b.status = Build.Status.valueOf(status);
           b.startedAt = (finishedAt == null ? Instant.now() : finishedAt).minusSeconds(60);
           b.finishedAt = finishedAt;

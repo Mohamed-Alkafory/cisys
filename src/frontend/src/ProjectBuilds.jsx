@@ -317,7 +317,7 @@ export default function ProjectBuilds({
                               openBuild(b);
                             }}
                           >
-                            #{b.id}
+                            #{b.number}
                           </a>
                           {b.pinned && (
                             <Pin

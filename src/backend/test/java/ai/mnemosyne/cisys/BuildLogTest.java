@@ -65,6 +65,7 @@ class BuildLogTest {
         .call(() -> {
           Build b = new Build();
           b.projectId = project;
+          b.number = Build.nextNumber(project);
           b.requestedBy = "owner-id";
           b.status = Build.Status.PASSED;
           b.startedAt = java.time.Instant.now();

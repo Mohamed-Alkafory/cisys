@@ -51,6 +51,7 @@ public class ProjectPageResource {
    */
   public record PageBuild(
       Long id,
+      Long number,
       Long projectId,
       Build.Status status,
       String revision,
@@ -79,9 +80,9 @@ public class ProjectPageResource {
     String branchFilter = branch == null ? "" : branch.trim();
     List<Build> rows =
         branchFilter.isEmpty()
-            ? Build.<Build>find("projectId = ?1 order by id desc", p.id).page(0, 50).list()
+            ? Build.<Build>find("projectId = ?1 order by number desc", p.id).page(0, 50).list()
             : Build.<Build>find(
-                    "projectId = ?1 and branch = ?2 order by id desc", p.id, branchFilter)
+                    "projectId = ?1 and branch = ?2 order by number desc", p.id, branchFilter)
                 .page(0, 50)
                 .list();
     // Whoever may see a private project may also pin its builds.
@@ -113,6 +114,7 @@ public class ProjectPageResource {
       Build b, boolean canPin, boolean canCancel, boolean withWorkflow) {
     return new PageBuild(
         b.id,
+        b.number,
         b.projectId,
         b.status,
         b.revision,
