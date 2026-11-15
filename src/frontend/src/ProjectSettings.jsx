@@ -6,8 +6,8 @@
  *   OF THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
  */
 
-import React, { useState } from "react";
-import { Save, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Copy, KeyRound, RefreshCw, Save, X } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
@@ -47,9 +47,126 @@ export default function ProjectSettings({
   const [credential, setCredential] = useState(project.credentialRef || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [webhook, setWebhook] = useState(null);
+  const [webhookEnabled, setWebhookEnabled] = useState(false);
+  const [branches, setBranches] = useState("*");
+  const [secret, setSecret] = useState("");
+  const [secretSet, setSecretSet] = useState(false);
+  const [webhookBusy, setWebhookBusy] = useState(false);
+  const [webhookError, setWebhookError] = useState("");
+  const [confirmRotate, setConfirmRotate] = useState(false);
+  const rotateButtonRef = useRef(null);
+  const confirmRotateRef = useRef(null);
+
+  // Move focus into the confirmation so a keyboard user cannot miss it.
+  useEffect(() => {
+    if (confirmRotate) confirmRotateRef.current?.focus();
+  }, [confirmRotate]);
+
+  function cancelRotate() {
+    setConfirmRotate(false);
+    rotateButtonRef.current?.focus();
+  }
 
   // Only admins can set a project credential, and only a private project can have one.
   const showCredential = isAdmin && priv;
+
+  useEffect(() => {
+    let current = true;
+    // A secret belongs to one project and one visit; never carry it to another project.
+    setSecret("");
+    setConfirmRotate(false);
+    api(`/projects/${project.id}/webhook`)
+      .then((settings) => {
+        if (!current) return;
+        setWebhook(settings);
+        setWebhookEnabled(settings.enabled);
+        setBranches(settings.branches || "*");
+        setSecretSet(settings.secretSet);
+      })
+      .catch((e) => {
+        if (current)
+          setWebhookError(e.message || "Unable to load the webhook settings.");
+      });
+    return () => {
+      current = false;
+      setSecret("");
+      setConfirmRotate(false);
+    };
+  }, [api, project.id]);
+
+  async function generateSecret() {
+    if (webhookBusy) return;
+    setWebhookBusy(true);
+    setWebhookError("");
+    try {
+      const generated = await api(`/projects/${project.id}/webhook/secret`, {
+        method: "POST",
+      });
+      setSecret(generated.secret);
+      setSecretSet(true);
+      setConfirmRotate(false);
+    } catch (e) {
+      setWebhookError(e.message || "Unable to create a webhook secret.");
+    } finally {
+      setWebhookBusy(false);
+    }
+  }
+
+  async function revealSecret() {
+    if (webhookBusy) return;
+    setWebhookBusy(true);
+    setWebhookError("");
+    setConfirmRotate(false);
+    try {
+      const shown = await api(`/projects/${project.id}/webhook/secret`);
+      setSecret(shown.secret);
+      setSecretSet(true);
+    } catch (e) {
+      setWebhookError(e.message || "Unable to read the webhook secret.");
+    } finally {
+      setWebhookBusy(false);
+    }
+  }
+
+  async function saveWebhook(event) {
+    event.preventDefault();
+    if (webhookBusy) return;
+    setWebhookBusy(true);
+    setWebhookError("");
+    try {
+      // Enabling before the secret exists would leave a webhook GitHub cannot sign.
+      if (webhookEnabled && !secretSet) {
+        const generated = await api(`/projects/${project.id}/webhook/secret`, {
+          method: "POST",
+        });
+        setSecret(generated.secret);
+        setSecretSet(true);
+      }
+      const saved = await api(`/projects/${project.id}/webhook`, {
+        method: "PUT",
+        body: JSON.stringify({ enabled: webhookEnabled, branches }),
+      });
+      setWebhook(saved);
+      setWebhookEnabled(saved.enabled);
+      setBranches(saved.branches || "*");
+      setSecretSet(saved.secretSet);
+    } catch (e) {
+      setWebhookError(e.message || "Unable to save the webhook settings.");
+    } finally {
+      setWebhookBusy(false);
+    }
+  }
+
+  async function copyWebhookUrl() {
+    if (!webhook?.url) return;
+    try {
+      await navigator.clipboard.writeText(webhook.url);
+      setWebhookError("");
+    } catch {
+      setWebhookError("Copy the webhook URL from the field instead.");
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -176,6 +293,182 @@ export default function ProjectSettings({
                 />
               </div>
             )}
+          </form>
+        </CardContent>
+      </Card>
+      <Card className="project-card">
+        <CardHeader>
+          <CardTitle>Automatic builds</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            id="webhook-form"
+            className="settings-form"
+            onSubmit={saveWebhook}
+          >
+            {webhookError && (
+              <div className="error-message" role="alert">
+                {webhookError}
+              </div>
+            )}
+            <p className="file-help">
+              A verified push from GitHub starts a build of the pushed commit.
+              Only enable this for repositories you trust: until isolated build
+              workers exist, the build runs on the cisys server.
+            </p>
+            <div className="form-field">
+              <Label htmlFor="webhook-enabled">Push trigger</Label>
+              <span className="private-choice">
+                <input
+                  id="webhook-enabled"
+                  type="checkbox"
+                  checked={webhookEnabled}
+                  onChange={(e) => setWebhookEnabled(e.target.checked)}
+                />
+                <span>Build pushed commits automatically</span>
+              </span>
+            </div>
+            <div className="form-field">
+              <Label htmlFor="webhook-url">Payload URL</Label>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <Input
+                  id="webhook-url"
+                  readOnly
+                  value={webhook?.url || ""}
+                  placeholder="Loading…"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={!webhook?.url}
+                  onClick={copyWebhookUrl}
+                  title="Copy payload URL"
+                  aria-label="Copy payload URL"
+                >
+                  <Copy size={16} aria-hidden="true" />
+                </Button>
+              </div>
+              <span className="file-help">
+                In GitHub: Settings → Webhooks → Add webhook. Content type
+                application/json, and select only the push event.
+              </span>
+            </div>
+            <div className="form-field">
+              <Label htmlFor="webhook-branches">Branches</Label>
+              <Input
+                id="webhook-branches"
+                maxLength="1000"
+                value={branches}
+                onChange={(e) => setBranches(e.target.value)}
+                placeholder="*"
+              />
+              <span className="file-help">
+                Comma-separated branch globs, for example main,release/*. Use *
+                for every branch.
+              </span>
+            </div>
+            <div className="form-field">
+              <Label htmlFor="webhook-secret">Secret</Label>
+              {secret ? (
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <Input
+                    id="webhook-secret"
+                    readOnly
+                    value={secret}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSecret("");
+                      setConfirmRotate(false);
+                    }}
+                  >
+                    Hide
+                  </Button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!secretSet || webhookBusy}
+                    onClick={revealSecret}
+                    aria-label="Reveal webhook secret"
+                  >
+                    <KeyRound size={16} aria-hidden="true" /> Reveal
+                  </Button>
+                  <Button
+                    ref={rotateButtonRef}
+                    type="button"
+                    variant="outline"
+                    disabled={webhookBusy}
+                    onClick={() =>
+                      secretSet ? setConfirmRotate(true) : generateSecret()
+                    }
+                    aria-label={
+                      secretSet
+                        ? "Rotate webhook secret"
+                        : "Generate webhook secret"
+                    }
+                  >
+                    <RefreshCw size={16} aria-hidden="true" />
+                    {secretSet ? "Rotate" : "Generate"}
+                  </Button>
+                </div>
+              )}
+              {confirmRotate && (
+                <div
+                  className="rotate-confirm"
+                  role="alertdialog"
+                  aria-modal="true"
+                  aria-label="Confirm secret rotation"
+                >
+                  <p>
+                    Rotating the secret breaks the existing GitHub webhook until
+                    you paste the new value there. Continue?
+                  </p>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <Button
+                      ref={confirmRotateRef}
+                      type="button"
+                      disabled={webhookBusy}
+                      onClick={generateSecret}
+                    >
+                      Rotate secret
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={cancelRotate}
+                      aria-label="Cancel rotation"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <span className="file-help">
+                Use this value as the webhook secret in GitHub. Rotating it
+                breaks the existing webhook until GitHub is updated.
+              </span>
+            </div>
+            {webhook?.lastBuild && (
+              <p className="file-help">
+                Last push build #{webhook.lastBuild.id}:{" "}
+                {webhook.lastBuild.status} on {webhook.lastBuild.branch}
+                {webhook.lastBuild.revision
+                  ? ` (${webhook.lastBuild.revision.slice(0, 12)})`
+                  : ""}
+                .
+              </p>
+            )}
+            <Button type="submit" disabled={webhookBusy}>
+              {webhookBusy ? "Saving…" : "Save webhook"}
+            </Button>
           </form>
         </CardContent>
       </Card>

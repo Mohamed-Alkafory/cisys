@@ -27,6 +27,8 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `GET /api/projects/{id}/branches`         | visible projects          | visible projects     | all   |
 | `POST /api/projects/{id}/builds`          | no                        | yes                  | yes   |
 | `POST` build with a `credentialRef`       | no                        | no                   | yes   |
+| `GET`/`PUT`/`DELETE .../webhook`          | no                        | own projects         | yes   |
+| `GET`/`POST .../webhook/secret`           | no                        | own projects         | yes   |
 | `PUT`/`DELETE .../builds/{id}/pin`        | no                        | own projects         | yes   |
 | `GET /api/branding`                       | yes                       | yes                  | yes   |
 | `PUT /api/branding`                       | no                        | no                   | yes   |
@@ -53,6 +55,8 @@ User subjects are returned to admins only:
 The public project page and the public statistics never include them.
 
 The private flag controls visibility inside cisys; it does not grant or restrict Git access.
+
+`POST /api/webhooks/git/{projectId}` is intentionally anonymous. GitHub cannot present a bearer token, so the request is authenticated by the project's HMAC secret. Unknown projects, disabled projects, missing secrets and bad signatures all answer the same `401`, so the endpoint cannot be used to discover projects. Concurrent webhook work is bounded by a global limit and repeated authentication failures are counted per project; a correctly signed delivery is never rejected because another request for that project failed. The endpoint is not part of the public visitor rate limit, because that budget belongs to the public pages.
 
 ## Authentication
 
@@ -133,6 +137,22 @@ Known gaps
 * Runner and Podman operation on Windows/WSL has not been verified.
 * Credentials are not scoped to individual projects; only admins may reference one.
 * DNS rebinding between the address check and JGit's own connection is not fully prevented, because JGit resolves the host again when it connects.
+
+### Push webhooks
+
+Automatic builds are opt-in per project and only support GitHub's `push` event.
+
+* The project owner or an admin generates a random 256-bit secret. It is stored in the project row because the HMAC must be recomputed for every delivery. It is returned only to the owner and admins, only from the secret endpoints (marked `Cache-Control: no-store`), and it is never written to logs or build output. The settings page clears the value when you leave the project or the page.
+* cisys verifies `X-Hub-Signature-256` over the raw body with a constant-time comparison before parsing the JSON. A header that cannot be a signature is rejected before the body is read. The body is capped at `cisys.webhook.max-bytes` (`WEBHOOK_MAX_BYTES`, default 1 MiB).
+* Failed authentication is throttled separately from the public visitor limit: `cisys.webhook.failure-limit.requests` per `cisys.webhook.failure-limit.window-seconds` (default 30 per 60 s) per project. A failure is recorded only after the signature check fails, or when the body is oversized, so a valid delivery is never rejected because another request for the same project failed. Concurrent webhook work is bounded by `cisys.webhook.max-concurrent` (default 64); excess requests answer `429` with `Retry-After`. The failure window uses the same bounded, self-purging map as the visitor limit.
+* The payload's repository URL is never used for checkout, credentials or the build row. cisys compares its `full_name` with the project's stored owner/name pair (exactly, not by suffix) and its `clone_url`, when present, with the normalized stored URL, then builds that stored repository only. A non-default port is part of the comparison.
+* The build runs the pushed commit, not the branch tip. If that exact commit cannot be fetched, the build fails instead of silently building a different one.
+* `X-GitHub-Delivery` is stored on the build under a unique `(project_id, trigger_delivery)` index, so a redelivery cannot run twice, and a unique partial index keeps at most one active **push** build per project and commit even when deliveries arrive at the same time. Manual builds are not restricted, because their revision is set while they run.
+* Status codes: `400` for malformed JSON or a missing header, `401` for any authentication failure, `403` when the payload names a different repository, `413` for a body over the limit, `503` when the build queue is full, and `429` with `Retry-After` when the failure window is exhausted or too many webhook deliveries are being processed.
+* Residual replay risk: an attacker who captures a valid delivery can replay it with a new delivery ID. While a build for that commit is queued or running it is rejected as a duplicate; after the build finishes, it can start another build of the same commit. This only affects a repository whose secret is already trusted, and a delivery ID cannot be made globally unique forever.
+* The endpoint must be reachable from GitHub, but the rest of cisys must not be. Expose only `/api/webhooks/git/*` through a reverse proxy or tunnel.
+
+**Trust boundary:** automatic execution still runs the pushed repository's code in a container on the backend host. The webhook signature proves the delivery came from someone who knows the project secret; it does not make the code safe. Enable automatic builds only for trusted repositories, and do not expose the rest of the application, until isolated build workers exist.
 
 ### Git credentials
 

@@ -126,6 +126,11 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | `PUBLIC_RATE_LIMIT_REQUESTS` | `120` | Anonymous requests per client per window; `0` disables the limiter |
 | `PUBLIC_RATE_LIMIT_WINDOW_SECONDS` | `60` | Length of the anonymous rate-limit window |
 | `PUBLIC_RATE_LIMIT_MAX_CLIENTS` | `10000` | Upper bound on tracked client addresses |
+| `WEBHOOK_MAX_BYTES` | `1048576` | Largest webhook delivery body that is read |
+| `WEBHOOK_FAILURE_LIMIT_REQUESTS` | `30` | Failed webhook authentications per project per window; `0` disables the throttle |
+| `WEBHOOK_FAILURE_LIMIT_WINDOW_SECONDS` | `60` | Length of the webhook failure window |
+| `WEBHOOK_FAILURE_LIMIT_MAX_CLIENTS` | `10000` | Upper bound on tracked project keys for the webhook throttle |
+| `WEBHOOK_MAX_CONCURRENT` | `64` | Webhook deliveries processed at once; excess requests get `429` |
 | `DB_URL`            | `jdbc:postgresql://localhost:5432/cisys` | JDBC URL                                             |
 | `DB_USER`           | `cisys`                                  | Database user                                        |
 | `DB_PASSWORD`       | `cisys`                                  | Database password                                    |

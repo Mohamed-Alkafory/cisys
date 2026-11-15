@@ -11,6 +11,9 @@ erDiagram
         BOOLEAN private_repository
         STRING owner_subject
         BIGINT build_counter
+        BOOLEAN webhook_enabled
+        STRING webhook_secret
+        STRING webhook_branches
     }
 
     BUILD {
@@ -19,6 +22,9 @@ erDiagram
         BIGINT number
         STRING requested_by
         STRING status
+        STRING trigger
+        STRING trigger_delivery
+        STRING trigger_actor
         STRING revision
         STRING branch
         STRING image
@@ -61,5 +67,6 @@ erDiagram
 * `BUILD.number` is unique within a project and taken from `PROJECT.build_counter`, which never goes back.
 * `BUILD.logoid` (type `lo`, from the `lo` extension) references the build log, stored as one PostgreSQL large object. It is not mapped in the `Build` entity. The `lo_manage` trigger unlinks the large object when the build is deleted, so no logs are orphaned.
 * `BUILD.status` is `QUEUED`, `RUNNING`, `PASSED`, `FAILED` or `CANCELLED`. `BUILD.cancel_requested` is set on a running build until the runner has stopped it.
+* `BUILD.trigger` is `MANUAL` or `PUSH`; a push build also stores the provider delivery ID and pusher name. `PROJECT.webhook_secret` is the HMAC secret for the project's GitHub webhook. A unique partial index keeps at most one `QUEUED` or `RUNNING` **push** build per project and commit; manual builds may share a commit.
 * `BRANDING` and `SETTINGS` are singleton rows with `id = 1`. Until `SETTINGS` is first saved, its defaults apply.
 * Users, roles and credentials live in Keycloak and are not stored in the cisys database.

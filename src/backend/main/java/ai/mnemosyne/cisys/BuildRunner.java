@@ -453,6 +453,32 @@ public class BuildRunner {
   }
 
   Build submit(Long projectId, String actor, String url, BuildResource.RunRequest request) {
+    return submit(
+        projectId,
+        actor,
+        url,
+        request.branch(),
+        request.credentialRef(),
+        null,
+        Build.Trigger.MANUAL,
+        null,
+        null);
+  }
+
+  /**
+   * Queues one build. A webhook passes the pushed commit as {@code revision} and the provider's
+   * delivery ID so a redelivery does not run the same build twice.
+   */
+  Build submit(
+      Long projectId,
+      String actor,
+      String url,
+      String branch,
+      String credentialRef,
+      String revision,
+      Build.Trigger trigger,
+      String deliveryId,
+      String triggerActor) {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           lockQueue();
@@ -470,8 +496,12 @@ public class BuildRunner {
           b.status = Build.Status.QUEUED;
           b.requestedAt = Instant.now();
           b.repositoryUrl = url;
-          b.branch = request.branch();
-          b.credentialRef = request.credentialRef();
+          b.branch = branch;
+          b.credentialRef = credentialRef;
+          b.revision = revision;
+          b.trigger = trigger == null ? Build.Trigger.MANUAL : trigger;
+          b.triggerDelivery = deliveryId;
+          b.triggerActor = triggerActor;
           b.persist();
           return b;
         });
@@ -535,7 +565,7 @@ public class BuildRunner {
   }
 
   void execute(Build b) {
-    run(b.id, b.repositoryUrl, new BuildResource.RunRequest(b.branch, b.credentialRef));
+    run(b.id, b.repositoryUrl, b.branch, b.credentialRef, b.revision);
   }
 
   @Inject HostResolver resolver;
@@ -637,11 +667,12 @@ public class BuildRunner {
             Build.count("status in ?1", List.of(Build.Status.QUEUED, Build.Status.RUNNING)) > 0);
   }
 
-  private void run(Long id, String url, BuildResource.RunRequest request) {
+  private void run(
+      Long id, String url, String branch, String credentialRef, String expectedRevision) {
     Path dir = null;
     String name = "cisys-build-" + id,
         prepare = name + "-prepare",
-        revision = null,
+        revision = expectedRevision,
         status = "FAILED",
         digest = null;
     Integer exit = null;
@@ -657,8 +688,8 @@ public class BuildRunner {
       String cloneUrl = RepositoryUrls.cloneUrl(url);
       repositoryUrls.validate(cloneUrl);
       UsernamePasswordCredentialsProvider credentials = null;
-      if (request.credentialRef() != null) {
-        String token = System.getenv(request.credentialRef());
+      if (credentialRef != null) {
+        String token = System.getenv(credentialRef);
         if (token == null || token.isBlank())
           throw new IllegalStateException("Missing Git credential");
         credentials = new UsernamePasswordCredentialsProvider("oauth2", token);
@@ -682,11 +713,12 @@ public class BuildRunner {
           Checkout.fetch(
               workspace,
               cloneUrl,
-              request.branch(),
+              branch,
               credentials,
               repositoryUrls.verifyTls(url),
               limits[0],
               limits[1],
+              expectedRevision,
               () -> handle.cancelled);
       // Shown while the build runs, not only once it finishes.
       String fetched = revision;

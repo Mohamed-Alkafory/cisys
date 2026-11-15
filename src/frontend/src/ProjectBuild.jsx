@@ -220,6 +220,12 @@ export default function ProjectBuild({
           <dl className="build-summary">
             <dt>Branch</dt>
             <dd>{build.branch || "Unknown"}</dd>
+            <dt>Trigger</dt>
+            <dd>
+              {build.trigger === "PUSH"
+                ? `Push${build.triggerActor ? ` by ${build.triggerActor}` : ""}`
+                : "Manual"}
+            </dd>
             <dt>Commit</dt>
             <dd>
               <code>{build.revision ?? "Unknown"}</code>

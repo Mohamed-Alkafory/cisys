@@ -185,3 +185,43 @@ BEGIN
         ALTER TABLE build ADD CONSTRAINT build_project_number UNIQUE (projectid, number);
     END IF;
 END $$;
+
+-- Push-triggered builds: the project owns the secret and the branch filter. The workflow file
+-- stays execution-only.
+ALTER TABLE project ADD COLUMN IF NOT EXISTS webhookenabled boolean NOT NULL DEFAULT false;
+ALTER TABLE project ADD COLUMN IF NOT EXISTS webhooksecret character varying(128);
+ALTER TABLE project ADD COLUMN IF NOT EXISTS webhookbranches character varying(1000);
+
+-- How a build was started. Existing builds were started by hand.
+ALTER TABLE build ADD COLUMN IF NOT EXISTS trigger character varying(20) NOT NULL DEFAULT 'MANUAL';
+ALTER TABLE build ADD COLUMN IF NOT EXISTS triggerdelivery character varying(100);
+ALTER TABLE build ADD COLUMN IF NOT EXISTS triggeractor character varying(255);
+-- A provider redelivery must not create a second build.
+CREATE UNIQUE INDEX IF NOT EXISTS build_webhook_delivery
+    ON build (projectid, triggerdelivery) WHERE triggerdelivery IS NOT NULL;
+-- Two deliveries for the same commit may race past the check in the service, so the database
+-- also keeps at most one active push build per project and commit. The index is scoped to PUSH:
+-- manual builds may share a revision (a user can start the same commit twice) and only update
+-- their revision once they are running. Dropping first also replaces an index created by an
+-- earlier revision of this file without the predicate; Flyway runs this script in one transaction.
+DROP INDEX IF EXISTS build_project_active_revision;
+DO $$
+BEGIN
+    -- An earlier revision of this schema could have created active duplicates. Keep one build,
+    -- preferring a running one, and fail the later ones so the unique index can always be created.
+    WITH ranked AS (
+        SELECT id,
+               status,
+               row_number() OVER (PARTITION BY projectid, revision
+                                  ORDER BY (status = 'RUNNING') DESC, id) AS seq
+        FROM build
+        WHERE trigger = 'PUSH' AND revision IS NOT NULL AND status IN ('QUEUED', 'RUNNING')
+    )
+    UPDATE build SET status = 'FAILED', finishedat = now(),
+                     cancelrequested = build.cancelrequested OR build.status = 'RUNNING'
+    WHERE id IN (SELECT id FROM ranked WHERE seq > 1);
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS build_project_active_revision
+    ON build (projectid, revision)
+    WHERE trigger = 'PUSH' AND revision IS NOT NULL AND status IN ('QUEUED', 'RUNNING');
+CREATE INDEX IF NOT EXISTS build_project_revision ON build (projectid, revision);
