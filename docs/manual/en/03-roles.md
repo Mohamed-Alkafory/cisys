@@ -6,15 +6,15 @@
 
 ## Member
 
-The **Member** role is the standard read-only role. Members can view public projects, and the build history and logs of the projects they can access.
+The **Member** role is the standard read-only role. Members can view public projects, the private projects they are assigned to, and the build history and logs of the projects they can access.
 
 ## Lead
 
-The **Lead** role is for people who run projects. Leads can do everything a member can, create projects, start manual builds on projects they can see, cancel the builds they started, and pin and cancel builds of the projects they created.
+The **Lead** role is for people who run projects. Leads can do everything a member can, create projects, start manual builds on projects they can see, cancel the builds they started, and pin and cancel builds of the projects they created. Leads also create members and assign members to the projects they created or are assigned to.
 
 ## Admin
 
-The **Admin** role manages the installation. Admins can see every project including private projects of other users, start, pin and cancel builds, use credential references for private Git repositories, manage the build images, change the branding, and change the settings such as build retention, the build queue, the hosts build steps may reach, the checkout limits and the build resource limits.
+The **Admin** role manages the installation. Admins can see every project including private projects of other users, manage every user, assign users to projects, start, pin and cancel builds, use credential references for private Git repositories, manage the build images, change the branding, and change the settings such as build retention, the build queue, the hosts build steps may reach, the checkout limits and the build resource limits.
 
 ## Access summary
 
@@ -22,6 +22,7 @@ The **Admin** role manages the installation. Admins can see every project includ
 | :---------------------------------- | :----- | :--- | :---- |
 | View public projects                | yes    | yes  | yes   |
 | View own private projects           | n/a    | yes  | yes   |
+| View assigned private projects      | yes    | yes  | yes   |
 | View other users' private projects  | no     | no   | yes   |
 | Create a project                    | no     | yes  | yes   |
 | View build history and logs         | yes    | yes  | yes   |
@@ -32,6 +33,10 @@ The **Admin** role manages the installation. Admins can see every project includ
 | Manage build images                 | no     | no   | yes   |
 | Change branding                     | no     | no   | yes   |
 | Change settings                     | no     | no   | yes   |
+| Create members                      | no     | yes  | yes   |
+| Create leads and admins             | no     | no   | yes   |
+| Assign users to projects            | no     | own  | yes   |
+| Change roles, disable, delete users | no     | no   | yes   |
 
 "View" always means projects the user may access. The address of a project or build that does not exist or is not visible to the user opens the front page instead, so a private project is not revealed; the same applies to any unknown address.
 

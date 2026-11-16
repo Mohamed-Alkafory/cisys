@@ -92,10 +92,7 @@ public class BuildResource {
     if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null)
       throw new NotAuthorizedException("Bearer");
     Project p = Project.findById(id);
-    if (p == null
-        || (p.privateRepository
-            && !identity.hasRole("admin")
-            && !jwt.getSubject().equals(p.ownerSubject))) throw new NotFoundException();
+    if (p == null || !access.canView(p)) throw new NotFoundException();
     return p;
   }
 

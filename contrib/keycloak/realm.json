@@ -109,7 +109,9 @@
       "serviceAccountClientId": "cisys-backend",
       "clientRoles": {
         "realm-management": [
-          "manage-users"
+          "manage-users",
+          "view-users",
+          "view-realm"
         ]
       }
     }

@@ -9,7 +9,7 @@ A **project** registers a Git repository with cisys so that it can be built.
 ## Visibility
 
 * **Public** projects are visible to every signed-in user.
-* **Private** projects are visible only to their creator and to admins.
+* **Private** projects are visible only to their creator, the users assigned to them and admins. Users are assigned on the Users page.
 
 The private flag controls visibility of the project and its build logs inside cisys. It does not grant or restrict access to the Git repository itself.
 

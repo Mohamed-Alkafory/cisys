@@ -17,8 +17,8 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 
 /**
  * Visibility rules shared by project pages, their builds, logs and branches. Private projects are
- * only readable by their owner and admins; everyone else gets a 404, so the existence of a private
- * project is not revealed.
+ * only readable by their owner, the users assigned to them and admins; everyone else gets a 404, so
+ * the existence of a private project is not revealed.
  */
 @ApplicationScoped
 public class ProjectAccess {
@@ -32,8 +32,18 @@ public class ProjectAccess {
     Project p =
         Project.<Project>find("lower(name) = ?1", name.trim().toLowerCase(Locale.ROOT))
             .firstResult();
-    if (p == null || (p.privateRepository && !canSeePrivate(p))) throw new NotFoundException();
+    if (p == null || !canView(p)) throw new NotFoundException();
     return p;
+  }
+
+  /**
+   * Public projects, and private ones for {@link #canSeePrivate} and the users assigned to them.
+   */
+  boolean canView(Project p) {
+    if (!p.privateRepository || canSeePrivate(p)) return true;
+    return hasCisysRole()
+        && identity.getPrincipal() instanceof JsonWebToken jwt
+        && ProjectMember.isMember(p.id, jwt.getSubject());
   }
 
   /**
@@ -43,9 +53,13 @@ public class ProjectAccess {
     if (identity.isAnonymous()
         || !(identity.getPrincipal() instanceof JsonWebToken jwt)
         || jwt.getSubject() == null) return false;
-    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin")))
-      return false;
+    if (!hasCisysRole()) return false;
     return identity.hasRole("admin") || jwt.getSubject().equals(p.ownerSubject);
+  }
+
+  private boolean hasCisysRole() {
+    return !identity.isAnonymous()
+        && (identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"));
   }
 
   /** Whether the build is queued or running and {@link #mayCancel} allows it. */

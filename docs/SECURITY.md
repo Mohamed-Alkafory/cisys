@@ -14,14 +14,14 @@ The default users installed by `contrib/keycloak/realm.json` in the development 
 * Lead: `lead` / `lead`
 * Admin: `admin` / `admin`
 
-The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin`. The `cisys-backend` service account, which signs users out when cisys shuts down, uses the secret `cisys` and can manage the realm's users. Replace all of these credentials before any shared deployment.
+The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin`. The `cisys-backend` service account, which signs users out when cisys shuts down and manages users for the Users page, uses the secret `cisys` and needs the realm-management roles `manage-users`, `view-users` and `view-realm`. A realm imported before these roles were added to `contrib/keycloak/realm.json` needs them granted in the Keycloak admin console, or `make reset`. Replace all of these credentials before any shared deployment.
 
 ### Role-to-endpoint mapping
 
 | Endpoint                                  | Member                    | Lead                 | Admin |
 | :---------------------------------------- | :------------------------ | :------------------- | :---- |
 | `GET /api/session`                        | yes                       | yes                  | yes   |
-| `GET /api/projects`                       | public projects           | public and own       | all   |
+| `GET /api/projects`                       | public and assigned       | public, own and assigned | all |
 | `POST /api/projects`                      | no                        | yes                  | yes   |
 | `GET /api/projects/{id}/builds[/{id}]`    | visible projects          | visible projects     | all   |
 | `GET /api/projects/{id}/branches`         | visible projects          | visible projects     | all   |
@@ -37,10 +37,15 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `GET /api/images` (allowed images)        | yes                       | yes                  | yes   |
 | `PUT /api/images`                         | no                        | no                   | yes   |
 | `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |
+| `GET /api/users`, `GET /api/users/projects` | no                      | users of own projects; members when searching | all |
+| `POST /api/users`                         | no                        | members in own projects | yes |
+| `PUT /api/users/{id}`                     | no                        | a member's own projects | yes |
+| `PUT /api/users/{id}/password`            | no                        | members of own projects | yes |
+| `DELETE /api/users/{id}`                  | no                        | no                   | yes, not themselves |
 
-Without signing in, `GET /api/branding/public`, `GET /api/branding/logo`, `GET /api/stats/public`, the public project page (`GET /api/project-pages/{name}`, `GET /api/project-pages/{name}/builds/{buildId}` and its build logs) and `GET /api/project-pages/{name}/branches` for public projects are readable. The project page accepts an optional `branch` query parameter, which filters the builds but applies the same public/private visibility rules. The statistics are aggregate counts computed from public projects only (public projects, their builds by status, success rate, last build time). Private projects and their builds are left out of every number, and no names, repository URLs, logs or users are exposed. The server caches the result for `STATS_CACHE_SECONDS` (default 30) seconds. The branch endpoint returns remote branch names for public projects. For private projects it requires the same owner/admin access as the page and returns only the branches that already have builds, so the private repository is never read; anonymous callers and users without access receive `404`.
+Without signing in, `GET /api/branding/public`, `GET /api/branding/logo`, `GET /api/stats/public`, the public project page (`GET /api/project-pages/{name}`, `GET /api/project-pages/{name}/builds/{buildId}` and its build logs) and `GET /api/project-pages/{name}/branches` for public projects are readable. The project page accepts an optional `branch` query parameter, which filters the builds but applies the same public/private visibility rules. The statistics are aggregate counts computed from public projects only (public projects, their builds by status, success rate, last build time). Private projects and their builds are left out of every number, and no names, repository URLs, logs or users are exposed. The server caches the result for `STATS_CACHE_SECONDS` (default 30) seconds. The branch endpoint returns remote branch names for public projects. For private projects it requires the same access as the page (owner, assigned user or admin) and returns only the branches that already have builds, so the private repository is never read; anonymous callers and users without access receive `404`.
 
-Private projects (and their build history and logs) are visible only to their creator and admins. Ownership is recorded with the immutable Keycloak subject (`sub`), not the user name. A project that is not visible to the caller is reported as `404 Not Found`.
+Private projects (and their build history and logs) are visible only to their creator, the users assigned to them and admins. A lead's own projects are the ones they created or are assigned to. Ownership is recorded with the immutable Keycloak subject (`sub`), not the user name. A project that is not visible to the caller is reported as `404 Not Found`.
 
 User subjects are returned to admins only:
 

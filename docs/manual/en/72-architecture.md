@@ -86,4 +86,4 @@ erDiagram
     PROJECT ||--o{ BUILD : has
 ```
 
-Users and roles are managed in Keycloak; `owner_subject` and `requested_by` hold the Keycloak subject.
+Users and roles are stored in Keycloak and managed from the Users page through the Keycloak Admin REST API; `owner_subject`, `requested_by` and `projectmember.subject` hold the Keycloak subject.

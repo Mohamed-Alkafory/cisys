@@ -66,8 +66,15 @@ erDiagram
         INTEGER poll_interval_seconds
     }
 
+    PROJECT_MEMBER {
+        BIGINT id PK
+        BIGINT project_id FK
+        STRING subject
+    }
+
     PROJECT ||--o{ BUILD : has
     PROJECT ||--o{ PROJECT_BRANCH : watches
+    PROJECT ||--o{ PROJECT_MEMBER : assigns
 ```
 
 * `PROJECT.owner_subject` and `BUILD.requested_by` hold the Keycloak subject (`sub`) of the user.
@@ -79,4 +86,5 @@ erDiagram
 * `PROJECT_BRANCH` is the automatic-build cursor: the last commit cisys queued for each watched branch. A missing row makes the branch seed its tip on the next poll without building anything. The row is removed when the branch disappears, its tip loses the workflow file, or automatic builds are turned off.
 * `SETTINGS.poll_enabled` (default true), `poll_granularity` (`PER_COMMIT` or `TIP`), `poll_scope` (`WORKFLOW` or `MAIN_ONLY`) and `poll_interval_seconds` (null uses `cisys.poll.every`) hold the global automatic-build settings.
 * `BRANDING` and `SETTINGS` are singleton rows with `id = 1`. Until `SETTINGS` is first saved, its defaults apply.
-* Users, roles and credentials live in Keycloak and are not stored in the cisys database.
+* `PROJECT_MEMBER.subject` is the Keycloak subject of a user assigned to the project; a subject is assigned once per project, and the rows are deleted with the project.
+* Users, roles and credentials live in Keycloak and are not stored in the cisys database. The Users page changes them through the Keycloak Admin REST API.

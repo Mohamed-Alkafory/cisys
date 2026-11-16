@@ -44,6 +44,7 @@ import AppFooter from "./components/layout/AppFooter";
 import PageHeader from "./components/layout/PageHeader";
 import ImagesPanel from "./ImagesPanel";
 import SettingsPanel from "./SettingsPanel";
+import UsersPanel from "./UsersPanel";
 import PublicHome from "./PublicHome";
 import PublicStats from "./PublicStats";
 import ProjectBuilds, {
@@ -438,6 +439,7 @@ function App() {
       </main>
     );
   const canCreate = user.roles.includes("lead") || user.roles.includes("admin");
+  const canManageUsers = canCreate;
   // Admins may delete any project; leads only the projects they own.
   const canDelete = (project) =>
     user.roles.includes("admin") ||
@@ -508,6 +510,18 @@ function App() {
                 onClick={() => go("images")}
               >
                 Images
+              </button>
+            )}
+            {canManageUsers && (
+              <button
+                type="button"
+                className="nav-link"
+                aria-current={
+                  projectName === null && page === "users" ? "page" : undefined
+                }
+                onClick={() => go("users")}
+              >
+                Users
               </button>
             )}
             {user.roles.includes("admin") && (
@@ -618,6 +632,8 @@ function App() {
         </main>
       ) : page === "images" && user.roles.includes("admin") ? (
         <ImagesPanel api={api} />
+      ) : page === "users" && canManageUsers ? (
+        <UsersPanel api={api} user={user} />
       ) : page === "settings" && user.roles.includes("admin") ? (
         <SettingsPanel
           api={api}

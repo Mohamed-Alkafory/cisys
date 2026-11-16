@@ -31,6 +31,7 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 public class BranchResource {
   @Inject SecurityIdentity identity;
   @Inject GitRepositoryService repositories;
+  @Inject ProjectAccess access;
 
   /** The branch names, or none and the reason, such as {@code private_repository}. */
   public record Branches(List<String> branches, String reason) {}
@@ -41,10 +42,7 @@ public class BranchResource {
     if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null)
       throw new NotAuthorizedException("Bearer");
     Project p = Project.findById(id);
-    if (p == null
-        || (p.privateRepository
-            && !identity.hasRole("admin")
-            && !jwt.getSubject().equals(p.ownerSubject))) throw new NotFoundException();
+    if (p == null || !access.canView(p)) throw new NotFoundException();
     return p;
   }
 

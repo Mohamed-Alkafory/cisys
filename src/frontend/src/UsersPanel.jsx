@@ -1,0 +1,556 @@
+/*
+ * Eclipse Public License - v 2.0
+ *
+ *   THE ACCOMPANYING PROGRAM IS PROVIDED UNDER THE TERMS OF THIS ECLIPSE
+ *   PUBLIC LICENSE ("AGREEMENT"). ANY USE, REPRODUCTION OR DISTRIBUTION
+ *   OF THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
+ */
+
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  KeyRound,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
+import { Badge } from "./components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
+import PageHeader from "./components/layout/PageHeader";
+
+const ROLES = ["member", "lead", "admin"];
+const PAGE_SIZE = 50;
+const SELECT =
+  "h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm";
+const EMPTY = {
+  username: "",
+  email: "",
+  firstName: "",
+  lastName: "",
+  password: "",
+  role: "member",
+  projectIds: [],
+};
+
+function ProjectChoice({ projects, value, onChange, idPrefix }) {
+  if (projects.length === 0) return <span>—</span>;
+  const toggle = (id) =>
+    onChange(
+      value.includes(id) ? value.filter((p) => p !== id) : [...value, id],
+    );
+  return (
+    <div className="user-projects">
+      {projects.map((p) => (
+        <label key={p.id} htmlFor={`${idPrefix}-${p.id}`}>
+          <input
+            id={`${idPrefix}-${p.id}`}
+            type="checkbox"
+            checked={value.includes(p.id)}
+            onChange={() => toggle(p.id)}
+          />
+          {p.name}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+export default function UsersPanel({ api, user }) {
+  const admin = user.roles.includes("admin");
+  const [page, setPage] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [search, setSearch] = useState("");
+  const [role, setRole] = useState("");
+  const [project, setProject] = useState("");
+  const [first, setFirst] = useState(0);
+  const [draft, setDraft] = useState(EMPTY);
+  const [editing, setEditing] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    const query = new URLSearchParams({ first, max: PAGE_SIZE });
+    if (search.trim()) query.set("search", search.trim());
+    if (role) query.set("role", role);
+    if (project) query.set("project", project);
+    setPage(await api(`/users?${query}`));
+  }, [api, first, search, role, project]);
+
+  useEffect(() => {
+    api("/users/projects")
+      .then(setProjects)
+      .catch((e) => setError(e.message));
+  }, [api]);
+
+  useEffect(() => {
+    const timer = setTimeout(
+      () => load().catch((e) => setError(e.message)),
+      200,
+    );
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  async function run(action) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function add(event) {
+    event.preventDefault();
+    void run(async () => {
+      await api("/users", {
+        method: "POST",
+        body: JSON.stringify({ ...draft, role: admin ? draft.role : "member" }),
+      });
+      setDraft(EMPTY);
+      await load();
+    });
+  }
+
+  function save(event) {
+    event.preventDefault();
+    const body = admin ? editing : { projectIds: editing.projectIds };
+    void run(async () => {
+      await api(`/users/${editing.id}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      setEditing(null);
+      await load();
+    });
+  }
+
+  function resetPassword(u) {
+    const password = window.prompt(`Temporary password for ${u.username}`);
+    if (!password) return;
+    void run(() =>
+      api(`/users/${u.id}/password`, {
+        method: "PUT",
+        body: JSON.stringify({ password }),
+      }),
+    );
+  }
+
+  function remove(u) {
+    if (!window.confirm(`Delete ${u.username}? This cannot be undone.`)) return;
+    void run(async () => {
+      await api(`/users/${u.id}`, { method: "DELETE" });
+      await load();
+    });
+  }
+
+  function filter(setter) {
+    return (e) => {
+      setter(e.target.value);
+      setFirst(0);
+    };
+  }
+
+  const total = page?.total ?? 0;
+  const canAdd = admin || projects.length > 0;
+
+  return (
+    <main id="users" className="page-container">
+      <PageHeader
+        title="Users"
+        actions={
+          <Badge variant="outline">
+            {total} {total === 1 ? "user" : "users"}
+          </Badge>
+        }
+      />
+      {error && (
+        <div className="error-message" role="alert">
+          {error}
+        </div>
+      )}
+      {canAdd && (
+        <Card className="project-card">
+          <CardHeader>
+            <CardTitle>Add a user</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="user-add" onSubmit={add}>
+              <div className="form-field">
+                <Label htmlFor="user-username">User name</Label>
+                <Input
+                  id="user-username"
+                  required
+                  maxLength="100"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={draft.username}
+                  onChange={(e) =>
+                    setDraft({ ...draft, username: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-field">
+                <Label htmlFor="user-first">First name</Label>
+                <Input
+                  id="user-first"
+                  maxLength="100"
+                  value={draft.firstName}
+                  onChange={(e) =>
+                    setDraft({ ...draft, firstName: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-field">
+                <Label htmlFor="user-last">Last name</Label>
+                <Input
+                  id="user-last"
+                  maxLength="100"
+                  value={draft.lastName}
+                  onChange={(e) =>
+                    setDraft({ ...draft, lastName: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-field">
+                <Label htmlFor="user-email">Email</Label>
+                <Input
+                  id="user-email"
+                  type="email"
+                  maxLength="254"
+                  value={draft.email}
+                  onChange={(e) =>
+                    setDraft({ ...draft, email: e.target.value })
+                  }
+                />
+              </div>
+              <div className="form-field">
+                <Label htmlFor="user-password">Password</Label>
+                <Input
+                  id="user-password"
+                  type="password"
+                  required
+                  maxLength="255"
+                  autoComplete="new-password"
+                  value={draft.password}
+                  onChange={(e) =>
+                    setDraft({ ...draft, password: e.target.value })
+                  }
+                />
+              </div>
+              {admin && (
+                <div className="form-field">
+                  <Label htmlFor="user-role">Role</Label>
+                  <select
+                    id="user-role"
+                    className={SELECT}
+                    value={draft.role}
+                    onChange={(e) =>
+                      setDraft({ ...draft, role: e.target.value })
+                    }
+                  >
+                    {ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="form-field">
+                <Label>Projects</Label>
+                <ProjectChoice
+                  projects={projects}
+                  value={draft.projectIds}
+                  idPrefix="new-user-project"
+                  onChange={(projectIds) => setDraft({ ...draft, projectIds })}
+                />
+              </div>
+              <Button
+                type="submit"
+                size="icon"
+                className="h-10 w-10 justify-self-end self-end"
+                disabled={busy || (!admin && draft.projectIds.length === 0)}
+                title="Add user"
+                aria-label="Add user"
+              >
+                <Plus size={16} aria-hidden="true" />
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+      <Card className="project-card">
+        <CardHeader>
+          <CardTitle>Users</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="user-filters">
+            <Input
+              aria-label="Search users"
+              type="search"
+              placeholder="Search"
+              value={search}
+              onChange={filter(setSearch)}
+            />
+            {admin && (
+              <select
+                aria-label="Role"
+                className={SELECT}
+                value={role}
+                onChange={filter(setRole)}
+              >
+                <option value="">All roles</option>
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              aria-label="Project"
+              className={SELECT}
+              value={project}
+              onChange={filter(setProject)}
+            >
+              <option value="">{admin ? "All projects" : "My projects"}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {page === null ? (
+            !error && <p role="status">Loading users…</p>
+          ) : page.users.length === 0 ? (
+            <div className="empty-state">
+              <Users size={28} aria-hidden="true" />
+              <strong>No users</strong>
+            </div>
+          ) : (
+            page.users.map((u) =>
+              editing?.id === u.id ? (
+                <form className="user-row" key={u.id} onSubmit={save}>
+                  <strong className="project-name">{u.username}</strong>
+                  {admin ? (
+                    <div className="user-edit">
+                      <Input
+                        aria-label="Email"
+                        type="email"
+                        maxLength="254"
+                        value={editing.email}
+                        onChange={(e) =>
+                          setEditing({ ...editing, email: e.target.value })
+                        }
+                      />
+                      <Input
+                        aria-label="First name"
+                        maxLength="100"
+                        value={editing.firstName}
+                        onChange={(e) =>
+                          setEditing({ ...editing, firstName: e.target.value })
+                        }
+                      />
+                      <Input
+                        aria-label="Last name"
+                        maxLength="100"
+                        value={editing.lastName}
+                        onChange={(e) =>
+                          setEditing({ ...editing, lastName: e.target.value })
+                        }
+                      />
+                      <select
+                        aria-label="Role"
+                        className={SELECT}
+                        value={editing.role}
+                        onChange={(e) =>
+                          setEditing({ ...editing, role: e.target.value })
+                        }
+                      >
+                        {editing.role === "" && <option value="">—</option>}
+                        {ROLES.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                      <label className="user-enabled">
+                        <input
+                          type="checkbox"
+                          checked={editing.enabled}
+                          onChange={(e) =>
+                            setEditing({
+                              ...editing,
+                              enabled: e.target.checked,
+                            })
+                          }
+                        />
+                        Enabled
+                      </label>
+                    </div>
+                  ) : (
+                    <span />
+                  )}
+                  <ProjectChoice
+                    projects={projects}
+                    value={editing.projectIds}
+                    idPrefix={`user-${u.id}-project`}
+                    onChange={(projectIds) =>
+                      setEditing({ ...editing, projectIds })
+                    }
+                  />
+                  <div className="user-actions">
+                    <span aria-hidden="true" />
+                    <Button
+                      type="submit"
+                      size="icon"
+                      className="h-10 w-10"
+                      disabled={busy}
+                      title="Save user"
+                      aria-label={`Save ${u.username}`}
+                    >
+                      <Check size={16} aria-hidden="true" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="outline"
+                      className="h-10 w-10"
+                      title="Cancel"
+                      aria-label="Cancel"
+                      onClick={() => setEditing(null)}
+                    >
+                      <X size={16} aria-hidden="true" />
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <div className="user-row" key={u.id}>
+                  <div className="project-name">
+                    <strong>{u.username}</strong>
+                    {!u.enabled && (
+                      <Badge variant="outline" className="ml-2">
+                        Disabled
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="project-url">
+                    {[u.firstName, u.lastName].filter(Boolean).join(" ")}
+                    {u.email && <span className="user-email">{u.email}</span>}
+                  </p>
+                  <div className="user-tags">
+                    {u.role && <Badge variant="outline">{u.role}</Badge>}
+                    {u.projects.map((p) => (
+                      <Badge key={p.id} variant="secondary">
+                        {p.name}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="user-actions">
+                    {u.manageable ? (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-10 w-10"
+                        disabled={busy}
+                        title="Edit user"
+                        aria-label={`Edit ${u.username}`}
+                        onClick={() =>
+                          setEditing({
+                            id: u.id,
+                            email: u.email ?? "",
+                            firstName: u.firstName ?? "",
+                            lastName: u.lastName ?? "",
+                            role: u.role ?? "",
+                            enabled: u.enabled,
+                            projectIds: u.projects.map((p) => p.id),
+                          })
+                        }
+                      >
+                        <Pencil size={16} aria-hidden="true" />
+                      </Button>
+                    ) : (
+                      <span aria-hidden="true" />
+                    )}
+                    {u.manageable && (admin || u.projects.length > 0) ? (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-10 w-10"
+                        disabled={busy}
+                        title="Set temporary password"
+                        aria-label={`Set temporary password for ${u.username}`}
+                        onClick={() => resetPassword(u)}
+                      >
+                        <KeyRound size={16} aria-hidden="true" />
+                      </Button>
+                    ) : (
+                      <span aria-hidden="true" />
+                    )}
+                    {admin && u.id !== user.subject ? (
+                      <Button
+                        type="button"
+                        size="icon"
+                        className="h-10 w-10"
+                        disabled={busy}
+                        title="Delete user"
+                        aria-label={`Delete ${u.username}`}
+                        onClick={() => remove(u)}
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </Button>
+                    ) : (
+                      <span aria-hidden="true" />
+                    )}
+                  </div>
+                </div>
+              ),
+            )
+          )}
+          {total > PAGE_SIZE && (
+            <div className="user-paging">
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                disabled={first === 0}
+                title="Previous page"
+                aria-label="Previous page"
+                onClick={() => setFirst(Math.max(0, first - PAGE_SIZE))}
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+              </Button>
+              <span>
+                {first + 1}–{Math.min(first + PAGE_SIZE, total)} of {total}
+              </span>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                disabled={first + PAGE_SIZE >= total}
+                title="Next page"
+                aria-label="Next page"
+                onClick={() => setFirst(first + PAGE_SIZE)}
+              >
+                <ChevronRight size={16} aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </main>
+  );
+}

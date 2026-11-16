@@ -108,7 +108,7 @@ public class ProjectResource {
         identity.getRoles());
   }
 
-  /** All projects for admins; public and owned projects for everyone else. */
+  /** All projects for admins; public, owned and assigned projects for everyone else. */
   @GET
   @Path("/projects")
   public List<ProjectResponse> list() {
@@ -116,7 +116,10 @@ public class ProjectResource {
     List<Project> projects =
         identity.hasRole("admin")
             ? Project.listAll()
-            : Project.list("privateRepository = false or ownerSubject = ?1", subject());
+            : Project.list(
+                "privateRepository = false or ownerSubject = ?1 or id in (select m.projectId from"
+                    + " ProjectMember m where m.subject = ?1)",
+                subject());
     return projects.stream().map(this::response).toList();
   }
 

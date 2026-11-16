@@ -216,3 +216,15 @@ CREATE SEQUENCE IF NOT EXISTS projectbranch_seq START WITH 1 INCREMENT BY 50;
 CREATE UNIQUE INDEX IF NOT EXISTS build_project_poll_revision
     ON build (projectid, revision)
     WHERE trigger = 'POLL' AND revision IS NOT NULL;
+
+-- Users assigned to a project, by Keycloak subject; the users themselves live in Keycloak.
+CREATE TABLE IF NOT EXISTS projectmember (
+    id bigint NOT NULL,
+    projectid bigint NOT NULL,
+    subject character varying(255) NOT NULL,
+    CONSTRAINT projectmember_pkey PRIMARY KEY (id),
+    CONSTRAINT projectmember_project_subject UNIQUE (projectid, subject),
+    CONSTRAINT projectmember_project FOREIGN KEY (projectid) REFERENCES project (id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS projectmember_subject ON projectmember (subject);
+CREATE SEQUENCE IF NOT EXISTS projectmember_seq START WITH 1 INCREMENT BY 50;
