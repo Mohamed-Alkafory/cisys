@@ -41,6 +41,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 public class CommitPoller {
   @Inject RepositoryMirror mirrors;
   @Inject BuildRunner builds;
+  @Inject PullRequestPoller pullRequests;
 
   @ConfigProperty(name = "cisys.poll.every", defaultValue = "60s")
   Duration pollEvery;
@@ -103,10 +104,13 @@ public class CommitPoller {
   /** One polling pass. Returns the number of builds queued; direct entry point for tests. */
   public int poll() {
     Settings settings = QuarkusTransaction.requiringNew().call(Settings::current);
-    if (!settings.pollEnabled) {
+    if (!settings.pollEnabled && !settings.pullRequestsEnabled) {
       cleanUpDisabled();
       return 0;
     }
+    // Turning branch polling off resets the branch cursors, so a later enable seeds instead of
+    // building what happened while it was off. The mirror is kept while pull request builds run.
+    if (!settings.pollEnabled) resetBranchCursors();
     List<Project> projects = QuarkusTransaction.requiringNew().call(() -> Project.listAll());
     int queued = 0;
     Set<Long> live = new HashSet<>();
@@ -148,12 +152,19 @@ public class CommitPoller {
       }
       return 0;
     }
-    try {
-      return enqueue(project, settings);
-    } catch (Exception e) {
-      readFailure(project, "-", e);
-      return 0;
+    int queued = 0;
+    if (settings.pollEnabled) {
+      try {
+        queued += enqueue(project, settings);
+      } catch (Exception e) {
+        readFailure(project, "-", e);
+      }
     }
+    // Re-read under the project lock: a concurrent disable may have been committed after this
+    // tick captured its settings, and a disabled feature must not recreate cursors.
+    if (settings.pullRequestsEnabled && pullRequestsEnabled())
+      queued += pullRequests.pollProject(project);
+    return queued;
   }
 
   private int enqueue(Project project, Settings settings) throws Exception {
@@ -202,6 +213,11 @@ public class CommitPoller {
     while (root.getCause() != null && root.getCause() != root) root = root.getCause();
     String message = root.getMessage();
     return message == null || message.isBlank() ? root.getClass().getSimpleName() : message;
+  }
+
+  /** Clears every branch cursor while branch polling is off, without touching any mirror. */
+  private void resetBranchCursors() {
+    QuarkusTransaction.requiringNew().run(() -> ProjectBranch.deleteAll());
   }
 
   private void removeCursor(Long projectId, String branch) {
@@ -274,7 +290,9 @@ public class CommitPoller {
             project.credentialRef,
             commit,
             Build.Trigger.POLL,
-            "poll");
+            "poll",
+            null,
+            null);
       } catch (NotFoundException e) {
         Log.debugf("Project %d was deleted during polling", project.id);
         stopped = true;
@@ -307,15 +325,25 @@ public class CommitPoller {
     return e.getResponse() != null && e.getResponse().getStatus() == 429;
   }
 
+  /**
+   * A commit already built by the poller, or covered by a pull request build, is not polled again.
+   * A manual build, whatever its status, never stops the poller.
+   */
   private boolean alreadyBuilt(Long projectId, String revision) {
     return QuarkusTransaction.requiringNew()
         .call(() ->
             Build.count(
-                    "projectId = ?1 and revision = ?2 and trigger = ?3",
+                    "projectId = ?1 and revision = ?2 and (trigger = ?3 or trigger = ?4)",
                     projectId,
                     revision,
-                    Build.Trigger.POLL)
+                    Build.Trigger.POLL,
+                    Build.Trigger.PULL_REQUEST)
                 > 0);
+  }
+
+  /** The committed value of the pull request switch, read under the project lock. */
+  private boolean pullRequestsEnabled() {
+    return QuarkusTransaction.requiringNew().call(() -> Settings.current().pullRequestsEnabled);
   }
 
   private void advance(Long projectId, String branch, String revision) {
@@ -341,7 +369,8 @@ public class CommitPoller {
       ReentrantLock lock = mirrors.lock(project.id);
       if (!tryLock(lock)) continue;
       try {
-        if (hasActivePoll(project.id)) continue;
+        pullRequests.disableProject(project.id);
+        if (hasActiveBuild(project.id)) continue;
         mirrors.delete(project.id);
         QuarkusTransaction.requiringNew().run(() -> ProjectBranch.delete("projectId", project.id));
         fetchFailures.remove(project.id);
@@ -375,7 +404,7 @@ public class CommitPoller {
         ReentrantLock lock = mirrors.lock(id);
         if (!tryLock(lock)) continue;
         try {
-          if (hasActivePoll(id)) continue;
+          if (hasActiveBuild(id)) continue;
           mirrors.delete(id);
         } finally {
           lock.unlock();
@@ -394,13 +423,13 @@ public class CommitPoller {
     }
   }
 
-  private boolean hasActivePoll(Long projectId) {
+  private boolean hasActiveBuild(Long projectId) {
     return QuarkusTransaction.requiringNew()
         .call(() ->
             Build.count(
-                    "projectId = ?1 and trigger = ?2 and status in ?3",
+                    "projectId = ?1 and trigger in ?2 and status in ?3",
                     projectId,
-                    Build.Trigger.POLL,
+                    List.of(Build.Trigger.POLL, Build.Trigger.PULL_REQUEST),
                     List.of(Build.Status.QUEUED, Build.Status.RUNNING))
                 > 0);
   }

@@ -18,6 +18,7 @@ import { Separator } from "./components/ui/separator";
 import PageHeader from "./components/layout/PageHeader";
 import BrandingPanel from "./BrandingPanel";
 import PollingPanel from "./PollingPanel";
+import PullRequestPanel from "./PullRequestPanel";
 
 const SECTIONS = {
   retention: {
@@ -232,6 +233,8 @@ export default function SettingsPanel({ api, branding, saveBranding }) {
               <>
                 <Separator className="my-6" />
                 <PollingPanel api={api} />
+                <Separator className="my-6" />
+                <PullRequestPanel api={api} />
                 <Separator className="my-6" />
               </>
             )}

@@ -57,6 +57,8 @@ public class BuildResource {
       boolean pinned,
       Build.Trigger trigger,
       @JsonInclude(JsonInclude.Include.NON_NULL) String triggerActor,
+      @JsonInclude(JsonInclude.Include.NON_NULL) String pullRequestProvider,
+      @JsonInclude(JsonInclude.Include.NON_NULL) Integer pullRequest,
       @JsonInclude(JsonInclude.Include.NON_NULL) String workflow) {}
 
   private BuildResponse response(Build build) {
@@ -83,6 +85,8 @@ public class BuildResource {
         build.pinned,
         build.trigger == null ? Build.Trigger.MANUAL : build.trigger,
         build.triggerActor,
+        build.pullRequestProvider,
+        build.pullRequest,
         withWorkflow ? build.workflow : null);
   }
 

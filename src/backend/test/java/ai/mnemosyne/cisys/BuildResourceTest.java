@@ -283,6 +283,51 @@ class BuildResourceTest {
   @Test
   @TestSecurity(user = "member", roles = "member")
   @JwtSecurity(claims = @Claim(key = "sub", value = "other-id"))
+  void buildHistoryReturnsTheStoredPullRequestIdentity() {
+    Long projectId = project(false);
+    Long buildId =
+        QuarkusTransaction.requiringNew()
+            .call(() -> {
+              Build b = new Build();
+              b.projectId = projectId;
+              b.number = Build.nextNumber(projectId);
+              b.status = Build.Status.PASSED;
+              b.branch = "feature";
+              b.trigger = Build.Trigger.PULL_REQUEST;
+              b.pullRequest = 7;
+              b.pullRequestProvider = "GITLAB";
+              b.revision = "a".repeat(40);
+              b.persist();
+              return b.id;
+            });
+    String path = "/api/projects/" + projectId + "/builds";
+    given()
+        .get(path)
+        .then()
+        .statusCode(200)
+        .body(
+            "[0].trigger",
+            equalTo("PULL_REQUEST"),
+            "[0].pullRequest",
+            equalTo(7),
+            "[0].pullRequestProvider",
+            equalTo("GITLAB"));
+    given()
+        .get(path + "/" + buildId)
+        .then()
+        .statusCode(200)
+        .body(
+            "trigger",
+            equalTo("PULL_REQUEST"),
+            "pullRequest",
+            equalTo(7),
+            "pullRequestProvider",
+            equalTo("GITLAB"));
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "other-id"))
   void buildHistoryHidesCredentialReferenceAndSupportsLegacyBuilds() {
     Long projectId = project(false);
     Long buildId =

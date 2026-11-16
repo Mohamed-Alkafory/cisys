@@ -26,7 +26,13 @@ import {
 import PageHeader from "./components/layout/PageHeader";
 import BuildStatus from "./BuildStatus";
 import { BuildLogPanel } from "./BuildLogView";
-import { duration, startedAt } from "./build-format";
+import {
+  duration,
+  pullRequestKind,
+  pullRequestLabel,
+  startedAt,
+  triggerLabel,
+} from "./build-format";
 
 /**
  * Text that may span several lines. More than one line is folded to its first line, with a
@@ -221,7 +227,18 @@ export default function ProjectBuild({
             <dt>Branch</dt>
             <dd>{build.branch || "Unknown"}</dd>
             <dt>Trigger</dt>
-            <dd>{build.trigger === "POLL" ? "Poll" : "Manual"}</dd>
+            <dd>{triggerLabel(build.trigger, build.pullRequestProvider)}</dd>
+            {build.pullRequest != null && (
+              <>
+                <dt>{pullRequestKind(build.pullRequestProvider)}</dt>
+                <dd>
+                  {pullRequestLabel(
+                    build.pullRequestProvider,
+                    build.pullRequest,
+                  )}
+                </dd>
+              </>
+            )}
             <dt>Commit</dt>
             <dd>
               <code>{build.revision ?? "Unknown"}</code>

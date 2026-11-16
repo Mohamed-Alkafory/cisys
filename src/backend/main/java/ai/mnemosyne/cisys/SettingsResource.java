@@ -11,6 +11,7 @@ package ai.mnemosyne.cisys;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
+import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
@@ -46,6 +47,7 @@ public class SettingsResource {
   @Inject SecurityIdentity identity;
   @Inject BuildRunner runner;
   @Inject CommitPoller polls;
+  @Inject PullRequestPoller pullRequests;
 
   /** 0 turns a limit off. */
   public record Retention(Integer maxAgeDays, Integer maxBuilds) {}
@@ -67,6 +69,9 @@ public class SettingsResource {
       Settings.Granularity granularity,
       Settings.Scope scope,
       Integer intervalSeconds) {}
+
+  /** Whether pull request and merge request builds are enabled. */
+  public record PullRequests(Boolean enabled) {}
 
   /** The retention limits. */
   @GET
@@ -245,6 +250,48 @@ public class SettingsResource {
     s.pollScope = input.scope();
     s.pollIntervalSeconds = input.intervalSeconds();
     return new Polling(s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s));
+  }
+
+  /** The pull request build setting. */
+  @GET
+  @Path("/pull-requests")
+  public PullRequests pullRequests() {
+    requireAdmin();
+    return new PullRequests(Settings.current().pullRequestsEnabled);
+  }
+
+  /**
+   * Saves the pull request build setting. Turning it on or off clears every project's cursors and
+   * seed point in the same transaction, so a later enable seeds the heads that exist then instead
+   * of building what happened while the feature was off. Builds and branch cursors are kept.
+   */
+  @PUT
+  @Path("/pull-requests")
+  public PullRequests updatePullRequests(PullRequests input) {
+    requireAdmin();
+    if (input == null || input.enabled() == null)
+      throw new BadRequestException("Pull request builds must be on or off");
+    // Invalidate first: a discovery pass that read heads before this change must discard its result
+    // even if it reaches the database after the new setting commits.
+    pullRequests.invalidate();
+    io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
+        .run(() -> {
+          // Discovery locks this row before it writes cursors. Holding it here makes the
+          // setting change and the cursor reset atomic against an in-flight discovery pass,
+          // without waiting for any project lock or provider operation.
+          Settings s = Settings.findById(1L, LockModeType.PESSIMISTIC_WRITE);
+          if (s == null) {
+            s = new Settings();
+            s.persist();
+          }
+          boolean changed = s.pullRequestsEnabled != input.enabled();
+          s.pullRequestsEnabled = input.enabled();
+          if (changed) {
+            Project.update("pullRequestBaseline = null");
+            ProjectPullRequest.deleteAll();
+          }
+        });
+    return new PullRequests(input.enabled());
   }
 
   /** The stored interval, or the configured default so the form always has a number. */

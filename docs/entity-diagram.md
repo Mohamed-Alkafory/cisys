@@ -10,6 +10,8 @@ erDiagram
         STRING repository_url
         BOOLEAN private_repository
         STRING owner_subject
+        STRING pull_request_provider
+        INTEGER pull_request_baseline
         BIGINT build_counter
     }
 
@@ -23,6 +25,8 @@ erDiagram
         STRING trigger_actor
         STRING revision
         STRING branch
+        STRING pull_request_provider
+        INTEGER pull_request
         STRING image
         STRING workflow
         STRING image_digest
@@ -64,6 +68,18 @@ erDiagram
         STRING poll_granularity
         STRING poll_scope
         INTEGER poll_interval_seconds
+        BOOLEAN pull_requests_enabled
+    }
+
+    PROJECT_PULL_REQUEST {
+        BIGINT id PK
+        BIGINT project_id
+        INTEGER number
+        STRING last_seen_revision
+        STRING last_submitted_revision
+        STRING branch
+        BOOLEAN ref_present
+        TIMESTAMP seen_at
     }
 
     PROJECT_MEMBER {
@@ -74,6 +90,7 @@ erDiagram
 
     PROJECT ||--o{ BUILD : has
     PROJECT ||--o{ PROJECT_BRANCH : watches
+    PROJECT ||--o{ PROJECT_PULL_REQUEST : discovers
     PROJECT ||--o{ PROJECT_MEMBER : assigns
 ```
 
@@ -82,7 +99,10 @@ erDiagram
 * `BUILD.number` is unique within a project and taken from `PROJECT.build_counter`, which never goes back.
 * `BUILD.logoid` (type `lo`, from the `lo` extension) references the build log, stored as one PostgreSQL large object. It is not mapped in the `Build` entity. The `lo_manage` trigger unlinks the large object when the build is deleted, so no logs are orphaned.
 * `BUILD.status` is `QUEUED`, `RUNNING`, `PASSED`, `FAILED` or `CANCELLED`. `BUILD.cancel_requested` is set on a running build until the runner has stopped it.
-* `BUILD.trigger` is `MANUAL` or `POLL`; a poll build stores the actor `poll` in `trigger_actor`. A unique partial index keeps at most one build per `(project_id, revision)` for poll builds, whatever branch reached the commit and across restarts; manual builds may share a commit.
+* `BUILD.trigger` is `MANUAL`, `POLL` or `PULL_REQUEST`; a poll build stores the actor `poll` in `trigger_actor`, and a pull request build stores `pull-request`. A unique partial index keeps at most one build per `(project_id, revision)` for poll builds, whatever branch reached the commit and across restarts; manual builds may share a commit. A second partial unique index keeps at most one build per `(project_id, revision)` for pull request builds too, across pull request numbers. The application also skips a pull request build when any build of the project already has the commit, so a poll or manual build is reused and keeps its trigger. `BUILD.pull_request` and `BUILD.pull_request_provider` are set only for `PULL_REQUEST` builds and are never re-derived from a later repository URL.
+* `PROJECT.pull_request_provider` (`GITHUB` or `GITLAB`) is stored when pull request builds are enabled. `PROJECT.pull_request_baseline` is the highest number present when the feature was seeded; a null baseline means the next discovery seeds without building the existing pull requests. A provider or repository URL change clears the cursors and resets the baseline.
+* `PROJECT_PULL_REQUEST` is the discovery state of one pull request: the last head seen, the head already submitted or matched to an existing build, the same-repository branch that reaches the head, and whether the ref is still present. Storing the submitted head separately means deleting an old build through retention never rebuilds it. The unique key is `(project_id, number)`.
+* `SETTINGS.pull_requests_enabled` (default false) is the global switch for pull request and merge request builds.
 * `PROJECT_BRANCH` is the automatic-build cursor: the last commit cisys queued for each watched branch. A missing row makes the branch seed its tip on the next poll without building anything. The row is removed when the branch disappears, its tip loses the workflow file, or automatic builds are turned off.
 * `SETTINGS.poll_enabled` (default true), `poll_granularity` (`PER_COMMIT` or `TIP`), `poll_scope` (`WORKFLOW` or `MAIN_ONLY`) and `poll_interval_seconds` (null uses `cisys.poll.every`) hold the global automatic-build settings.
 * `BRANDING` and `SETTINGS` are singleton rows with `id = 1`. Until `SETTINGS` is first saved, its defaults apply.

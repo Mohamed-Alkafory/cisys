@@ -37,6 +37,25 @@ export function shortRevision(revision) {
   return revision ? revision.slice(0, 7) : "—";
 }
 
+/** Label for a stored pull request identity, for example PR #12 or MR !12. */
+export function pullRequestLabel(provider, number) {
+  if (number == null) return null;
+  return provider === "GITLAB" ? `MR !${number}` : `PR #${number}`;
+}
+
+/** Name of the review request itself, for example as a build detail field label. */
+export function pullRequestKind(provider) {
+  return provider === "GITLAB" ? "Merge request" : "Pull request";
+}
+
+/** Label for how a build was started. */
+export function triggerLabel(trigger, provider) {
+  if (trigger === "PULL_REQUEST")
+    return provider === "GITLAB" ? "Merge request" : "Pull request";
+  if (trigger === "POLL") return "Poll";
+  return "Manual";
+}
+
 export function startedAt(build) {
   return build.startedAt
     ? new Date(build.startedAt).toLocaleString()

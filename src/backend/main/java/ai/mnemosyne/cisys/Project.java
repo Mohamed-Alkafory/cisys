@@ -30,4 +30,11 @@ public class Project extends PanacheEntity {
   /** The environment variable that holds a read-only token for a private repository. */
   @Column(length = 100)
   public String credentialRef;
+
+  /** GITHUB or GITLAB, fixed when pull request builds are enabled. */
+  @Column(length = 20)
+  public String pullRequestProvider;
+
+  /** The highest pull request number present when the feature was enabled; null means seed next. */
+  public Integer pullRequestBaseline;
 }

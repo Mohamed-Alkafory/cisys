@@ -34,6 +34,7 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `GET`/`PUT /api/settings/builds`          | no                        | no                   | yes   |
 | `GET`/`PUT /api/settings/checkout`        | no                        | no                   | yes   |
 | `GET`/`PUT /api/settings/polling`         | no                        | no                   | yes   |
+| `GET`/`PUT /api/settings/pull-requests`   | no                        | no                   | yes   |
 | `GET /api/images` (allowed images)        | yes                       | yes                  | yes   |
 | `PUT /api/images`                         | no                        | no                   | yes   |
 | `GET/POST/DELETE /api/images/local`       | no                        | no                   | yes   |
@@ -150,9 +151,21 @@ Automatic builds are a global, admin-only switch. A server-side timer polls each
 * With the default settings (on, all branches whose tip has `ci.yml`, one build per commit), anyone who can push a commit to such a branch can make the backend run its container build. Treat repository write access as build-trigger access.
 * A private project without a `CISYS_GIT_*` credential reference is skipped and logged once, never polled anonymously. A project whose fetch keeps failing is logged once and retried later; one failing project never stops the tick for the others.
 * The first sighting of a branch seeds its tip without building, so enabling automatic builds never builds history, and a commit already built for the project is never queued twice, whatever branch reaches it. The last-seen commit of a branch advances only after a commit was queued or found to have been built, so a full build queue slows polling down instead of dropping commits.
-* A build whose commit is missing from the mirror fails with a clear message rather than building the branch tip. Turning automatic builds off deletes every mirror and cursor, except for projects with a queued or running poll build, which keep their mirror until that build finishes.
+* A build whose commit is missing from the mirror fails with a clear message rather than building the branch tip. Turning automatic builds off deletes every branch cursor; mirrors are deleted only when pull request builds are also off, and a project with a queued or running poll or pull request build keeps its mirror until that build finishes.
 
 **Trust boundary:** automatic execution runs the repository's code in a container on the backend host. That the commit was discovered by cisys says nothing about whether the code is safe. Keep automatic builds for trusted repositories, and do not expose the rest of the application, until isolated build workers exist.
+
+### Pull request builds
+
+Pull request and merge request builds are a separate, admin-only global switch, off by default. Discovery reads GitHub `refs/pull/N/head` and GitLab `refs/merge-requests/N/head` from `github.com` and `gitlab.com`; merge refs are never used, and there is still no inbound endpoint, provider API or webhook.
+
+* There is no approval step in 0.1.0. The switch is global and admin-only; write access to a repository therefore allows a user to trigger a build of that repository's code. Fork heads are never fetched into the mirror; a fork commit that a same-repository branch already reaches is built like any other commit.
+* A head is built only when its commit is in the project's trusted mirror, a local branch reaches it, and `.cisys/workflows/ci.yml` exists at that commit. Only the head is built. Discovery is independent of the branch scope and of the automatic-build switch.
+* Reachability does not prove that the head came from the base repository. A fork pull request whose head commit already exists in the base repository is built, because the poller already trusts that commit.
+* A pull request build never resolves or receives a project credential or any other secret. Its checkout comes from the project mirror, and if the mirror or the commit is missing the build fails closed instead of fetching the repository remotely. Discovery and the mirror fetch may use the project credential, like automatic builds.
+* If the project already has a usable build for the same commit, no new pull request build is queued and the existing build keeps its trigger. A usable build is any build whose status is not `CANCELLED`. Every successful discovery pass cancels queued pull request builds whose commit no longer belongs to any tracked, eligible head; running, finished, poll and manual builds are left alone, and a queued build cancelled this way is queued again if its commit becomes needed later. A build cancelled by a user or admin, or one that had already started, is never revived; under the one-row-per-commit rule such a row keeps covering that commit.
+* Turning the feature off clears every project's discovery cursors and baseline as part of the setting change, even while a project is being polled, and re-enabling seeds the heads that exist then instead of building changes made while the feature was off. Branch polling and its cursors are unaffected. Changing the repository URL resets the cursors. Discovery was verified once for each provider, on public repositories without a credential: GitHub still listed `refs/pull/1/head` for closed `octocat/Hello-World` pull request 1, and GitLab still listed `refs/merge-requests/3/head` for merged `gitlab-org/gitlab-test` merge request 3. Not verified: whether a head ref updates after a push, whether GitLab deletes merge request refs after some time, and private repositories read with a credential.
+* The same container, network and resource controls as other builds apply. Pull request code is still untrusted repository code, and building it executes that commit on the backend host.
 
 ### Git credentials
 

@@ -228,3 +228,78 @@ CREATE TABLE IF NOT EXISTS projectmember (
 );
 CREATE INDEX IF NOT EXISTS projectmember_subject ON projectmember (subject);
 CREATE SEQUENCE IF NOT EXISTS projectmember_seq START WITH 1 INCREMENT BY 50;
+
+-- Pull request and merge request builds are opt-in and off by default.
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS pullrequestsenabled boolean NOT NULL DEFAULT false;
+
+-- The provider detected when PR builds were enabled, and the highest number present at that time.
+-- A null baseline means the next discovery seeds the current pull requests without building them.
+ALTER TABLE project ADD COLUMN IF NOT EXISTS pullrequestprovider character varying(20);
+ALTER TABLE project ADD COLUMN IF NOT EXISTS pullrequestbaseline integer;
+
+-- A pull request build stores the provider and number that created it, never deriving them later.
+ALTER TABLE build ADD COLUMN IF NOT EXISTS pullrequest integer;
+ALTER TABLE build ADD COLUMN IF NOT EXISTS pullrequestprovider character varying(20);
+
+-- Upgrade a database created before pull request builds were released. That schema identified a
+-- pull request by (provider, number) and kept a separate approval table. Those cursors, approvals
+-- and the old per-provider build index are disposable: clearing the baseline makes the next
+-- discovery seed the current pull requests without building them. The block is skipped on a fresh
+-- or already upgraded database, where number already exists.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = 'projectpullrequest' AND column_name = 'pullrequest')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema()
+                 AND table_name = 'projectpullrequest' AND column_name = 'number') THEN
+        DROP INDEX IF EXISTS build_project_pull_request_revision;
+        DELETE FROM projectpullrequest;
+        UPDATE project SET pullrequestbaseline = NULL, pullrequestprovider = NULL;
+        -- The old index allowed one build per provider pull request at a commit; the new one allows
+        -- one build per commit. Drop duplicate pull request builds first, keeping the lowest id.
+        DELETE FROM build b
+            USING build duplicate
+            WHERE b.trigger = 'PULL_REQUEST'
+              AND duplicate.trigger = 'PULL_REQUEST'
+              AND b.projectid = duplicate.projectid
+              AND b.revision IS NOT NULL
+              AND b.revision = duplicate.revision
+              AND b.id > duplicate.id;
+        ALTER TABLE projectpullrequest DROP CONSTRAINT IF EXISTS projectpullrequest_project_provider_pr;
+        ALTER TABLE projectpullrequest RENAME COLUMN pullrequest TO number;
+        ALTER TABLE projectpullrequest ADD COLUMN lastsubmittedrevision character varying(64);
+        ALTER TABLE projectpullrequest ALTER COLUMN lastseenrevision DROP NOT NULL;
+        ALTER TABLE projectpullrequest DROP COLUMN IF EXISTS provider;
+        ALTER TABLE projectpullrequest DROP COLUMN IF EXISTS hasworkflow;
+        ALTER TABLE projectpullrequest DROP COLUMN IF EXISTS eligible;
+        ALTER TABLE projectpullrequest
+            ADD CONSTRAINT projectpullrequest_project_number UNIQUE (projectid, number);
+        DROP TABLE IF EXISTS pullrequestapproval;
+        DROP SEQUENCE IF EXISTS pullrequestapproval_seq;
+    END IF;
+END
+$$;
+
+-- At most one pull request build for one commit. Poll builds are separate: they may carry the
+-- project credential, while pull request builds never do.
+CREATE UNIQUE INDEX IF NOT EXISTS build_project_pull_request_revision
+    ON build (projectid, revision)
+    WHERE trigger = 'PULL_REQUEST' AND revision IS NOT NULL;
+
+-- The last head discovered for each pull request. The submitted revision is stored separately so
+-- deleting an old build through retention can never make the same head build twice.
+CREATE TABLE IF NOT EXISTS projectpullrequest (
+    id bigint NOT NULL,
+    projectid bigint NOT NULL,
+    number integer NOT NULL,
+    lastseenrevision character varying(64),
+    lastsubmittedrevision character varying(64),
+    branch character varying(255),
+    refpresent boolean NOT NULL DEFAULT true,
+    seenat timestamp(6) with time zone,
+    CONSTRAINT projectpullrequest_pkey PRIMARY KEY (id),
+    CONSTRAINT projectpullrequest_project_number UNIQUE (projectid, number)
+);
+CREATE SEQUENCE IF NOT EXISTS projectpullrequest_seq START WITH 1 INCREMENT BY 50;

@@ -38,12 +38,20 @@ public class Build extends PanacheEntity {
   /** How this build was started. Existing rows and manual requests are {@link Trigger#MANUAL}. */
   public enum Trigger {
     MANUAL,
-    POLL
+    POLL,
+    PULL_REQUEST
   }
 
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 20)
   public Trigger trigger = Trigger.MANUAL;
+
+  /** The pull request or merge request number, set only for {@link Trigger#PULL_REQUEST}. */
+  public Integer pullRequest;
+
+  /** GITHUB or GITLAB, stored when the pull request build was created. */
+  @Column(length = 20)
+  public String pullRequestProvider;
 
   /** Display only. Poll builds have no actor. */
   @Column(length = 255)
@@ -90,7 +98,10 @@ public class Build extends PanacheEntity {
   @Column(nullable = false)
   public boolean pinned;
 
-  /** Set on a running build; the runner stops it and records it as cancelled. */
+  /**
+   * Set on a running build that must stop, and on a queued build cancelled on request so a
+   * system-cancelled queued pull request can be told apart from an intentional cancellation.
+   */
   @Column(nullable = false)
   public boolean cancelRequested;
 

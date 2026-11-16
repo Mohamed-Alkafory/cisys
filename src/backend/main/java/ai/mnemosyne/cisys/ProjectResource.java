@@ -230,6 +230,7 @@ public class ProjectResource {
                 "A build is queued or running. Delete the project when its builds finish.");
           Build.delete("projectId", id);
           ProjectBranch.delete("projectId", id);
+          ProjectPullRequest.delete("projectId", id);
           p.delete();
         });
     // After commit, so the queue lock is released: the poller may hold the mirror lock while it
@@ -311,7 +312,12 @@ public class ProjectResource {
       throw conflict("A project with this name or repository URL already exists");
     }
     // A different repository has different history; seed its branches again instead of building it.
-    if (urlChanged) ProjectBranch.delete("projectId", id);
+    if (urlChanged) {
+      ProjectBranch.delete("projectId", id);
+      ProjectPullRequest.delete("projectId", id);
+      p.pullRequestProvider = null;
+      p.pullRequestBaseline = null;
+    }
     return Response.ok(response(p)).build();
   }
 

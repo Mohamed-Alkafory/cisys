@@ -451,4 +451,70 @@ class SettingsResourceTest {
       given().contentType("application/json").body(body).put(POLLING).then().statusCode(400);
     }
   }
+
+  private static final String PULL_REQUESTS = "/api/settings/pull-requests";
+
+  static void clearPullRequests() {
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Settings s = Settings.findById(1L);
+          if (s == null) return;
+          s.pullRequestsEnabled = false;
+        });
+  }
+
+  @Test
+  void pullRequestBuildsAreOffByDefault() {
+    given().get(PULL_REQUESTS).then().statusCode(401);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  void leadCannotReadOrUpdatePullRequestBuilds() {
+    given().get(PULL_REQUESTS).then().statusCode(403);
+    given()
+        .contentType("application/json")
+        .body("{\"enabled\":true}")
+        .put(PULL_REQUESTS)
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  void memberCannotUpdatePullRequestBuilds() {
+    given()
+        .contentType("application/json")
+        .body("{\"enabled\":true}")
+        .put(PULL_REQUESTS)
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void adminEnablesAndDisablesPullRequestBuilds() {
+    try {
+      given().get(PULL_REQUESTS).then().statusCode(200).body("enabled", equalTo(false));
+      given()
+          .contentType("application/json")
+          .body("{\"enabled\":true}")
+          .put(PULL_REQUESTS)
+          .then()
+          .statusCode(200)
+          .body("enabled", equalTo(true));
+      given().get(PULL_REQUESTS).then().statusCode(200).body("enabled", equalTo(true));
+    } finally {
+      clearPullRequests();
+    }
+    given().get(PULL_REQUESTS).then().statusCode(200).body("enabled", equalTo(false));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void rejectsMissingPullRequestSetting() {
+    for (String body : new String[] {"{}", "{\"enabled\":null}"}) {
+      given().contentType("application/json").body(body).put(PULL_REQUESTS).then().statusCode(400);
+    }
+  }
 }

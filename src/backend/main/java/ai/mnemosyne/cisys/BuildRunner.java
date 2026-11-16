@@ -234,7 +234,7 @@ public class BuildRunner {
         .call(() -> {
           lockQueue();
           if (Build.update(
-                  "status = ?1, finishedAt = ?2 where id = ?3 and status = ?4",
+                  "status = ?1, finishedAt = ?2, cancelRequested = true where id = ?3 and status = ?4",
                   Build.Status.CANCELLED,
                   Instant.now(),
                   id,
@@ -463,12 +463,15 @@ public class BuildRunner {
         request.credentialRef(),
         null,
         Build.Trigger.MANUAL,
+        null,
+        null,
         null);
   }
 
   /**
    * Queues one build. The poller passes the commit as {@code revision}; a manual request leaves it
-   * null so the checkout follows the branch tip.
+   * null so the checkout follows the branch tip. A pull request build always stores the provider
+   * and number that created it, and never receives a credential reference.
    */
   Build submit(
       Long projectId,
@@ -478,7 +481,10 @@ public class BuildRunner {
       String credentialRef,
       String revision,
       Build.Trigger trigger,
-      String triggerActor) {
+      String triggerActor,
+      Integer pullRequest,
+      String pullRequestProvider) {
+    Build.Trigger kind = trigger == null ? Build.Trigger.MANUAL : trigger;
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           lockQueue();
@@ -497,12 +503,134 @@ public class BuildRunner {
           b.requestedAt = Instant.now();
           b.repositoryUrl = url;
           b.branch = branch;
-          b.credentialRef = credentialRef;
+          b.credentialRef = kind == Build.Trigger.PULL_REQUEST ? null : credentialRef;
           b.revision = revision;
-          b.trigger = trigger == null ? Build.Trigger.MANUAL : trigger;
+          b.trigger = kind;
           b.triggerActor = triggerActor;
+          b.pullRequest = kind == Build.Trigger.PULL_REQUEST ? pullRequest : null;
+          b.pullRequestProvider = kind == Build.Trigger.PULL_REQUEST ? pullRequestProvider : null;
           b.persist();
           return b;
+        });
+  }
+
+  /** A pull request submission, and whether it created a new build or matched an existing one. */
+  record Submission(Build build, boolean created) {}
+
+  /**
+   * Queues a pull request build, or succeeds without queueing when the project already has a usable
+   * build for the same commit. A usable build is any non-cancelled build, whatever its trigger, so
+   * a cancelled pull request row never masks a live poll or manual build. When the only build is a
+   * pull request row that this poller cancelled before it started, that row is revived instead of
+   * inserting a duplicate, which the partial unique index would reject anyway. Builds cancelled on
+   * request or after they started keep the existing no-retry policy. The check and the insert share
+   * the queue lock, and the partial unique index protects them across instances. The credential
+   * reference is always null.
+   */
+  Submission submitPullRequest(
+      Long projectId, String url, String branch, String revision, int number, String provider) {
+    return QuarkusTransaction.requiringNew()
+        .call(() -> {
+          lockQueue();
+          if (Project.findById(projectId) == null) throw new jakarta.ws.rs.NotFoundException();
+          List<Build> existing =
+              Build.<Build>find("projectId = ?1 and revision = ?2 order by id", projectId, revision)
+                  .list();
+          for (Build b : existing)
+            if (b.status != Build.Status.CANCELLED) return new Submission(b, false);
+          Build revivable =
+              existing.stream().filter(BuildRunner::revivablePullRequest).findFirst().orElse(null);
+          if (revivable == null) {
+            if (!existing.isEmpty()) {
+              // A finished or intentionally cancelled build covers the revision, like before.
+              return new Submission(existing.get(0), false);
+            }
+            if (Build.count("status", Build.Status.QUEUED) >= queueLimit()) throw queueFull();
+            Build b = new Build();
+            b.projectId = projectId;
+            b.number = Build.nextNumber(projectId);
+            b.requestedBy = "poll";
+            b.status = Build.Status.QUEUED;
+            b.requestedAt = Instant.now();
+            b.repositoryUrl = url;
+            b.branch = branch;
+            b.credentialRef = null;
+            b.revision = revision;
+            b.trigger = Build.Trigger.PULL_REQUEST;
+            b.triggerActor = "pull-request";
+            b.pullRequest = number;
+            b.pullRequestProvider = provider;
+            b.persist();
+            return new Submission(b, true);
+          }
+          if (Build.count("status", Build.Status.QUEUED) >= queueLimit()) throw queueFull();
+          revivable.status = Build.Status.QUEUED;
+          revivable.requestedAt = Instant.now();
+          revivable.finishedAt = null;
+          revivable.repositoryUrl = url;
+          revivable.branch = branch;
+          revivable.credentialRef = null;
+          revivable.cancelRequested = false;
+          revivable.pullRequest = number;
+          revivable.pullRequestProvider = provider;
+          return new Submission(revivable, true);
+        });
+  }
+
+  /** A queued pull request row this poller cancelled before it ever started. */
+  private static boolean revivablePullRequest(Build b) {
+    return b.status == Build.Status.CANCELLED
+        && b.trigger == Build.Trigger.PULL_REQUEST
+        && b.startedAt == null
+        && !b.cancelRequested;
+  }
+
+  private static WebApplicationException queueFull() {
+    return new WebApplicationException(
+        jakarta.ws.rs.core.Response.status(429)
+            .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
+            .entity(Map.of("error", "Build queue is full. Try again later."))
+            .build());
+  }
+
+  /**
+   * Cancels every queued pull request build of the project whose revision no currently eligible
+   * pull request needs, and clears the submitted marker of the cursors that still point at it so a
+   * returning head is submitted again. Running and terminal builds and poll or manual builds are
+   * never touched. Runs on every successful discovery pass and is idempotent. Returns the number of
+   * cancelled builds.
+   */
+  int reconcilePullRequestBuilds(Long projectId, Set<String> eligibleRevisions) {
+    return QuarkusTransaction.requiringNew()
+        .call(() -> {
+          lockQueue();
+          List<Build> queued =
+              Build.<Build>find(
+                      "projectId = ?1 and trigger = ?2 and status = ?3",
+                      projectId,
+                      Build.Trigger.PULL_REQUEST,
+                      Build.Status.QUEUED)
+                  .list();
+          int cancelled = 0;
+          for (Build b : queued) {
+            if (eligibleRevisions.contains(b.revision)) continue;
+            // Only a build that is still QUEUED is cancelled; a build that started meanwhile is
+            // left alone, and its cursor is not reset.
+            if (Build.update(
+                    "status = ?1, finishedAt = ?2 where id = ?3 and status = ?4",
+                    Build.Status.CANCELLED,
+                    Instant.now(),
+                    b.id,
+                    Build.Status.QUEUED)
+                == 1) {
+              cancelled++;
+              ProjectPullRequest.update(
+                  "lastSubmittedRevision = null where projectId = ?1 and lastSubmittedRevision = ?2",
+                  projectId,
+                  b.revision);
+            }
+          }
+          return cancelled;
         });
   }
 
@@ -564,13 +692,15 @@ public class BuildRunner {
   }
 
   void execute(Build b) {
+    boolean pullRequest = b.trigger == Build.Trigger.PULL_REQUEST;
     run(
         b.id,
         b.repositoryUrl,
         b.branch,
-        b.credentialRef,
+        pullRequest ? null : b.credentialRef,
         b.revision,
-        b.trigger == Build.Trigger.POLL ? mirrors.path(b.projectId) : null);
+        b.trigger == Build.Trigger.POLL || pullRequest ? mirrors.path(b.projectId) : null,
+        pullRequest);
   }
 
   @Inject HostResolver resolver;
@@ -688,11 +818,43 @@ public class BuildRunner {
       int maxCheckoutFiles,
       java.util.function.BooleanSupplier cancelled)
       throws Exception {
+    return prepareWorkspace(
+        workspace,
+        url,
+        branch,
+        credentialRef,
+        expectedRevision,
+        localMirror,
+        maxCheckoutMib,
+        maxCheckoutFiles,
+        cancelled,
+        false);
+  }
+
+  /**
+   * As above. A pull request build passes {@code requireLocalMirror} so a missing mirror fails the
+   * build instead of falling back to a remote fetch, which could use a project credential.
+   */
+  String prepareWorkspace(
+      Path workspace,
+      String url,
+      String branch,
+      String credentialRef,
+      String expectedRevision,
+      Path localMirror,
+      int maxCheckoutMib,
+      int maxCheckoutFiles,
+      java.util.function.BooleanSupplier cancelled,
+      boolean requireLocalMirror)
+      throws Exception {
     String cloneUrl;
     UsernamePasswordCredentialsProvider credentials = null;
     if (localMirror != null && Files.isDirectory(localMirror)) {
       cloneUrl = localMirror.toUri().toString();
     } else {
+      if (requireLocalMirror)
+        throw new IllegalArgumentException(
+            "The repository mirror is missing; a pull request build cannot run");
       if (localMirror != null)
         Log.infof("The repository mirror is missing; fetching the commit from the repository");
       // Checked again here because DNS can change after the project was saved.
@@ -723,7 +885,8 @@ public class BuildRunner {
       String branch,
       String credentialRef,
       String expectedRevision,
-      Path localMirror) {
+      Path localMirror,
+      boolean requireLocalMirror) {
     Path dir = null;
     String name = "cisys-build-" + id,
         prepare = name + "-prepare",
@@ -764,7 +927,8 @@ public class BuildRunner {
               localMirror,
               limits[0],
               limits[1],
-              () -> handle.cancelled);
+              () -> handle.cancelled,
+              requireLocalMirror);
       // Shown while the build runs, not only once it finishes.
       String fetched = revision;
       QuarkusTransaction.requiringNew()

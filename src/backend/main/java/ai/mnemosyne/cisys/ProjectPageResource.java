@@ -57,6 +57,7 @@ public class ProjectPageResource {
       Build.Status status,
       String revision,
       String branch,
+      Build.Trigger trigger,
       String image,
       Instant startedAt,
       Instant finishedAt,
@@ -66,6 +67,12 @@ public class ProjectPageResource {
       boolean pinned,
       boolean canPin,
       boolean canCancel,
+      @com.fasterxml.jackson.annotation.JsonInclude(
+              com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+          String pullRequestProvider,
+      @com.fasterxml.jackson.annotation.JsonInclude(
+              com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+          Integer pullRequest,
       @com.fasterxml.jackson.annotation.JsonInclude(
               com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
           String workflow,
@@ -122,6 +129,7 @@ public class ProjectPageResource {
         b.status,
         b.revision,
         b.branch,
+        b.trigger == null ? Build.Trigger.MANUAL : b.trigger,
         b.image,
         b.startedAt,
         b.finishedAt,
@@ -131,6 +139,8 @@ public class ProjectPageResource {
         b.pinned,
         canPin,
         canCancel,
+        b.pullRequestProvider,
+        b.pullRequest,
         withWorkflow ? b.workflow : null,
         withWorkflow ? b.dockerfile : null);
   }

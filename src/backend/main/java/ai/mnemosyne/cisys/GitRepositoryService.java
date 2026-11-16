@@ -11,10 +11,13 @@ package ai.mnemosyne.cisys;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -22,6 +25,7 @@ import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.jgit.util.FileUtils;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Read-only JGit operations shared by the REST API and, later, by the workflow support. Keeping the
@@ -32,6 +36,10 @@ public class GitRepositoryService {
   static final int TIMEOUT_SECONDS = 10;
 
   @Inject RepositoryUrlValidator repositoryUrls;
+
+  /** Test-only: accept file repository URLs, which the request path never produces. */
+  @ConfigProperty(name = "cisys.poll.allow-local", defaultValue = "false")
+  boolean allowLocal;
 
   /**
    * Branches of the project's repository. Private projects need a credential, so they are not read
@@ -82,6 +90,87 @@ public class GitRepositoryService {
         if (token != null)
           command.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", token));
         return command.call().stream().map(Ref::getName).toList();
+      }
+    } catch (IOException e) {
+      throw new GitAPIException("Unable to prepare the repository", e) {};
+    } finally {
+      if (dir != null) {
+        try {
+          FileUtils.delete(dir.toFile(), FileUtils.RECURSIVE | FileUtils.RETRY);
+        } catch (IOException ignored) {
+          // The temporary directory is not part of the result.
+        }
+      }
+    }
+  }
+
+  /**
+   * The current heads of a project's pull requests, as number to commit. The provider is read from
+   * the project, so a stored build identity is never re-derived from a changed repository URL.
+   */
+  public Map<Integer, String> listPullRequests(Project project) {
+    if (project.privateRepository && project.credentialRef == null) return Map.of();
+    String url = project.repositoryUrl;
+    boolean local = allowLocal && url != null && url.startsWith("file:");
+    String cloneUrl = local ? url : RepositoryUrls.cloneUrl(url);
+    if (local) {
+      if (!Files.isDirectory(Path.of(URI.create(url))))
+        throw new BranchLookupException("Local repository does not exist: " + url, null);
+    } else {
+      // The host rule runs before any provider detection, so an unsupported host is skipped.
+      repositoryUrls.validate(cloneUrl);
+    }
+    PullRequestProvider provider = provider(project);
+    if (provider == null) return Map.of();
+    try {
+      Map<Integer, String> heads = new TreeMap<>();
+      for (Map.Entry<String, String> ref :
+          remoteRefs(cloneUrl, project.credentialRef, local || repositoryUrls.verifyTls(url))
+              .entrySet()) {
+        Integer number = provider.number(ref.getKey());
+        if (number != null) heads.put(number, ref.getValue());
+      }
+      return heads;
+    } catch (BranchLookupException e) {
+      throw e;
+    } catch (GitAPIException | RuntimeException e) {
+      throw new BranchLookupException("Unable to read pull requests from the repository", e);
+    }
+  }
+
+  /** The provider stored when the feature was enabled, or one detected from the URL. */
+  static PullRequestProvider provider(Project project) {
+    if (project.pullRequestProvider != null) {
+      try {
+        return PullRequestProvider.valueOf(project.pullRequestProvider);
+      } catch (IllegalArgumentException ignored) {
+        // A value written by an older version is treated as unset.
+      }
+    }
+    return PullRequestProvider.from(project.repositoryUrl);
+  }
+
+  /**
+   * Every remote ref name and commit. JGit has no ref-prefix filter for {@code ls-remote}, so all
+   * refs are listed and the caller filters them. Overridden in tests so no test reaches the
+   * network.
+   */
+  protected Map<String, String> remoteRefs(
+      String repositoryUrl, String credentialRef, boolean verifyTls) throws GitAPIException {
+    String token = token(credentialRef);
+    Path dir = null;
+    try {
+      dir = Files.createTempDirectory("cisys-refs-");
+      try (Git git = Git.init().setDirectory(dir.toFile()).call()) {
+        configureTransport(git.getRepository().getConfig(), verifyTls);
+        var command = git.lsRemote().setRemote(repositoryUrl).setTimeout(TIMEOUT_SECONDS);
+        if (token != null)
+          command.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", token));
+        Map<String, String> refs = new TreeMap<>();
+        for (Ref ref : command.call()) {
+          if (ref.getObjectId() != null) refs.put(ref.getName(), ref.getObjectId().name());
+        }
+        return refs;
       }
     } catch (IOException e) {
       throw new GitAPIException("Unable to prepare the repository", e) {};

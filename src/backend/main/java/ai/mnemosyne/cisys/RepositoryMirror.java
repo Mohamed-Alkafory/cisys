@@ -22,7 +22,9 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -188,6 +190,48 @@ public class RepositoryMirror {
     try (Repository repo = openRead(projectId)) {
       ObjectId id = repo.resolve("refs/heads/" + branch);
       return id == null ? null : id.name();
+    }
+  }
+
+  /** The commit each local branch points at, sorted by branch name. */
+  Map<String, String> branchTips(Long projectId) throws Exception {
+    checkReadable("branchTips", null);
+    try (Repository repo = openRead(projectId)) {
+      Map<String, String> tips = new TreeMap<>();
+      for (Ref ref : repo.getRefDatabase().getRefsByPrefix("refs/heads/")) {
+        ObjectId id = ref.getObjectId();
+        if (id != null) tips.put(ref.getName().substring("refs/heads/".length()), id.name());
+      }
+      return tips;
+    }
+  }
+
+  /**
+   * A branch whose history reaches {@code revision}, or null when the commit is absent or no branch
+   * reaches it. Fork heads are absent from the mirror and therefore never eligible.
+   */
+  String branchContaining(Long projectId, String revision, Map<String, String> branchTips)
+      throws Exception {
+    checkReadable("branchContaining", revision);
+    if (revision == null || branchTips == null || branchTips.isEmpty()) return null;
+    try (Repository repo = openRead(projectId)) {
+      ObjectId id;
+      try {
+        id = ObjectId.fromString(revision);
+      } catch (IllegalArgumentException e) {
+        return null;
+      }
+      if (!repo.getObjectDatabase().has(id)) return null;
+      for (Map.Entry<String, String> tip : branchTips.entrySet()) {
+        // Both commits must be parsed by the walk that compares them: a RevCommit carries flags
+        // from the walk that created it, so mixing walks makes isMergedInto answer false.
+        try (RevWalk walk = new RevWalk(repo)) {
+          RevCommit commit = walk.parseCommit(id);
+          RevCommit tipCommit = walk.parseCommit(ObjectId.fromString(tip.getValue()));
+          if (walk.isMergedInto(commit, tipCommit)) return tip.getKey();
+        }
+      }
+      return null;
     }
   }
 

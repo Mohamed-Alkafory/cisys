@@ -22,8 +22,10 @@ import {
   branchFromSegment,
   buildPath,
   duration,
+  pullRequestLabel,
   shortRevision,
   startedAt,
+  triggerLabel,
 } from "./build-format";
 
 /** Returns the project name for paths like /cisys/ (or /cisys), otherwise null. */
@@ -288,6 +290,7 @@ export default function ProjectBuilds({
                       <th scope="col">Build</th>
                       <th scope="col">Branch</th>
                       <th scope="col">Commit</th>
+                      <th scope="col">Trigger</th>
                       <th scope="col">Started</th>
                       <th scope="col">Duration</th>
                     </tr>
@@ -328,7 +331,18 @@ export default function ProjectBuilds({
                             />
                           )}
                         </td>
-                        <td className="build-branch">{b.branch || "—"}</td>
+                        <td className="build-branch">
+                          {b.branch || "—"}
+                          {b.pullRequest != null && (
+                            <span className="build-meta">
+                              {" "}
+                              {pullRequestLabel(
+                                b.pullRequestProvider,
+                                b.pullRequest,
+                              )}
+                            </span>
+                          )}
+                        </td>
                         <td>
                           <code
                             className="build-commit"
@@ -336,6 +350,9 @@ export default function ProjectBuilds({
                           >
                             {shortRevision(b.revision)}
                           </code>
+                        </td>
+                        <td className="build-meta">
+                          {triggerLabel(b.trigger, b.pullRequestProvider)}
                         </td>
                         <td className="build-meta">{startedAt(b)}</td>
                         <td className="build-meta">{duration(b)}</td>

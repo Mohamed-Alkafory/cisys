@@ -111,6 +111,42 @@ class ProjectPageResourceTest {
   }
 
   @Test
+  void pageReturnsTheStoredPullRequestIdentity() {
+    Seeded seeded = seed(false);
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Build b = Build.findById(seeded.buildId());
+          b.trigger = Build.Trigger.PULL_REQUEST;
+          b.pullRequest = 12;
+          b.pullRequestProvider = "GITHUB";
+          b.revision = "b".repeat(40);
+        });
+    String page = "/api/project-pages/" + seeded.name().toLowerCase();
+    given()
+        .get(page)
+        .then()
+        .statusCode(200)
+        .body(
+            "builds[0].trigger",
+            equalTo("PULL_REQUEST"),
+            "builds[0].pullRequest",
+            equalTo(12),
+            "builds[0].pullRequestProvider",
+            equalTo("GITHUB"));
+    given()
+        .get(page + "/builds/" + seeded.buildId())
+        .then()
+        .statusCode(200)
+        .body(
+            "trigger",
+            equalTo("PULL_REQUEST"),
+            "pullRequest",
+            equalTo(12),
+            "pullRequestProvider",
+            equalTo("GITHUB"));
+  }
+
+  @Test
   void anonymousCanFilterPublicProjectBuildsByBranch() {
     String name = project(false);
     addBuild(name, "dev");

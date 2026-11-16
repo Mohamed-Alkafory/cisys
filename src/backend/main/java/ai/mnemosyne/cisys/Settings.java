@@ -82,6 +82,10 @@ public class Settings extends PanacheEntityBase {
   /** Null uses cisys.poll.every. */
   public Integer pollIntervalSeconds;
 
+  /** Whether pull request and merge request heads are discovered and built automatically. */
+  @Column(nullable = false)
+  public boolean pullRequestsEnabled = false;
+
   /** The saved settings, or the defaults. */
   public static Settings current() {
     Settings s = findById(1L);
