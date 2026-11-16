@@ -54,6 +54,18 @@ class ImageReferenceTest {
   }
 
   @Test
+  void resolvesShortRepositoriesAsDockerListsThem() {
+    var images =
+        List.of(
+            new ImageReference.Local("alpine", "3.23", ALPINE),
+            new ImageReference.Local("valkey/valkey", "8-alpine", VALKEY));
+    assertEquals(ALPINE, ImageReference.resolve("alpine", images).id());
+    assertEquals(ALPINE, ImageReference.resolve("alpine:3.23", images).id());
+    assertEquals(ALPINE, ImageReference.resolve("docker.io/library/alpine:3.23", images).id());
+    assertEquals(VALKEY, ImageReference.resolve("valkey/valkey:8-alpine", images).id());
+  }
+
+  @Test
   void otherRegistriesAreNotDockerHub() {
     var images = List.of(new ImageReference.Local("quay.io/keycloak/keycloak", "26.8.2", ALPINE));
     assertEquals(ALPINE, ImageReference.resolve("quay.io/keycloak/keycloak", images).id());

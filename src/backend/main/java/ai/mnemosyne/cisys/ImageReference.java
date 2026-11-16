@@ -71,7 +71,10 @@ public final class ImageReference {
     String tag = colon > slash ? reference.substring(colon + 1) : null;
     String qualified = official(repository);
     List<Local> candidates =
-        images.stream().filter(Local::named).filter(i -> i.repository().equals(qualified)).toList();
+        images.stream()
+            .filter(Local::named)
+            .filter(i -> official(i.repository()).equals(qualified))
+            .toList();
     if (tag != null) {
       return candidates.stream()
           .filter(i -> i.tag().equals(tag))
