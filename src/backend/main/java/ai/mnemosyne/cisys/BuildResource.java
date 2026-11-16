@@ -206,8 +206,12 @@ public class BuildResource {
     } catch (IllegalArgumentException e) {
       throw new BadRequestException(e.getMessage());
     }
+    RunRequest request =
+        input.credentialRef() == null && p.privateRepository
+            ? new RunRequest(input.branch(), p.credentialRef)
+            : input;
     return response(
         runner.submit(
-            id, ((JsonWebToken) identity.getPrincipal()).getSubject(), p.repositoryUrl, input));
+            id, ((JsonWebToken) identity.getPrincipal()).getSubject(), p.repositoryUrl, request));
   }
 }

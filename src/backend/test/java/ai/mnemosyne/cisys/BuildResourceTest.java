@@ -174,6 +174,46 @@ class BuildResourceTest {
   @Test
   @TestSecurity(user = "lead", roles = "lead")
   @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
+  void buildUsesProjectCredential() throws InterruptedException {
+    Long projectId = project(true);
+    allow("alpine:3.23");
+    // Unset reference, so the checkout fails before contacting the remote.
+    String credentialRef =
+        "CISYS_GIT_TEST_"
+            + java.util
+                .UUID
+                .randomUUID()
+                .toString()
+                .replace("-", "")
+                .toUpperCase(java.util.Locale.ROOT);
+    QuarkusTransaction.requiringNew()
+        .run(() -> Project.<Project>findById(projectId).credentialRef = credentialRef);
+    try {
+      int id =
+          given()
+              .contentType("application/json")
+              .body(REQUEST)
+              .post("/api/projects/" + projectId + "/builds")
+              .then()
+              .statusCode(200)
+              .body("$", not(hasKey("credentialRef")))
+              .extract()
+              .path("id");
+      assertEquals(
+          credentialRef,
+          QuarkusTransaction.requiringNew()
+              .call(() -> Build.<Build>findById((long) id).credentialRef));
+    } finally {
+      runner.dispatch();
+      long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+      while (runner.hasPendingBuilds() && System.nanoTime() < deadline) Thread.sleep(50);
+      assertFalse(runner.hasPendingBuilds(), "Build did not finish");
+    }
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
   void rejectHostResolvingToABlockedAddress() {
     Long id = project(false);
     allow("alpine:3.23");
