@@ -13,6 +13,7 @@ import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.WebApplicationException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -274,6 +275,10 @@ public class CommitPoller {
             commit,
             Build.Trigger.POLL,
             "poll");
+      } catch (NotFoundException e) {
+        Log.debugf("Project %d was deleted during polling", project.id);
+        stopped = true;
+        break;
       } catch (WebApplicationException e) {
         if (queueFull(e)) {
           Log.debugf(

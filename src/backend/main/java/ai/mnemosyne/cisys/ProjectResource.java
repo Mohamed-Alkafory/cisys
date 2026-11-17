@@ -9,6 +9,7 @@
 package ai.mnemosyne.cisys;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
@@ -213,23 +214,27 @@ public class ProjectResource {
    */
   @DELETE
   @Path("/projects/{id}")
-  @Transactional
   public Response delete(@PathParam("id") Long id) {
     if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
-    BuildRunner.lockQueue();
-    Project p = Project.findById(id);
-    boolean admin = identity.hasRole("admin");
-    boolean owner = p != null && subject().equals(p.ownerSubject);
-    // Private projects the caller cannot see answer 404, as everywhere else.
-    if (p == null || (p.privateRepository && !admin && !owner)) throw new NotFoundException();
-    if (!admin && !owner) throw new ForbiddenException();
-    if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0)
-      throw conflict("A build is queued or running. Delete the project when its builds finish.");
-    Build.delete("projectId", id);
-    ProjectBranch.delete("projectId", id);
-    p.delete();
-    // A poll build cannot be active here, so the mirror can go with the project. Wait briefly for
-    // the poller; if the lock cannot be taken the next tick's orphan sweep removes the mirror.
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          BuildRunner.lockQueue();
+          Project p = Project.findById(id);
+          boolean admin = identity.hasRole("admin");
+          boolean owner = p != null && subject().equals(p.ownerSubject);
+          // Private projects the caller cannot see answer 404, as everywhere else.
+          if (p == null || (p.privateRepository && !admin && !owner)) throw new NotFoundException();
+          if (!admin && !owner) throw new ForbiddenException();
+          if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0)
+            throw conflict(
+                "A build is queued or running. Delete the project when its builds finish.");
+          Build.delete("projectId", id);
+          ProjectBranch.delete("projectId", id);
+          p.delete();
+        });
+    // After commit, so the queue lock is released: the poller may hold the mirror lock while it
+    // waits for the queue lock. If the lock cannot be taken the next tick's orphan sweep removes
+    // the mirror.
     var lock = mirrors.lock(id);
     boolean locked = false;
     try {

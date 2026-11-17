@@ -865,6 +865,40 @@ class ProjectResourceTest {
     assertFalse(java.nio.file.Files.exists(dir), "the mirror is removed once the lock is free");
   }
 
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  void deletingAProjectDoesNotHoldTheQueueWhileWaitingForThePoller() throws Exception {
+    Long id = project("lead-id", false);
+    java.nio.file.Path dir = mirrors.path(id);
+    java.nio.file.Files.createDirectories(dir);
+    var lock = mirrors.lock(id);
+    java.util.concurrent.CountDownLatch held = new java.util.concurrent.CountDownLatch(1);
+    // Like the poller: holds the mirror lock, then needs the queue lock to submit a build.
+    Thread poller =
+        new Thread(() -> {
+          lock.lock();
+          held.countDown();
+          try {
+            Thread.sleep(500);
+            QuarkusTransaction.requiringNew().run(BuildRunner::lockQueue);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+          } finally {
+            lock.unlock();
+          }
+        });
+    poller.start();
+    assertTrue(held.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+    long start = System.nanoTime();
+    given().when().delete("/api/projects/" + id).then().statusCode(204);
+    long millis = (System.nanoTime() - start) / 1_000_000;
+    poller.join();
+    assertTrue(millis < 4000, "delete waited " + millis + " ms on the poller");
+    assertFalse(java.nio.file.Files.exists(dir), "the mirror is removed once the lock is free");
+  }
+
   private static Long project(String owner, boolean priv) {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
