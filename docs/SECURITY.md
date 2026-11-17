@@ -172,7 +172,8 @@ The public project page, its builds, logs and branches, and the public statistic
 * Signed-in visitors are not capped on this endpoint, so the build page keeps the complete log and the full download works as before. This assumes accounts are trusted; if registration is open, an account can be used to bypass the anonymous limits.
 * Anonymous requests to `/api/project-pages/**` (including branch discovery, which runs `git ls-remote`) and `/api/stats/public` are counted per client address in a fixed window: `cisys.public.rate-limit.requests` per `cisys.public.rate-limit.window-seconds` (default 120 per 60 s). Exceeding it returns `429` with `Retry-After`. Signed-in callers are not counted.
 * The counter lives in this process: it resets on restart, is not shared between instances, and tracks at most `cisys.public.rate-limit.max-clients` addresses (`0` removes the bound). When that many live windows exist, one window is evicted and the new visitor admitted, so a flood of addresses cannot lock new visitors out, and purging and eviction stay constant-time per request.
-* Behind a reverse proxy, set `quarkus.http.proxy.proxy-address-forwarding=true` and `quarkus.http.proxy.enable-forwarded-host=true` and have the proxy send `Forwarded` or `X-Forwarded-For`. Otherwise every visitor shares the proxy's address and therefore one bucket.
+* Behind a reverse proxy, set `quarkus.http.proxy.proxy-address-forwarding=true` and set `quarkus.http.proxy.trusted-proxies` to the proxy's address or range. Otherwise every visitor shares the proxy's address and therefore one bucket.
+* The proxy must replace `X-Forwarded-For` with the client's address instead of appending to it (in nginx, `$remote_addr`, not `$proxy_add_x_forwarded_for`). Quarkus uses the left-most address, so an appended header lets a client choose its own address and evade the limit.
 
 ## TLS
 
