@@ -47,6 +47,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -1121,6 +1123,7 @@ public class BuildRunner {
     BuildLogs.Writer log = null;
     EgressProxy proxy = null;
     String baseTag = null, slice = null;
+    StepImages prepareImages = null, stepImages = null;
     Running handle = new Running();
     running.put(id, handle);
     try {
@@ -1253,11 +1256,12 @@ public class BuildRunner {
         if (handle.cancelled) {
           throw new CancellationException();
         }
+        prepareImages = new StepImages(log);
         Streamed prepared =
             stream(
                 prepareBuild,
                 remainingSeconds(deadline),
-                log,
+                prepareImages,
                 logMaxBytes,
                 p -> started(handle, p),
                 LEGACY_BUILDER);
@@ -1279,11 +1283,12 @@ public class BuildRunner {
           if (handle.cancelled) {
             throw new CancellationException();
           }
+          stepImages = new StepImages(log);
           result =
               stream(
                   build,
                   remainingSeconds(deadline),
-                  log,
+                  stepImages,
                   remainingLogBytes(logMaxBytes, prepared),
                   p -> started(handle, p),
                   LEGACY_BUILDER);
@@ -1381,6 +1386,8 @@ public class BuildRunner {
           command(List.of(runtime, "rmi", "-f", prepare), 60, 4096);
         } catch (Exception ignored) {
         }
+        removeStepImage(stepImages);
+        removeStepImage(prepareImages);
       }
       if (proxy != null) {
         try {
@@ -1599,6 +1606,78 @@ public class BuildRunner {
 
   interface LogSink {
     void append(byte[] bytes, int off, int len);
+  }
+
+  /**
+   * Passes the output of a Docker build on to the log, and remembers the image of the last step the
+   * legacy builder committed, which it prints as {@code " ---> <id>"}. The first such line is the
+   * image the build starts {@code FROM}, so it is not a step image.
+   */
+  static final class StepImages implements LogSink {
+    private static final Pattern IMAGE = Pattern.compile(" ---> ([0-9a-f]{12})");
+    private final LogSink log;
+    private final StringBuilder line = new StringBuilder();
+    private String from;
+    private String last;
+
+    StepImages(LogSink log) {
+      this.log = log;
+    }
+
+    @Override
+    public void append(byte[] bytes, int off, int len) {
+      for (int i = off; i < off + len; i++) {
+        if (bytes[i] == '\n') {
+          Matcher m = IMAGE.matcher(line);
+          if (m.matches()) {
+            if (from == null) {
+              from = m.group(1);
+            } else {
+              last = m.group(1);
+            }
+          }
+          line.setLength(0);
+        } else if (line.length() < 64) {
+          line.append((char) bytes[i]);
+        }
+      }
+      log.append(bytes, off, len);
+    }
+
+    /** The image of the last step, or null when no step got that far. */
+    String last() {
+      return last;
+    }
+  }
+
+  /**
+   * Removes the image of the last step of a failed Docker build. The build never got its tag, so
+   * removing the tags leaves that image, and the untagged images under it, behind. Only a dangling
+   * image is removed, so an image anything else uses stays.
+   */
+  void removeStepImage(StepImages images) {
+    String id = images == null ? null : images.last();
+    if (id == null) {
+      return;
+    }
+    try {
+      Result r =
+          commands.run(
+              List.of(runtime, "images", "-q", "--no-trunc", "--filter", "dangling=true"),
+              15,
+              1_000_000);
+      if (r.timeout() || r.code() != 0) {
+        throw new IllegalStateException("Image listing failed");
+      }
+      if (r.output().lines().map(String::strip).anyMatch(l -> l.startsWith("sha256:" + id))) {
+        Result rm = commands.run(List.of(runtime, "rmi", id), 60, 4096);
+        if (rm.timeout() || rm.code() != 0) {
+          throw new IllegalStateException("Image command failed");
+        }
+      }
+    } catch (Exception e) {
+      Log.warnf(e, "Could not remove the step image %s", id);
+    }
   }
 
   record Streamed(
