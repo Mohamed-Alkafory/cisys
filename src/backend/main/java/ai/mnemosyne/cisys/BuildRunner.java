@@ -107,6 +107,9 @@ public class BuildRunner {
         new ArrayList<>(List.of(runtime, "build", "--no-cache", "-f", file.toString(), "-t", tag));
     if (runtime.equals("podman")) {
       build.addAll(List.of("--pull=never", "--layers=false", "--security-opt=no-new-privileges"));
+    } else {
+      // The legacy builder keeps the container of a failed step unless told otherwise.
+      build.add("--force-rm");
     }
     build.addAll(resourceLimits(limits[2], limits[3], limits[4]));
     return build;

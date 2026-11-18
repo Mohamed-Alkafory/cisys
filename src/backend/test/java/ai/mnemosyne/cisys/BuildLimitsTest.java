@@ -56,6 +56,7 @@ class BuildLimitsTest {
     assertFalse(build.contains("--progress=plain"), build.toString());
     assertFalse(build.contains("--layers=false"), build.toString());
     assertFalse(build.contains("--security-opt=no-new-privileges"), build.toString());
+    assertTrue(build.contains("--force-rm"), build.toString());
     assertTrue(build.containsAll(BuildRunner.resourceLimits(1024, 2, 256)), build.toString());
   }
 
