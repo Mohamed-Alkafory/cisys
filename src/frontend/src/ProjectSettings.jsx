@@ -29,21 +29,17 @@ export function projectSettingsFromPath(pathname) {
   }
 }
 
-/** The tab the project settings page opens on: `general` by default, `team` when requested. */
-export function projectSettingsTab(search) {
-  const tab = new URLSearchParams(search ?? "").get("tab");
-  return tab === "team" ? "team" : "general";
-}
+const USERS_PAGE = 100;
 
-export function projectSettingsPath(name, tab = "general") {
-  const base = `${projectPath(name)}settings`;
-  return tab === "team" ? `${base}?tab=team` : base;
+export function projectSettingsPath(name) {
+  return `${projectPath(name)}settings`;
 }
 
 /**
  * Dedicated page for a project's settings.
  * Both tabs stage changes locally and apply them via the page Save button, reusing the
- * existing team endpoints. Discard restores the chosen tab's baseline.
+ * existing team endpoints. Discard restores the chosen tab's baseline. The selected tab is
+ * page state only, like the Settings page; it is not reflected in the URL.
  */
 export default function ProjectSettings({
   project,
@@ -52,12 +48,9 @@ export default function ProjectSettings({
   user,
   onSaved,
   onDirtyChange,
+  initialTab = "general",
 }) {
-  const [tab, setTab] = useState(() =>
-    projectSettingsTab(
-      typeof window !== "undefined" ? window.location.search : "",
-    ),
-  );
+  const [tab, setTab] = useState(initialTab === "team" ? "team" : "general");
   const [name, setName] = useState(project.name);
   const [url, setUrl] = useState(project.repositoryUrl);
   const [priv, setPriv] = useState(project.privateRepository);
@@ -72,6 +65,8 @@ export default function ProjectSettings({
   const [originalMembers, setOriginalMembers] = useState(null); // null while loading / before Team is opened
   const [draftMembers, setDraftMembers] = useState(null);
   const [memberLoadError, setMemberLoadError] = useState("");
+  // Usernames offered by the Team tab's Add drop-down: the users the Users page lists.
+  const [users, setUsers] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -111,6 +106,28 @@ export default function ProjectSettings({
     };
   }, [tab, api, project.id, originalMembers]);
 
+  // The users that can be added load once, the first time the Team tab is opened.
+  useEffect(() => {
+    if (tab !== "team" || users !== null) return;
+    let active = true;
+    (async () => {
+      const names = [];
+      for (let first = 0; ;) {
+        const page = await api(`/users?first=${first}&max=${USERS_PAGE}`);
+        const list = Array.isArray(page?.users) ? page.users : [];
+        names.push(...list.map((u) => u.username));
+        first += list.length;
+        if (list.length === 0 || first >= (page?.total ?? 0)) break;
+      }
+      return names;
+    })()
+      .then((names) => active && setUsers(names))
+      .catch(() => active && setUsers([]));
+    return () => {
+      active = false;
+    };
+  }, [tab, api, users]);
+
   const repoDirty =
     name !== repoSnapshot.name ||
     url !== repoSnapshot.url ||
@@ -140,21 +157,12 @@ export default function ProjectSettings({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
-  // Keep the selected tab in sync with the URL (e.g. browser Back/Forward).
-  useEffect(() => {
-    const onPopState = () => setTab(projectSettingsTab(window.location.search));
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
   // Only admins can set a project credential, and only a private project can have one.
   const showCredential = isAdmin && priv;
 
   function switchTab(next) {
     if (next === tab) return;
     setTab(next);
-    const path = projectSettingsPath(project.name, next);
-    window.history.pushState(null, "", path);
   }
 
   async function repoPut() {
@@ -199,7 +207,7 @@ export default function ProjectSettings({
       setOriginalMembers(fresh);
       setDraftMembers(toMap(fresh));
       setMemberLoadError("");
-      setSuccess("Members saved.");
+      setSuccess("Team saved.");
       setError("");
     } catch (e) {
       setError(
@@ -244,7 +252,7 @@ export default function ProjectSettings({
     const ops = [];
     for (const add of plan?.adds ?? [])
       ops.push({
-        label: `adding '${add.username}' as ${add.role}`,
+        label: `adding '${add.username}' as ${add.role.toLowerCase()}`,
         run: () =>
           api(`/projects/${project.id}/team`, {
             method: "POST",
@@ -253,7 +261,7 @@ export default function ProjectSettings({
       });
     for (const ch of plan?.promotes ?? [])
       ops.push({
-        label: `promoting '${ch.username}' to LEAD`,
+        label: `promoting '${ch.username}' to lead`,
         run: () =>
           api(
             `/projects/${project.id}/team/${encodeURIComponent(ch.username)}`,
@@ -265,7 +273,7 @@ export default function ProjectSettings({
       });
     for (const ch of plan?.demotes ?? [])
       ops.push({
-        label: `demoting '${ch.username}' to MEMBER`,
+        label: `demoting '${ch.username}' to member`,
         run: () =>
           api(
             `/projects/${project.id}/team/${encodeURIComponent(ch.username)}`,
@@ -438,6 +446,7 @@ export default function ProjectSettings({
           <ProjectMembers
             original={originalMembers}
             draft={draftMembers}
+            users={users}
             onDraftChange={(next) => {
               setSuccess("");
               setDraftMembers(next);

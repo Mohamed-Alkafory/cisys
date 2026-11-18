@@ -101,6 +101,12 @@ function apiMock(calls, members, opts = {}) {
     const method = opts.method || "GET";
     const bin = opts.body ? JSON.parse(opts.body) : null;
     calls.push([method, path, bin]);
+    if (method === "GET" && path.startsWith("/users?")) {
+      const users = ["lead", "member", "neo", "ghost"].map((username) => ({
+        username,
+      }));
+      return { total: users.length, users };
+    }
     if (method === "GET" && path === "/projects/1/team") {
       gets += 1;
       // After the initial load, honour the post-mutation list when provided.
@@ -154,7 +160,8 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Add a member"), {
+    await screen.findByRole("option", { name: "neo" });
+    fireEvent.change(screen.getByLabelText("User"), {
       target: { value: "neo" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add member" }));
@@ -193,7 +200,6 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
   });
 
   it("stages a removal without DELETE before Save", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const calls = [];
     const api = apiMock(calls, led);
     renderUnified(api);
@@ -203,12 +209,13 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Remove member from the project" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(
       calls.some(([m, p]) => m === "DELETE" && p === "/projects/1/team/member"),
     ).toBe(false);
-    expect(screen.queryByText("member")).toBeNull();
+    expect(screen.queryByLabelText("Role for member")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
-    expect(screen.getByText("member")).toBeTruthy();
+    expect(screen.getByLabelText("Role for member")).toBeTruthy();
     vi.restoreAllMocks();
   });
 
@@ -239,7 +246,8 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Add a member"), {
+    await screen.findByRole("option", { name: "ghost" });
+    fireEvent.change(screen.getByLabelText("User"), {
       target: { value: "ghost" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add member" }));
@@ -273,9 +281,9 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.change(screen.getByLabelText("Role for member"), {
       target: { value: "LEAD" },
     });
-    expect(screen.queryByText("Members saved.")).toBeNull();
+    expect(screen.queryByText("Team saved.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    expect(await screen.findByText("Members saved.")).toBeTruthy();
+    expect(await screen.findByText("Team saved.")).toBeTruthy();
   });
 
   it("does not claim success when a Team operation fails", async () => {
@@ -286,7 +294,8 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Add a member"), {
+    await screen.findByRole("option", { name: "ghost" });
+    fireEvent.change(screen.getByLabelText("User"), {
       target: { value: "ghost" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add member" }));
@@ -294,7 +303,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     await vi.waitFor(() =>
       expect(calls.some(([m]) => m === "POST")).toBe(true),
     );
-    expect(screen.queryByText("Members saved.")).toBeNull();
+    expect(screen.queryByText("Team saved.")).toBeNull();
   });
 
   it("re-fetches members after a successful Team save", async () => {
@@ -309,7 +318,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() =>
-      expect(screen.queryByText("Members saved.")).not.toBeNull(),
+      expect(screen.queryByText("Team saved.")).not.toBeNull(),
     );
     expect(
       calls.filter(([m, p]) => m === "GET" && p === "/projects/1/team").length,
@@ -334,7 +343,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     await vi.waitFor(() => expect(calls.some(([m]) => m === "PUT")).toBe(true));
     // The mutation happened, so the server already changed; the refresh failing must be visible.
     expect(screen.findByText(/could not be refreshed/)).toBeTruthy();
-    expect(screen.queryByText("Members saved.")).toBeNull();
+    expect(screen.queryByText("Team saved.")).toBeNull();
   });
 
   it("does not re-fetch members when switching tabs and back", async () => {
@@ -379,7 +388,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() =>
-      expect(screen.queryByText("Members saved.")).not.toBeNull(),
+      expect(screen.queryByText("Team saved.")).not.toBeNull(),
     );
     // After save, the select must reflect the fresh baseline.
     expect(screen.getByLabelText("Role for member").value).toBe("LEAD");

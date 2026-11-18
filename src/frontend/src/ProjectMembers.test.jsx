@@ -34,6 +34,7 @@ function renderCard({
   isAdmin = false,
   busy = false,
   loadError = "",
+  users = ["lead", "member", "neo"],
 } = {}) {
   const Harness = () => {
     const [draft, setDraft] = useState(() => toMap(members));
@@ -41,6 +42,7 @@ function renderCard({
       <ProjectMembers
         original={members}
         draft={draft}
+        users={users}
         onDraftChange={setDraft}
         user={user}
         isAdmin={isAdmin}
@@ -57,13 +59,13 @@ describe("ProjectMembers (staged)", () => {
     const { container } = renderCard({});
     const rows = container.querySelectorAll(".member-row");
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toContain("lead (you)");
+    expect(rows[0].textContent).toContain("lead");
     expect(rows[1].textContent).toContain("member");
   });
 
   it("stages an addition locally without contacting the backend", () => {
     renderCard({});
-    fireEvent.change(screen.getByLabelText("Add a member"), {
+    fireEvent.change(screen.getByLabelText("User"), {
       target: { value: "neo" },
     });
     fireEvent.change(screen.getByLabelText("Role"), {
@@ -82,40 +84,56 @@ describe("ProjectMembers (staged)", () => {
   });
 
   it("does not send DELETE before Save when asked to remove a member", () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     renderCard({});
     fireEvent.click(
       screen.getByRole("button", { name: "Remove member from the project" }),
     );
-    expect(screen.queryByText("member")).toBeNull();
-    vi.restoreAllMocks();
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain("member (member)");
+    expect(dialog.textContent).not.toContain("from this project");
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.queryByLabelText("Role for member")).toBeNull();
   });
 
-  it("rejects adding a user who is already a member", () => {
+  it("keeps the member when the removal pop-up is cancelled", () => {
     renderCard({});
-    fireEvent.change(screen.getByLabelText("Add a member"), {
-      target: { value: "member" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add member" }));
-    expect(
-      screen.getByText("'member' is already a member of this project."),
-    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove member from the project" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByLabelText("Role for member")).toBeTruthy();
+  });
+
+  it("offers only the users who are not on the team yet", () => {
+    renderCard({});
+    const options = [...screen.getByLabelText("User").options].map(
+      (o) => o.value,
+    );
+    expect(options).toEqual(["", "neo"]);
+  });
+
+  it("disables the user drop-down when nobody can be added", () => {
+    renderCard({ users: ["lead", "member"] });
+    expect(screen.getByLabelText("User").disabled).toBe(true);
+    expect(screen.getByText("No users available")).toBeTruthy();
   });
 
   it("lets a global admin manage the team without being one", () => {
     const admin = { username: "root", subject: "root-id", roles: ["admin"] };
     renderCard({ user: admin, isAdmin: true });
     expect(screen.getByLabelText("Role for lead")).toBeTruthy();
-    expect(screen.getByLabelText("Add a member")).toBeTruthy();
+    expect(screen.getByLabelText("User")).toBeTruthy();
   });
 
   it("is read-only for a plain project member", () => {
     renderCard({ user: memberUser });
-    expect(screen.queryByLabelText("Add a member")).toBeNull();
+    expect(screen.queryByLabelText("User")).toBeNull();
     expect(screen.queryByLabelText("Role for member")).toBeNull();
     expect(
       screen.getByText(
-        "Only the project's LEADs and admins can change the team.",
+        "Only the project's leads and admins can change the team.",
       ),
     ).toBeTruthy();
   });
@@ -130,7 +148,7 @@ describe("ProjectMembers (staged)", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText("No members yet")).toBeNull();
-    expect(screen.queryByLabelText("Add a member")).toBeNull();
+    expect(screen.queryByLabelText("User")).toBeNull();
   });
 
   it("offers retry after a load failure and calls the retry handler", () => {

@@ -9,19 +9,15 @@
 import React, { useState } from "react";
 import { Trash2, Users, UserPlus } from "lucide-react";
 import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { Badge } from "./components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
+import ConfirmDialog from "./components/layout/ConfirmDialog";
 import { cloneMap, toMap } from "./member-diff";
 
 const ROLES = ["MEMBER", "LEAD"];
 const SELECT =
   "h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm";
-
-function eq(a, b) {
-  return a && b && a.toLowerCase() === b.toLowerCase();
-}
 
 const key = (username) => username.toLowerCase();
 
@@ -34,6 +30,7 @@ const key = (username) => username.toLowerCase();
 export default function ProjectMembers({
   original, // server members or null while loading: [{username, role}]
   draft, // Map(lowercase -> {username, role}), the desired end state
+  users, // usernames that can be added, or null while loading
   onDraftChange, // (nextDraft: Map) => void
   loadError, // string | "" — the list itself failed to load
   user,
@@ -44,6 +41,8 @@ export default function ProjectMembers({
   const [name, setName] = useState("");
   const [role, setRole] = useState("MEMBER");
   const [addError, setAddError] = useState("");
+  // The server member whose removal awaits confirmation in the pop-up, or null.
+  const [confirmRemove, setConfirmRemove] = useState(null);
 
   const originalMap = toMap(original ?? []);
   const selfKey = key(user?.username ?? "");
@@ -69,6 +68,9 @@ export default function ProjectMembers({
     }
   }
 
+  // Users not yet on the (staged) team, in the order the Users page lists them.
+  const available = (users ?? []).filter((u) => !draft?.has(key(u)));
+
   function changeRole(row, nextRole) {
     if (row.role === nextRole || !canManage || busy) return;
     const next = cloneMap(draft);
@@ -79,15 +81,18 @@ export default function ProjectMembers({
   function remove(row) {
     if (!canManage || busy) return;
     const k = key(row.username);
-    const next = cloneMap(draft);
-    if (next.has(k) && !originalMap.has(k)) {
+    if (draft.has(k) && !originalMap.has(k)) {
       // Staged addition: drop it from the plan entirely.
-      next.delete(k);
+      dropFromDraft(row);
     } else {
-      // Server member: mark them as pending removal.
-      if (!window.confirm(`Remove ${row.username} from this project?`)) return;
-      next.delete(k);
+      // Server member: ask first, then mark them as pending removal.
+      setConfirmRemove(row);
     }
+  }
+
+  function dropFromDraft(row) {
+    const next = cloneMap(draft);
+    next.delete(key(row.username));
     onDraftChange?.(next);
   }
 
@@ -95,7 +100,7 @@ export default function ProjectMembers({
     event.preventDefault();
     if (!draft || !canManage || busy) return;
     const username = name.trim();
-    if (!username) return setAddError("Enter a Keycloak username.");
+    if (!username) return setAddError("Select a user.");
     const k = key(username);
     if (draft.has(k)) {
       setAddError(`'${username}' is already a member of this project.`);
@@ -112,14 +117,9 @@ export default function ProjectMembers({
   return (
     <Card className="project-card">
       <CardHeader>
-        <CardTitle>Members</CardTitle>
+        <CardTitle>Team</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="members-note">
-          MEMBER can view the project and start builds. LEAD can also edit the
-          project, pin builds and manage the team. Only existing Keycloak users
-          can be added. Changes are applied when you press Save.
-        </p>
         {loadError && (
           <div className="error-message" role="alert">
             <span className="block">{loadError}</span>
@@ -143,20 +143,16 @@ export default function ProjectMembers({
           <div className="empty-state">
             <Users size={28} aria-hidden="true" />
             <strong>No members yet</strong>
-            {canManage && <p>Add an existing Keycloak user below.</p>}
+            {canManage && <p>Add a user below.</p>}
           </div>
         ) : (
           <ul className="members-list">
             {rows.map((row) => {
-              const self = eq(row.username, user?.username);
               return (
                 <li className="member-row" key={row.username}>
-                  <span className="member-name">
-                    {row.username}
-                    {self && " (you)"}
-                  </span>
+                  <span className="member-name">{row.username}</span>
                   <Badge variant="outline" className="justify-self-start">
-                    {row.role}
+                    {row.role.toLowerCase()}
                   </Badge>
                   {canManage ? (
                     <div className="member-actions">
@@ -169,7 +165,7 @@ export default function ProjectMembers({
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {r}
+                            {r.toLowerCase()}
                           </option>
                         ))}
                       </select>
@@ -194,17 +190,31 @@ export default function ProjectMembers({
         {canManage && (
           <form className="member-add" onSubmit={addPending}>
             <div className="form-field">
-              <Label htmlFor="member-username">Add a member</Label>
-              <Input
+              <Label htmlFor="member-username">User</Label>
+              <select
                 id="member-username"
+                className={SELECT}
                 required
                 value={name}
-                maxLength={255}
-                autoComplete="off"
-                placeholder="Keycloak username"
-                disabled={busy}
-                onChange={(e) => setName(e.target.value)}
-              />
+                disabled={busy || available.length === 0}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setAddError("");
+                }}
+              >
+                <option value="">
+                  {users === null
+                    ? "Loading users…"
+                    : available.length === 0
+                      ? "No users available"
+                      : "Select a user"}
+                </option>
+                {available.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
               {addError && (
                 <p className="member-add-error" role="alert">
                   {addError}
@@ -222,7 +232,7 @@ export default function ProjectMembers({
               >
                 {ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {r}
+                    {r.toLowerCase()}
                   </option>
                 ))}
               </select>
@@ -241,10 +251,25 @@ export default function ProjectMembers({
         )}
         {readOnly && !loadError && (
           <p className="members-note">
-            Only the project&apos;s LEADs and admins can change the team.
+            Only the project&apos;s leads and admins can change the team.
           </p>
         )}
       </CardContent>
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        title="Remove"
+        message={
+          confirmRemove
+            ? `${confirmRemove.username} (${confirmRemove.role.toLowerCase()})`
+            : ""
+        }
+        confirmLabel="Remove"
+        onConfirm={() => {
+          dropFromDraft(confirmRemove);
+          setConfirmRemove(null);
+        }}
+        onCancel={() => setConfirmRemove(null)}
+      />
     </Card>
   );
 }

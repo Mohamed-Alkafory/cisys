@@ -22,7 +22,6 @@ import {
   Plus,
   Trash2,
   UserRound,
-  Users,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -205,6 +204,8 @@ function App() {
   const [projectSettings, setProjectSettings] = useState(
     () => projectSettingsFromPath(window.location.pathname) !== null,
   );
+  // The tab the project settings page opens on; not part of the URL.
+  const [settingsTab, setSettingsTab] = useState("general");
   const [dark, setDark] = useState(
     () => localStorage.getItem("cisys-theme") === "dark",
   );
@@ -293,6 +294,7 @@ function App() {
       setBuildId(build ? build.buildId : null);
       setProjectBranch(build ? build.branch : "");
       setProjectSettings(settings !== null);
+      setSettingsTab("general");
       setProjectName(
         settings
           ? settings.name
@@ -357,7 +359,8 @@ function App() {
 
   function openProjectSettings(name, tab = "general") {
     if (submitting || !confirmLeave()) return;
-    window.history.pushState(null, "", projectSettingsPath(name, tab));
+    window.history.pushState(null, "", projectSettingsPath(name));
+    setSettingsTab(tab);
     setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch("");
@@ -651,6 +654,7 @@ function App() {
             <ProjectSettings
               key={settingsProject.id}
               project={settingsProject}
+              initialTab={settingsTab}
               api={api}
               isAdmin={user.roles.includes("admin")}
               user={user}
@@ -867,20 +871,6 @@ function App() {
                           onClick={() => openProjectSettings(project.name)}
                         >
                           <Pencil size={16} aria-hidden="true" />
-                        </Button>
-                      )}
-                      {canEdit(project) && (
-                        <Button
-                          type="button"
-                          size="icon"
-                          disabled={submitting}
-                          title="Members"
-                          aria-label={`Members of ${project.name}`}
-                          onClick={() =>
-                            openProjectSettings(project.name, "team")
-                          }
-                        >
-                          <Users size={16} aria-hidden="true" />
                         </Button>
                       )}
                       {canDelete() && (
