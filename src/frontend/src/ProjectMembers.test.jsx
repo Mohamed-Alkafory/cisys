@@ -8,12 +8,40 @@
 
 import React, { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import ProjectMembers from "./ProjectMembers";
 import { toMap } from "./member-diff";
 
+// Radix Select uses pointer capture and ResizeObserver, which jsdom does not implement.
+beforeAll(() => {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+  Element.prototype.scrollIntoView = () => {};
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
+
 afterEach(cleanup);
 vi.restoreAllMocks();
+
+async function choose(label, option) {
+  const trigger = screen.getByLabelText(label);
+  fireEvent.pointerDown(trigger, {
+    button: 0,
+    ctrlKey: false,
+    pointerType: "mouse",
+  });
+  fireEvent.pointerUp(trigger, {
+    button: 0,
+    ctrlKey: false,
+    pointerType: "mouse",
+  });
+  fireEvent.click(await screen.findByRole("option", { name: option }));
+}
 
 const leadUser = { username: "lead", subject: "lead-id", roles: ["lead"] };
 const memberUser = {
@@ -63,24 +91,21 @@ describe("ProjectMembers (staged)", () => {
     expect(rows[1].textContent).toContain("member");
   });
 
-  it("stages an addition locally without contacting the backend", () => {
+  it("stages an addition locally without contacting the backend", async () => {
     renderCard({});
-    fireEvent.change(screen.getByLabelText("User"), {
-      target: { value: "neo" },
-    });
-    fireEvent.change(screen.getByLabelText("Role"), {
-      target: { value: "LEAD" },
-    });
+    await choose("User", "neo");
+    await choose("Role", "lead");
     fireEvent.click(screen.getByRole("button", { name: "Add member" }));
     expect(screen.getByText("neo")).toBeTruthy();
-    expect(screen.getByLabelText("Role for neo").value).toBe("LEAD");
+    expect(screen.getByLabelText("Role for neo").textContent).toContain("lead");
   });
 
-  it("stages a role change locally without contacting the backend", () => {
+  it("stages a role change locally without contacting the backend", async () => {
     renderCard({});
-    const select = screen.getByLabelText("Role for member");
-    fireEvent.change(select, { target: { value: "LEAD" } });
-    expect(select.value).toBe("LEAD");
+    await choose("Role for member", "lead");
+    expect(screen.getByLabelText("Role for member").textContent).toContain(
+      "lead",
+    );
   });
 
   it("does not send DELETE before Save when asked to remove a member", () => {
@@ -106,12 +131,23 @@ describe("ProjectMembers (staged)", () => {
     expect(screen.getByLabelText("Role for member")).toBeTruthy();
   });
 
-  it("offers only the users who are not on the team yet", () => {
+  it("offers only the users who are not on the team yet", async () => {
     renderCard({});
-    const options = [...screen.getByLabelText("User").options].map(
-      (o) => o.value,
+    const trigger = screen.getByLabelText("User");
+    fireEvent.pointerDown(trigger, {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse",
+    });
+    fireEvent.pointerUp(trigger, {
+      button: 0,
+      ctrlKey: false,
+      pointerType: "mouse",
+    });
+    const options = (await screen.findAllByRole("option")).map(
+      (option) => option.textContent,
     );
-    expect(options).toEqual(["", "neo"]);
+    expect(options).toEqual(["neo"]);
   });
 
   it("disables the user drop-down when nobody can be added", () => {
