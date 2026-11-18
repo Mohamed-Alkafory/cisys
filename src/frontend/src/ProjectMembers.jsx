@@ -12,12 +12,17 @@ import { Button } from "./components/ui/button";
 import { Label } from "./components/ui/label";
 import { Badge } from "./components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import ConfirmDialog from "./components/layout/ConfirmDialog";
 import { cloneMap, toMap } from "./member-diff";
 
 const ROLES = ["MEMBER", "LEAD"];
-const SELECT =
-  "h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm";
 
 const key = (username) => username.toLowerCase();
 
@@ -156,19 +161,25 @@ export default function ProjectMembers({
                   </Badge>
                   {canManage ? (
                     <div className="member-actions">
-                      <select
-                        className={SELECT}
-                        aria-label={`Role for ${row.username}`}
+                      <Select
                         value={row.role}
                         disabled={busy}
-                        onChange={(e) => changeRole(row, e.target.value)}
+                        onValueChange={(value) => changeRole(row, value)}
                       >
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {r.toLowerCase()}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger
+                          aria-label={`Role for ${row.username}`}
+                          className="w-full"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROLES.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {r.toLowerCase()}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <Button
                         type="button"
                         variant="outline"
@@ -191,30 +202,33 @@ export default function ProjectMembers({
           <form className="member-add" onSubmit={addPending}>
             <div className="form-field">
               <Label htmlFor="member-username">User</Label>
-              <select
-                id="member-username"
-                className={SELECT}
-                required
-                value={name}
+              <Select
+                value={name || undefined}
                 disabled={busy || available.length === 0}
-                onChange={(e) => {
-                  setName(e.target.value);
+                onValueChange={(value) => {
+                  setName(value);
                   setAddError("");
                 }}
               >
-                <option value="">
-                  {users === null
-                    ? "Loading users…"
-                    : available.length === 0
-                      ? "No users available"
-                      : "Select a user"}
-                </option>
-                {available.map((u) => (
-                  <option key={u} value={u}>
-                    {u}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger id="member-username" className="w-full">
+                  <SelectValue
+                    placeholder={
+                      users === null
+                        ? "Loading users…"
+                        : available.length === 0
+                          ? "No users available"
+                          : "Select a user"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {available.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {addError && (
                 <p className="member-add-error" role="alert">
                   {addError}
@@ -223,19 +237,18 @@ export default function ProjectMembers({
             </div>
             <div className="form-field">
               <Label htmlFor="member-role">Role</Label>
-              <select
-                id="member-role"
-                className={SELECT}
-                value={role}
-                disabled={busy}
-                onChange={(e) => setRole(e.target.value)}
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r.toLowerCase()}
-                  </option>
-                ))}
-              </select>
+              <Select value={role} disabled={busy} onValueChange={setRole}>
+                <SelectTrigger id="member-role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r.toLowerCase()}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button
               type="submit"

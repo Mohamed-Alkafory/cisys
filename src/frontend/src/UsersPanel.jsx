@@ -23,12 +23,18 @@ import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { Badge } from "./components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import PageHeader from "./components/layout/PageHeader";
+import ProjectPicker from "./components/users/ProjectPicker";
 
 const ROLES = ["member", "lead", "admin"];
 const PAGE_SIZE = 50;
-const SELECT =
-  "h-10 w-full rounded-md border border-input bg-transparent px-3 text-sm";
 const EMPTY = {
   username: "",
   email: "",
@@ -38,29 +44,6 @@ const EMPTY = {
   role: "member",
   projectIds: [],
 };
-
-function ProjectChoice({ projects, value, onChange, idPrefix }) {
-  if (projects.length === 0) return <span>—</span>;
-  const toggle = (id) =>
-    onChange(
-      value.includes(id) ? value.filter((p) => p !== id) : [...value, id],
-    );
-  return (
-    <div className="user-projects">
-      {projects.map((p) => (
-        <label key={p.id} htmlFor={`${idPrefix}-${p.id}`}>
-          <input
-            id={`${idPrefix}-${p.id}`}
-            type="checkbox"
-            checked={value.includes(p.id)}
-            onChange={() => toggle(p.id)}
-          />
-          {p.name}
-        </label>
-      ))}
-    </div>
-  );
-}
 
 export default function UsersPanel({ api, user }) {
   const admin = user.roles.includes("admin");
@@ -250,28 +233,30 @@ export default function UsersPanel({ api, user }) {
               {admin && (
                 <div className="form-field">
                   <Label htmlFor="user-role">Role</Label>
-                  <select
-                    id="user-role"
-                    className={SELECT}
+                  <Select
                     value={draft.role}
-                    onChange={(e) =>
-                      setDraft({ ...draft, role: e.target.value })
-                    }
+                    onValueChange={(role) => setDraft({ ...draft, role })}
                   >
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="user-role" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ROLES.map((r) => (
+                        <SelectItem key={r} value={r}>
+                          {r}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
               <div className="form-field">
                 <Label>Projects</Label>
-                <ProjectChoice
+                <ProjectPicker
                   projects={projects}
                   value={draft.projectIds}
                   idPrefix="new-user-project"
+                  label="Projects for the new user"
                   onChange={(projectIds) => setDraft({ ...draft, projectIds })}
                 />
               </div>
@@ -303,33 +288,47 @@ export default function UsersPanel({ api, user }) {
               onChange={filter(setSearch)}
             />
             {admin && (
-              <select
-                aria-label="Role"
-                className={SELECT}
-                value={role}
-                onChange={filter(setRole)}
+              <Select
+                value={role || "all"}
+                onValueChange={(value) => {
+                  setRole(value === "all" ? "" : value);
+                  setFirst(0);
+                }}
               >
-                <option value="">All roles</option>
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger aria-label="Role" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All roles</SelectItem>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
-            <select
-              aria-label="Project"
-              className={SELECT}
-              value={project}
-              onChange={filter(setProject)}
+            <Select
+              value={project || "all"}
+              onValueChange={(value) => {
+                setProject(value === "all" ? "" : value);
+                setFirst(0);
+              }}
             >
-              <option value="">{admin ? "All projects" : "My projects"}</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger aria-label="Project" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {admin ? "All projects" : "My projects"}
+                </SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           {page === null ? (
             !error && <p role="status">Loading users…</p>
@@ -370,21 +369,32 @@ export default function UsersPanel({ api, user }) {
                           setEditing({ ...editing, lastName: e.target.value })
                         }
                       />
-                      <select
-                        aria-label="Role"
-                        className={SELECT}
-                        value={editing.role}
-                        onChange={(e) =>
-                          setEditing({ ...editing, role: e.target.value })
+                      <Select
+                        value={editing.role || "none"}
+                        onValueChange={(value) =>
+                          setEditing({
+                            ...editing,
+                            role: value === "none" ? "" : value,
+                          })
                         }
                       >
-                        {editing.role === "" && <option value="">—</option>}
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger
+                          aria-label={`Role for ${u.username}`}
+                          className="w-full"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {editing.role === "" && (
+                            <SelectItem value="none">—</SelectItem>
+                          )}
+                          {ROLES.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {r}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <label className="user-enabled">
                         <input
                           type="checkbox"
@@ -402,10 +412,11 @@ export default function UsersPanel({ api, user }) {
                   ) : (
                     <span />
                   )}
-                  <ProjectChoice
+                  <ProjectPicker
                     projects={projects}
                     value={editing.projectIds}
                     idPrefix={`user-${u.id}-project`}
+                    label={`Projects for ${u.username}`}
                     onChange={(projectIds) =>
                       setEditing({ ...editing, projectIds })
                     }
@@ -451,11 +462,22 @@ export default function UsersPanel({ api, user }) {
                   </p>
                   <div className="user-tags">
                     {u.role && <Badge variant="outline">{u.role}</Badge>}
-                    {u.projects.map((p) => (
+                    {u.projects.slice(0, 4).map((p) => (
                       <Badge key={p.id} variant="secondary">
                         {p.name}
                       </Badge>
                     ))}
+                    {u.projects.length > 4 && (
+                      <Badge
+                        variant="outline"
+                        title={u.projects
+                          .slice(4)
+                          .map((p) => p.name)
+                          .join(", ")}
+                      >
+                        +{u.projects.length - 4} more
+                      </Badge>
+                    )}
                   </div>
                   <div className="user-actions">
                     {u.manageable ? (

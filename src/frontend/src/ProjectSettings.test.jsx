@@ -8,10 +8,38 @@
 
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import ProjectSettings from "./ProjectSettings";
 
+// Radix Select uses pointer capture and ResizeObserver, which jsdom does not implement.
+beforeAll(() => {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+  Element.prototype.scrollIntoView = () => {};
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
+
 afterEach(cleanup);
+
+async function choose(label, option) {
+  const trigger = screen.getByLabelText(label);
+  fireEvent.pointerDown(trigger, {
+    button: 0,
+    ctrlKey: false,
+    pointerType: "mouse",
+  });
+  fireEvent.pointerUp(trigger, {
+    button: 0,
+    ctrlKey: false,
+    pointerType: "mouse",
+  });
+  fireEvent.click(await screen.findByRole("option", { name: option }));
+}
 
 function project(id = 1) {
   return {
@@ -160,10 +188,8 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    await screen.findByRole("option", { name: "neo" });
-    fireEvent.change(screen.getByLabelText("User"), {
-      target: { value: "neo" },
-    });
+    await screen.findByLabelText("User");
+    await choose("User", "neo");
     fireEvent.click(screen.getByRole("button", { name: "Add member" }));
     expect(
       calls.some(([m, p]) => m === "POST" && p === "/projects/1/team"),
@@ -184,13 +210,17 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
     const api = apiMock(calls, led);
     renderUnified(api);
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
-    const select = await screen.findByLabelText("Role for member");
-    fireEvent.change(select, { target: { value: "LEAD" } });
+    await screen.findByLabelText("Role for member");
+    await choose("Role for member", "lead");
     expect(
       calls.some(([m, p]) => m === "PUT" && p === "/projects/1/team/member"),
     ).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await vi.waitFor(() => expect(select.value).toBe("LEAD"));
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText("Role for member").textContent).toContain(
+        "lead",
+      ),
+    );
     expect(
       calls.some(
         ([m, p, b]) =>
@@ -226,15 +256,11 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "MEMBER" },
-    });
-    // Change was a no-op here since member is already MEMBER; toggle to LEAD instead
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "LEAD" },
-    });
+    await choose("Role for member", "lead");
     fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
-    expect(screen.getByLabelText("Role for member").value).toBe("MEMBER");
+    expect(screen.getByLabelText("Role for member").textContent).toContain(
+      "member",
+    );
     expect(calls.filter(([m]) => m === "PUT")).toHaveLength(0);
   });
 
@@ -246,14 +272,10 @@ describe("ProjectSettings tabs (unified Save/Discard)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    await screen.findByRole("option", { name: "ghost" });
-    fireEvent.change(screen.getByLabelText("User"), {
-      target: { value: "ghost" },
-    });
+    await screen.findByLabelText("User");
+    await choose("User", "ghost");
     fireEvent.click(screen.getByRole("button", { name: "Add member" }));
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "LEAD" },
-    });
+    await choose("Role for member", "lead");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     // The POST fails first; the PUT has not been attempted yet.
     expect(
@@ -278,9 +300,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "LEAD" },
-    });
+    await choose("Role for member", "lead");
     expect(screen.queryByText("Team saved.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Team saved.")).toBeTruthy();
@@ -294,10 +314,8 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    await screen.findByRole("option", { name: "ghost" });
-    fireEvent.change(screen.getByLabelText("User"), {
-      target: { value: "ghost" },
-    });
+    await screen.findByLabelText("User");
+    await choose("User", "ghost");
     fireEvent.click(screen.getByRole("button", { name: "Add member" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() =>
@@ -313,9 +331,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "LEAD" },
-    });
+    await choose("Role for member", "lead");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() =>
       expect(screen.queryByText("Team saved.")).not.toBeNull(),
@@ -336,9 +352,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "LEAD" },
-    });
+    await choose("Role for member", "lead");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() => expect(calls.some(([m]) => m === "PUT")).toBe(true));
     // The mutation happened, so the server already changed; the refresh failing must be visible.
@@ -366,12 +380,12 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     const _ = await screen.findAllByText(/member/i);
     expect(_.length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "LEAD" },
-    });
+    await choose("Role for member", "lead");
     fireEvent.mouseDown(screen.getByRole("tab", { name: "General" }));
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
-    expect(screen.getByLabelText("Role for member").value).toBe("LEAD");
+    expect(screen.getByLabelText("Role for member").textContent).toContain(
+      "lead",
+    );
     expect(screen.getByRole("button", { name: "Save changes" }).disabled).toBe(
       false,
     );
@@ -383,15 +397,15 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     renderUnified(api);
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Team" }));
     await screen.findAllByText(/member/i);
-    fireEvent.change(screen.getByLabelText("Role for member"), {
-      target: { value: "LEAD" },
-    });
+    await choose("Role for member", "lead");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() =>
       expect(screen.queryByText("Team saved.")).not.toBeNull(),
     );
     // After save, the select must reflect the fresh baseline.
-    expect(screen.getByLabelText("Role for member").value).toBe("LEAD");
+    expect(screen.getByLabelText("Role for member").textContent).toContain(
+      "lead",
+    );
     // And there is nothing to discard or save anymore; the buttons hide.
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   });
