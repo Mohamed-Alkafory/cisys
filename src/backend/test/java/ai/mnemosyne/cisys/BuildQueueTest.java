@@ -382,14 +382,21 @@ class BuildQueueTest {
     restarted.commands =
         (args, timeout, limit) -> {
           calls.add(List.copyOf(args));
+          if (args.get(1).equals("info")) {
+            return new BuildRunner.Result(0, false, "systemd\n");
+          }
           if (args.get(1).equals("ps")) {
-            return new BuildRunner.Result(0, false, "cisys-build-1\ncisys-build-2\nunrelated\n");
+            return new BuildRunner.Result(
+                0,
+                false,
+                "cisys-build-1\ncisys-build-2\ncisys-build-5-base-working-container\nunrelated\n");
           }
           if (args.get(1).equals("images")) {
             return new BuildRunner.Result(
                 0,
                 false,
                 "localhost/cisys-build-3\nlocalhost/cisys-build-4-prepare\n"
+                    + "localhost/cisys-build-5-base\n"
                     + "docker.io/library/alpine\nlocalhost/cisys-build-x\n");
           }
           return new BuildRunner.Result(0, false, "");
@@ -401,12 +408,23 @@ class BuildQueueTest {
       restarted.recover(null);
       assertEquals(
           List.of(
-              List.of("podman", "ps", "-a", "--format", "{{.Names}}"),
+              List.of("podman", "info", "--format", "{{.Host.CgroupManager}}"),
+              // Stops the RUN processes of every build of the previous process.
+              systemctl("stop", "cisys-build.slice"),
+              List.of("podman", "ps", "-a", "--external", "--format", "{{.Names}}"),
               List.of("podman", "rm", "-f", "cisys-build-1"),
               List.of("podman", "rm", "-f", "cisys-build-2"),
+              // A working container of a build that was stopped.
+              List.of("podman", "rm", "-f", "cisys-build-5-base-working-container"),
               List.of("podman", "images", "--format", "{{.Repository}}"),
               List.of("podman", "rmi", "-f", "localhost/cisys-build-3"),
-              List.of("podman", "rmi", "-f", "localhost/cisys-build-4-prepare")),
+              List.of("podman", "rmi", "-f", "localhost/cisys-build-4-prepare"),
+              // The base image itself stays.
+              List.of(
+                  "podman",
+                  "untag",
+                  "localhost/cisys-build-5-base",
+                  "localhost/cisys-build-5-base")),
           calls);
       assertFalse(Files.exists(stale), "the stale checkout is removed");
       assertTrue(Files.exists(keep), "unrelated directories are kept");
@@ -415,6 +433,44 @@ class BuildQueueTest {
       restarted.stop();
       BuildRunner.delete(root);
     }
+  }
+
+  @Test
+  void removeBaseRemovesTheBuildsWorkingContainersThenItsTag() {
+    List<List<String>> calls = new CopyOnWriteArrayList<>();
+    BuildRunner r = new BuildRunner();
+    r.runtime = "podman";
+    r.commands =
+        (args, timeout, limit) -> {
+          calls.add(List.copyOf(args));
+          return new BuildRunner.Result(0, false, args.get(1).equals("ps") ? "a1\nb2\n" : "");
+        };
+    r.removeBase(BuildRunner.baseTag(7), BuildRunner.slice(7), null);
+    assertEquals(
+        List.of(
+            systemctl("stop", "cisys-build-7.slice"),
+            List.of(
+                "podman",
+                "ps",
+                "-a",
+                "--external",
+                "-q",
+                "--filter",
+                "name=^cisys-build-7-base-working-container"),
+            List.of("podman", "rm", "-f", "a1"),
+            List.of("podman", "rm", "-f", "b2"),
+            List.of(
+                "podman", "untag", "localhost/cisys-build-7-base", "localhost/cisys-build-7-base")),
+        calls);
+  }
+
+  private static List<String> systemctl(String... args) {
+    List<String> command = new java.util.ArrayList<>(List.of("systemctl"));
+    if (!"root".equals(System.getProperty("user.name"))) {
+      command.add("--user");
+    }
+    command.addAll(List.of(args));
+    return command;
   }
 
   @Test

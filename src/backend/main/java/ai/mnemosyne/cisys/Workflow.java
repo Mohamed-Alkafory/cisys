@@ -370,12 +370,18 @@ public record Workflow(
   }
 
   /**
+   * What a build may start {@code FROM}: an image ID, or the runner's tag of one for a single build
+   * ({@code BuildRunner#baseTag}), which also names the builder's working containers.
+   */
+  static final String BASE = "[0-9a-f]{64}|localhost/cisys-build-[0-9]+-base";
+
+  /**
    * The first Docker legacy-builder stage: installs the tools and the workflow's dependencies with
    * network. The second stage builds from this image with network off, because that builder has no
    * per-{@code RUN} network flag.
    */
   String prepareContainerfile(String baseId, boolean network) {
-    if (!baseId.matches("[0-9a-f]{64}")) {
+    if (!baseId.matches(BASE)) {
       throw new IllegalArgumentException("Not an image ID: " + baseId);
     }
     StringBuilder f = new StringBuilder();
@@ -405,7 +411,7 @@ public record Workflow(
       int waitSeconds,
       boolean installToolsAndDependencies,
       boolean perRunNetworkFlags) {
-    if (installToolsAndDependencies && !baseId.matches("[0-9a-f]{64}")) {
+    if (installToolsAndDependencies && !baseId.matches(BASE)) {
       throw new IllegalArgumentException("Not an image ID: " + baseId);
     }
     StringBuilder f = new StringBuilder();
@@ -459,17 +465,34 @@ public record Workflow(
         .append(' ')
         .append(WORKSPACE)
         .append(" /workspace\n");
-    for (String step : runs(waitSeconds)) {
+    List<String> runs = runs(waitSeconds);
+    for (int i = 0; i < runs.size(); i++) {
       run(
           f,
           readable,
           flags,
-          ". " + ENVIRONMENT_FILE + " || exit 1\n" + (network ? PROXY : "") + step,
+          ". "
+              + ENVIRONMENT_FILE
+              + " || exit 1\n"
+              + (network ? PROXY : "")
+              + runs.get(i)
+              + (i == runs.size() - 1 ? CLEAN_UP : ""),
           "step");
     }
     checkSize(f);
     return f.toString();
   }
+
+  /**
+   * Ends the last step. The builder saves what each {@code RUN} wrote as an image layer, in its
+   * temporary directory on the host, and the build image is removed afterwards; deleting the files
+   * the steps wrote keeps a large build, such as a local Maven repository, from filling the host's
+   * disk with a layer nobody reads.
+   */
+  static final String CLEAN_UP =
+      "echo '==> Removing the files the steps wrote'\n"
+          + "find /workspace /tmp /var/tmp -mindepth 1 -delete 2>/dev/null\n"
+          + "exit 0\n";
 
   private static void checkSize(StringBuilder file) {
     if (file.length() > MAX_CONTAINERFILE) {

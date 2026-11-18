@@ -364,6 +364,13 @@ class WorkflowTest {
         steps.get(0).body().contains("echo '==> Job: Build and test'\n")
             && steps.get(0).body().contains("sh -c 'make platform-start'"),
         steps.get(0).body());
+    // Only the last step removes the files, after the steps succeeded; the earlier steps' files
+    // are the later steps' input.
+    for (Instruction step : steps.subList(0, 3)) {
+      assertFalse(step.body().contains(Workflow.CLEAN_UP), step.body());
+    }
+    String last = steps.get(3).body();
+    assertTrue(last.endsWith("exit \"$rc\"; }\n" + Workflow.CLEAN_UP), last);
   }
 
   @Test

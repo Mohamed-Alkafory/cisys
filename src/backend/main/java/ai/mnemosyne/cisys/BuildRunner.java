@@ -391,8 +391,13 @@ public class BuildRunner {
       return List.of();
     }
     try {
-      Result r =
-          commands.run(List.of(runtime, "ps", "-a", "--format", "{{.Names}}"), 15, 1_000_000);
+      // Podman lists the builder's working containers only with --external.
+      List<String> ps = new ArrayList<>(List.of(runtime, "ps", "-a"));
+      if (runtime.equals("podman")) {
+        ps.add("--external");
+      }
+      ps.addAll(List.of("--format", "{{.Names}}"));
+      Result r = commands.run(ps, 15, 1_000_000);
       if (r.timeout() || r.code() != 0) {
         throw new IllegalStateException("Container listing failed");
       }
@@ -418,6 +423,109 @@ public class BuildRunner {
     }
   }
 
+  /** The tag of a build's base image, which Podman's working containers are named after. */
+  static String baseTag(long id) {
+    return "localhost/cisys-build-" + id + "-base";
+  }
+
+  private void tag(String imageId, String tag) throws Exception {
+    Result r = commands.run(List.of(runtime, "tag", imageId, tag), 30, 4096);
+    if (r.timeout() || r.code() != 0) {
+      throw new IllegalStateException("Could not tag the base image: " + r.output().strip());
+    }
+  }
+
+  /**
+   * The systemd slice of a build's {@code RUN} processes. Podman starts each in a scope of its own,
+   * outside the build command's process tree, so a stopped build command leaves them running; the
+   * slice stops them all.
+   */
+  static String slice(long id) {
+    return "cisys-build-" + id + ".slice";
+  }
+
+  /** The parent slice of every build's slice. */
+  static final String BUILDS_SLICE = "cisys-build.slice";
+
+  private volatile Boolean systemdCgroups;
+
+  /** Whether Podman manages cgroups with systemd, so builds can run in a slice of their own. */
+  boolean systemdCgroups() {
+    Boolean v = systemdCgroups;
+    if (v == null) {
+      try {
+        Result r =
+            commands.run(List.of(runtime, "info", "--format", "{{.Host.CgroupManager}}"), 30, 4096);
+        v = !r.timeout() && r.code() == 0 && r.output().strip().equals("systemd");
+      } catch (Exception e) {
+        v = false;
+      }
+      if (!v) {
+        Log.info("Podman does not use systemd cgroups; build processes are stopped with Podman");
+      }
+      systemdCgroups = v;
+    }
+    return v;
+  }
+
+  /** Stops a systemd slice, and so every process in it, of this user's manager. */
+  private void stopSlice(String slice) throws Exception {
+    List<String> stop = new ArrayList<>(List.of("systemctl"));
+    if (!"root".equals(System.getProperty("user.name"))) {
+      stop.add("--user");
+    }
+    stop.addAll(List.of("stop", slice));
+    Result r = commands.run(stop, 30, 4096);
+    if (r.timeout() || r.code() != 0) {
+      throw new IllegalStateException("systemctl failed: " + r.output().strip());
+    }
+  }
+
+  /**
+   * Cleans up after one Podman build. A stopped, timed-out or cancelled build leaves its {@code
+   * RUN} processes running, in {@code slice} when it is not null, and the builder's working
+   * containers with everything the steps wrote. Stops those processes, removes the containers, then
+   * the build's tag of its base image. Waits for the build command to exit first, so nothing is
+   * removed under it.
+   */
+  void removeBase(String tag, String slice, Process build) {
+    if (build != null) {
+      try {
+        build.waitFor(15, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+    if (slice != null) {
+      try {
+        stopSlice(slice);
+      } catch (Exception e) {
+        Log.warnf(e, "Could not stop the processes of %s", slice);
+      }
+    }
+    String container = tag.substring(tag.indexOf('/') + 1) + "-working-container";
+    try {
+      Result r =
+          commands.run(
+              List.of(runtime, "ps", "-a", "--external", "-q", "--filter", "name=^" + container),
+              15,
+              1_000_000);
+      if (r.timeout() || r.code() != 0) {
+        throw new IllegalStateException("Container listing failed: " + r.output().strip());
+      }
+      for (String c : r.output().lines().map(String::strip).filter(l -> !l.isEmpty()).toList()) {
+        removeContainer(c);
+      }
+    } catch (Exception e) {
+      Log.warnf(e, "Could not remove the build containers of %s", tag);
+    }
+    try {
+      removeImage(tag);
+    } catch (Exception e) {
+      Log.warnf(e, "Could not remove the tag %s", tag);
+    }
+  }
+
   /** Images of builds a previous runner process did not get to remove. */
   List<String> staleImages() {
     if (runtime == null) {
@@ -432,7 +540,7 @@ public class BuildRunner {
       return r.output()
           .lines()
           .map(String::strip)
-          .filter(n -> n.matches("(localhost/)?cisys-build-[0-9]+(-prepare)?"))
+          .filter(n -> n.matches("(localhost/)?cisys-build-[0-9]+(-prepare|-base)?"))
           .distinct()
           .toList();
     } catch (Exception e) {
@@ -440,9 +548,17 @@ public class BuildRunner {
     }
   }
 
+  /** A base tag is only untagged: the image it names may have no other name, and stays. */
   void removeImage(String name) {
     try {
-      Result r = commands.run(List.of(runtime, "rmi", "-f", name), 60, 4096);
+      Result r =
+          commands.run(
+              name.endsWith("-base")
+                  // With only the image, untag would remove every name of the image.
+                  ? List.of(runtime, "untag", name, name)
+                  : List.of(runtime, "rmi", "-f", name),
+              60,
+              4096);
       if (r.timeout() || r.code() != 0) {
         throw new IllegalStateException("Image command failed");
       }
@@ -469,6 +585,14 @@ public class BuildRunner {
   }
 
   private void cleanupOrphansUnchecked() {
+    // RUN processes of builds a previous process did not stop.
+    if ("podman".equals(runtime) && systemdCgroups()) {
+      try {
+        stopSlice(BUILDS_SLICE);
+      } catch (Exception e) {
+        Log.warnf(e, "Could not stop orphaned build processes");
+      }
+    }
     try {
       for (String name : staleContainers()) {
         try {
@@ -996,6 +1120,7 @@ public class BuildRunner {
     Throwable captureError = null;
     BuildLogs.Writer log = null;
     EgressProxy proxy = null;
+    String baseTag = null, slice = null;
     Running handle = new Running();
     running.put(id, handle);
     try {
@@ -1055,10 +1180,21 @@ public class BuildRunner {
       // A stored list that no longer validates fails the build rather than running it without its
       // rules.
       NetworkAllowlist allowlist = QuarkusTransaction.requiringNew().call(NetworkHost::allowlist);
-      String containerfile = workflow.containerfile(from.id(), !allowlist.isEmpty());
+      // Podman builds from a tag of the base image for this build only, as the builder names its
+      // working containers after the image; so the build's containers can be found and removed.
+      boolean podman = runtime.equals("podman");
+      String containerfile =
+          podman
+              ? "# "
+                  + baseTag(id)
+                  + " is image "
+                  + from.id()
+                  + ", tagged for this build\n"
+                  + workflow.containerfile(baseTag(id), !allowlist.isEmpty())
+              : workflow.containerfile(from.id(), !allowlist.isEmpty());
       // Stored before it runs, so the build page shows what ran, also when it failed.
       String shown =
-          runtime.equals("podman")
+          podman
               ? containerfile
               : dockerfiles(
                   workflow.prepareContainerfile(from.id(), !allowlist.isEmpty()),
@@ -1080,9 +1216,15 @@ public class BuildRunner {
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
       Streamed result;
       long outputBytes;
-      if (runtime.equals("podman")) {
+      if (podman) {
         Path file = Files.writeString(dir.resolve("Dockerfile"), containerfile);
+        baseTag = baseTag(id);
+        tag(from.id(), baseTag);
         List<String> build = buildCommand(file, name, limits);
+        if (systemdCgroups()) {
+          slice = slice(id);
+          build.add("--cgroup-parent=" + slice);
+        }
         if (proxy != null) {
           build.add("--volume=" + proxy.directory() + ":" + Workflow.PROXY_DIR + ":ro,Z");
           // SELinux does not let a container connect to a socket that a host process serves, and
@@ -1224,6 +1366,9 @@ public class BuildRunner {
         if (log != null) {
           log.line("Build cancelled");
         }
+      }
+      if (baseTag != null) {
+        removeBase(baseTag, slice, handle.process);
       }
       // The image only exists to run the workflow.
       try {
