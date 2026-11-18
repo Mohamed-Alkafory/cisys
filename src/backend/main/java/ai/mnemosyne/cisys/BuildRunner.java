@@ -1079,6 +1079,7 @@ public class BuildRunner {
       int timeoutSeconds = limits[5] * 60;
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
       Streamed result;
+      long outputBytes;
       if (runtime.equals("podman")) {
         Path file = Files.writeString(dir.resolve("Dockerfile"), containerfile);
         List<String> build = buildCommand(file, name, limits);
@@ -1095,6 +1096,7 @@ public class BuildRunner {
           throw new CancellationException();
         }
         result = stream(build, timeoutSeconds, log, logMaxBytes, p -> started(handle, p));
+        outputBytes = result.totalBytes();
       } else {
         // The Docker legacy builder enforces the resource flags, but it has no per-RUN network
         // flag. Tools and dependencies are installed first with network, then the steps build
@@ -1120,15 +1122,7 @@ public class BuildRunner {
         if (prepared.readerError() != null) {
           captureError = prepared.readerError();
         }
-        if (prepared.truncated()) {
-          truncated = true;
-          log.line(
-              "[output truncated after "
-                  + logMaxBytes
-                  + " bytes; "
-                  + (prepared.totalBytes() - logMaxBytes)
-                  + " further bytes discarded]");
-        }
+        outputBytes = prepared.totalBytes();
         if (prepared.timeout() || prepared.code() != 0) {
           result = prepared;
         } else {
@@ -1148,21 +1142,22 @@ public class BuildRunner {
                   build,
                   remainingSeconds(deadline),
                   log,
-                  logMaxBytes,
+                  remainingLogBytes(logMaxBytes, prepared),
                   p -> started(handle, p),
                   LEGACY_BUILDER);
+          outputBytes += result.totalBytes();
         }
       }
       if (result.readerError() != null) {
         captureError = result.readerError();
       }
-      if (result.truncated()) {
+      if (outputBytes > logMaxBytes) {
         truncated = true;
         log.line(
             "[output truncated after "
                 + logMaxBytes
                 + " bytes; "
-                + (result.totalBytes() - logMaxBytes)
+                + (outputBytes - logMaxBytes)
                 + " further bytes discarded]");
       }
       digest = digest(from.id());
@@ -1463,6 +1458,11 @@ public class BuildRunner {
 
   record Streamed(
       int code, boolean timeout, boolean truncated, long totalBytes, Throwable readerError) {}
+
+  /** A later stage only gets what earlier stages left, so one build stores at most maxBytes. */
+  static long remainingLogBytes(long maxBytes, Streamed earlier) {
+    return Math.max(0, maxBytes - earlier.totalBytes());
+  }
 
   static Streamed stream(List<String> args, int timeout, LogSink sink, long maxBytes)
       throws Exception {
