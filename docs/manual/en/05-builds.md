@@ -8,10 +8,7 @@ A **build** runs a branch's workflow, `.cisys/workflows/ci.yml`, by building a c
 
 ## Start a build
 
-Leads and admins select **Build** next to a branch on a project page. That runs the branch's workflow. The **Build history** form starts a build by entering
-
-* **Branch**: the branch to fetch
-* **Credential reference** (admins only, optional): see below
+Leads and admins select **Build** next to a branch on a project page. That runs the branch's workflow. A build of a private project fetches the branch with the project's credential reference; see **Private Git repositories** below.
 
 An admin can also turn on **Automatic builds** under **Settings** → **Builds**. A timer then looks for new commits on the project's watched branches and starts a build for each; see **Automatic builds** below. Automatic builds are on by default, for the whole instance, and are only for repositories you trust.
 
@@ -115,11 +112,86 @@ Only HTTPS repositories on an allowed host are accepted for builds. Redirects, e
 
 ## Private Git repositories
 
-Set an environment variable whose name starts with `CISYS_GIT_`, for example `CISYS_GIT_PROJECT`, to a read-only provider token in the backend environment before starting it. Then, as an admin, enter that variable name in the build form.
+cisys never stores a Git token. A private project names an environment variable of the backend, its **credential reference**, and the backend reads the token from that variable whenever it fetches the repository: for the branches panel, automatic builds and manual builds. The backend sends the token as the HTTPS password, with the user name `oauth2`.
 
-* The value is never stored in the project database. Only the backend's fetch uses it; the image build does not receive it, so it is not stored in the image and steps cannot read it.
-* Only admins can use credential references until credentials are scoped to individual projects.
+* The variable name starts with `CISYS_GIT_`, followed by 1 to 80 capital letters, digits or underscores. The names that configure the backend, such as `CISYS_GIT_ALLOWED_HOSTS`, cannot be used.
+* Only admins can set a credential reference, and only on a private project.
+* The image build does not receive the token, so it is not stored in the image, the Dockerfile or the log, and steps cannot read it.
+* Pull request builds never use the credential; they build from the project's mirror.
 * Never include secrets in workflow files or build output.
+
+### Example: a private GitHub repository
+
+This example builds the private repository `https://github.com/acme/app` and keeps its token in the variable `CISYS_GIT_ACME_APP`. It takes five steps: create a token on GitHub, check it, give it to the backend, create the project, and run a build.
+
+**1. Create a read-only token on GitHub.** Use a *fine-grained personal access token*: it can be limited to the one repository and to reading it. Sign in to GitHub as a user who can read `acme/app`, then:
+
+1. Select your profile picture → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**. The form is also at <https://github.com/settings/personal-access-tokens/new>.
+2. **Token name**: a name that says where the token is used, for example `cisys acme/app`.
+3. **Expiration**: the shortest period you are willing to renew, for example 90 days. An organization may set a maximum lifetime (366 days unless its owners change it).
+4. **Description** (optional): for example `Read-only checkout for the cisys build server`.
+5. **Resource owner**: the account or organization that owns the repository, here `acme`. The token can only reach repositories of this owner. If the organization requires approval, a **Justification** box appears; say what the token is for.
+6. **Repository access**: **Only select repositories**, then pick `acme/app` from **Select repositories**.
+7. **Permissions** → **Repository permissions** → **Contents**: **Read-only**. Leave every other permission at **No access**; **Metadata** stays at read-only, as GitHub requires it.
+8. Select **Generate token** and copy the token, which starts with `github_pat_`. GitHub shows it only once; if it is lost, regenerate it.
+
+If `acme` is an organization that requires approval, the token is `pending` and reads only public repositories until an organization owner approves it under the organization's **Settings** → **Personal access tokens** → **Pending requests**. A token created by an organization owner is approved at once. If the organization does not allow fine-grained tokens, ask an owner to allow them under **Settings** → **Personal access tokens**.
+
+A *classic* token with the `repo` scope also works, but it can read and write every repository its user can reach; GitHub recommends fine-grained tokens instead. For an organization that uses SAML single sign-on, a classic token must also be authorized for that organization (**Configure SSO** next to the token).
+
+A good practice is a dedicated machine user that is a read-only member of the repositories cisys builds, so that the token does not depend on one person's account.
+
+**2. Check the token.** Before giving the token to cisys, check that it can read the repository, with the same user name cisys sends. GitHub does not use the user name to authenticate; only the token counts.
+
+```sh
+git -c credential.helper= ls-remote https://oauth2@github.com/acme/app.git
+# Password: paste the token
+```
+
+The command lists the repository's branches, for example `… refs/heads/main`. *Repository not found* or *Authentication failed* means the token cannot read `acme/app`: check the resource owner, the selected repository, the **Contents** permission and whether the token is still pending. `credential.helper=` keeps Git from saving the token in a credential store.
+
+On GitLab, create a **project access token** instead, under the project's **Settings** → **Access tokens**, with the role **Reporter** and only the scope `read_repository`; check it the same way with the GitLab URL.
+
+**3. Give the token to the backend.** Set the variable in the environment the backend starts from, then start or restart it; a running backend does not see a variable added later. For a development setup started with `make run`:
+
+```sh
+read -rs CISYS_GIT_ACME_APP     # paste the token; it is not echoed or kept in the shell history
+export CISYS_GIT_ACME_APP
+make run
+```
+
+For a backend run as a systemd service, keep the token in a file that only the service account can read, and load it with `EnvironmentFile=`:
+
+```sh
+sudo install -m 600 -o cisys /dev/null /etc/cisys/git.env
+sudoedit /etc/cisys/git.env      # add the line CISYS_GIT_ACME_APP=github_pat_...
+```
+
+```ini
+# /etc/systemd/system/cisys.service.d/git.conf
+[Service]
+EnvironmentFile=/etc/cisys/git.env
+```
+
+Then run `sudo systemctl daemon-reload && sudo systemctl restart cisys`.
+
+**4. Create the project.** Sign in to cisys as an admin and fill in **Add a project** on the **Projects** page:
+
+* **Project name**: `app`
+* **Repository URL**: `https://github.com/acme/app.git`
+* **Private project**: ticked; the **Credential reference** field appears
+* **Credential reference**: `CISYS_GIT_ACME_APP`, the name of the variable, not the token
+
+Then select **Add project**. For an existing project, tick **Private project** and enter the credential reference on the **General** tab of the project's settings page instead.
+
+**5. Run a build.** Open the project page. The branches panel lists the repository's branches once the backend can read it. Select **Build** next to a branch; the build page shows the commit it fetched. Add the members who should see the project on the **Team** tab of the project's settings page.
+
+**When it fails:**
+
+* *Missing Git credential* when the branches are read, or *Build failed during checkout or container execution (IllegalStateException)* in the build log: the variable is not set, or is empty, in the backend's environment. Set it and restart the backend.
+* *Unable to read branches from the repository*, or a failed checkout in the build log, while the variable is set: the token has expired, lacks read access to **Contents**, or is waiting for the organization's approval. Run the check from step 2 again.
+* Changing the repository URL clears the credential reference, so the token is never sent to another host. An admin enters it again for the new URL.
+* To renew an expiring token, select **Regenerate token** on GitHub (or create a new one), put the new value in the variable and restart the backend; the project keeps the same reference. Delete a token on GitHub as soon as cisys no longer needs it.
 
 ## Images
 
