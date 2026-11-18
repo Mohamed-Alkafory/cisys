@@ -212,19 +212,16 @@ public class BuildResource {
     if (input.credentialRef() != null && !identity.hasRole("admin")) {
       throw new ForbiddenException();
     }
-    if (input.credentialRef() != null
-        && !input.credentialRef().matches("CISYS_GIT_[A-Z0-9_]{1,80}")) {
-      throw new BadRequestException("Invalid credential reference");
-    }
+    String credentialRef = ProjectResource.credential(p.privateRepository, input.credentialRef());
     try {
       repositoryUrls.validate(RepositoryUrls.cloneUrl(p.repositoryUrl));
     } catch (IllegalArgumentException e) {
       throw new BadRequestException(e.getMessage());
     }
-    RunRequest request =
-        input.credentialRef() == null && p.privateRepository
-            ? new RunRequest(input.branch(), p.credentialRef)
-            : input;
+    if (credentialRef == null && p.privateRepository) {
+      credentialRef = p.credentialRef;
+    }
+    RunRequest request = new RunRequest(input.branch(), credentialRef);
     return response(runner.submit(id, access.subject(), p.repositoryUrl, request));
   }
 }

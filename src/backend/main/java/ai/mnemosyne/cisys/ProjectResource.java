@@ -228,7 +228,7 @@ public class ProjectResource {
           "CISYS_GIT_INSECURE_TLS_HOSTS");
 
   /** The reference must name an environment variable; the token itself is never stored. */
-  private static String credential(boolean privateRepository, String reference) {
+  static String credential(boolean privateRepository, String reference) {
     if (reference == null || reference.isBlank()) {
       return null;
     }

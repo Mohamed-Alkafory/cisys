@@ -188,6 +188,36 @@ class BuildResourceTest {
   }
 
   @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "admin-id"))
+  void adminCannotUseServerConfigAsCredential() {
+    Long id = project(true);
+    allow("alpine:3.23");
+    given()
+        .contentType("application/json")
+        .body(REQUEST.replace("}", ",\"credentialRef\":\"CISYS_GIT_ALLOWED_HOSTS\"}"))
+        .post("/api/projects/" + id + "/builds")
+        .then()
+        .statusCode(400)
+        .body("error", containsString("configures the server"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "admin-id"))
+  void adminCannotUseCredentialForPublicProject() {
+    Long id = project(false);
+    allow("alpine:3.23");
+    given()
+        .contentType("application/json")
+        .body(REQUEST.replace("}", ",\"credentialRef\":\"CISYS_GIT_SECRET\"}"))
+        .post("/api/projects/" + id + "/builds")
+        .then()
+        .statusCode(400)
+        .body("error", equalTo("Only private projects can use a credential"));
+  }
+
+  @Test
   @TestSecurity(user = "lead", roles = "lead")
   @JwtSecurity(claims = @Claim(key = "sub", value = "owner-id"))
   void buildUsesProjectCredential() throws InterruptedException {
