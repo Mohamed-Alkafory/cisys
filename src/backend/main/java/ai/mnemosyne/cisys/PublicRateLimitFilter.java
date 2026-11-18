@@ -38,10 +38,16 @@ public class PublicRateLimitFilter implements ContainerRequestFilter {
   @Override
   public void filter(ContainerRequestContext context) {
     // CORS preflight requests are cheap and must not consume a visitor's budget.
-    if (context.getMethod().equals("OPTIONS")) return;
-    if (!identity.isAnonymous()) return;
+    if (context.getMethod().equals("OPTIONS")) {
+      return;
+    }
+    if (!identity.isAnonymous()) {
+      return;
+    }
     long retryAfter = limiter.acquire(clientAddress(), System.currentTimeMillis());
-    if (retryAfter == 0) return;
+    if (retryAfter == 0) {
+      return;
+    }
     context.abortWith(
         Response.status(429)
             .type(MediaType.APPLICATION_JSON)

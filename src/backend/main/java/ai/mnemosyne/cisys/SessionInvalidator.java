@@ -52,7 +52,9 @@ public class SessionInvalidator {
   String clientSecret;
 
   void onShutdown(@Observes ShutdownEvent event) {
-    if (enabled && !isLiveReload(LaunchMode.current(), event.isStandardShutdown())) invalidate();
+    if (enabled && !isLiveReload(LaunchMode.current(), event.isStandardShutdown())) {
+      invalidate();
+    }
   }
 
   /**

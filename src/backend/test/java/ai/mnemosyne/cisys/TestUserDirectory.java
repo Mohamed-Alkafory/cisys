@@ -36,7 +36,9 @@ public class TestUserDirectory implements UserDirectory {
 
   static void add(String id, String username, String role) {
     USERS.put(id, new User(id, username, null, null, null, true));
-    if (role != null) ROLES_BY_ID.put(id, role);
+    if (role != null) {
+      ROLES_BY_ID.put(id, role);
+    }
   }
 
   @Override
@@ -74,9 +76,12 @@ public class TestUserDirectory implements UserDirectory {
 
   @Override
   public String create(User user, String password) {
-    if (USERS.values().stream().anyMatch(u -> u.username().equals(user.username())))
+    if (USERS.values().stream().anyMatch(u -> u.username().equals(user.username()))) {
       throw new ConflictException("User exists with same username");
-    if ("weak".equals(password)) throw new RejectedException("Password policy not met");
+    }
+    if ("weak".equals(password)) {
+      throw new RejectedException("Password policy not met");
+    }
     String id = UUID.randomUUID().toString();
     USERS.put(
         id, new User(id, user.username(), user.email(), user.firstName(), user.lastName(), true));

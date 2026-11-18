@@ -12,10 +12,25 @@ import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.util.*;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 
 /** The images builds may use, and the images on the build host. */
 @Path("/api/images")
@@ -38,8 +53,9 @@ public class ImageResource {
   /** The images allowed for builds, for the build form. */
   @GET
   public List<String> allowed() {
-    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin")))
+    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) {
       throw new ForbiddenException();
+    }
     return names();
   }
 
@@ -73,7 +89,9 @@ public class ImageResource {
     } catch (Exception e) {
       throw failure(unreachable());
     }
-    if (failed.isPresent()) throw failure("Unable to pull " + name + ": " + failed.get());
+    if (failed.isPresent()) {
+      throw failure("Unable to pull " + name + ": " + failed.get());
+    }
     return local();
   }
 
@@ -89,7 +107,9 @@ public class ImageResource {
     } catch (Exception e) {
       throw failure(unreachable());
     }
-    if (failed.isPresent()) throw failure("Unable to remove " + name + ": " + failed.get());
+    if (failed.isPresent()) {
+      throw failure("Unable to remove " + name + ": " + failed.get());
+    }
     io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
         .run(() -> AllowedImage.deleteById(name));
     return local();
@@ -100,10 +120,13 @@ public class ImageResource {
   @Transactional
   public List<String> update(Selection input) {
     requireAdmin();
-    if (input == null || input.images() == null || input.images().size() > 500)
+    if (input == null || input.images() == null || input.images().size() > 500) {
       throw new BadRequestException("A list of images is required");
+    }
     Set<String> wanted = new TreeSet<>();
-    for (String name : input.images()) wanted.add(validName(name));
+    for (String name : input.images()) {
+      wanted.add(validName(name));
+    }
     AllowedImage.delete("name not in ?1", wanted.isEmpty() ? Set.of("") : wanted);
     for (String name : wanted) {
       if (AllowedImage.findById(name) == null) {
@@ -122,16 +145,19 @@ public class ImageResource {
   }
 
   private void requireAdmin() {
-    if (!identity.hasRole("admin")) throw new ForbiddenException();
+    if (!identity.hasRole("admin")) {
+      throw new ForbiddenException();
+    }
   }
 
   private static String validName(String name) {
-    if (name == null || !name.matches(AllowedImage.PATTERN))
+    if (name == null || !name.matches(AllowedImage.PATTERN)) {
       throw new WebApplicationException(
           Response.status(400)
               .type(MediaType.APPLICATION_JSON)
               .entity(Map.of("error", "Invalid image name"))
               .build());
+    }
     return name;
   }
 

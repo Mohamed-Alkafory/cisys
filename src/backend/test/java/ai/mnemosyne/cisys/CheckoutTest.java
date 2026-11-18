@@ -134,7 +134,9 @@ class CheckoutTest {
 
   @Test
   void rejectsTooManyFiles() throws Exception {
-    for (int i = 0; i < 6; i++) Files.writeString(source.resolve("f" + i), "x");
+    for (int i = 0; i < 6; i++) {
+      Files.writeString(source.resolve("f" + i), "x");
+    }
     commit();
     assertRejected("Repository checkout exceeds the limit of 5 files", 1, 5);
   }

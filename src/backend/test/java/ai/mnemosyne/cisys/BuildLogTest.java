@@ -8,7 +8,15 @@
 
 package ai.mnemosyne.cisys;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -262,7 +270,9 @@ class BuildLogTest {
     try (var w = logs.open(id)) {
       w.line("x");
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-      while (logs.readAll(id).isEmpty() && System.nanoTime() < deadline) Thread.sleep(50);
+      while (logs.readAll(id).isEmpty() && System.nanoTime() < deadline) {
+        Thread.sleep(50);
+      }
       assertEquals(
           "x\n", logs.readAll(id), "buffered output is stored without a further append or close");
     } finally {
@@ -352,7 +362,9 @@ class BuildLogTest {
       assertNull(b.exitCode);
       assertEquals("main", b.branch);
       assertNull(b.image);
-      while (runner.hasPendingBuilds() && System.nanoTime() < deadline) Thread.sleep(50);
+      while (runner.hasPendingBuilds() && System.nanoTime() < deadline) {
+        Thread.sleep(50);
+      }
       assertFalse(runner.hasPendingBuilds(), "the runner is released");
     } finally {
       logs.failWrites(false);

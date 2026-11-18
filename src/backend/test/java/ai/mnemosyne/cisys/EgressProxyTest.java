@@ -8,7 +8,10 @@
 
 package ai.mnemosyne.cisys;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -50,9 +53,13 @@ class EgressProxyTest {
   private final HostResolver resolver =
       host -> {
         String[] values = dns.get(host);
-        if (values == null) throw new UnknownHostException(host);
+        if (values == null) {
+          throw new UnknownHostException(host);
+        }
         InetAddress[] result = new InetAddress[values.length];
-        for (int i = 0; i < values.length; i++) result[i] = InetAddress.getByName(values[i]);
+        for (int i = 0; i < values.length; i++) {
+          result[i] = InetAddress.getByName(values[i]);
+        }
         return result;
       };
 
@@ -63,8 +70,9 @@ class EgressProxyTest {
   private final EgressProxy.Connector connector =
       (address, timeout) -> {
         connected.add(address);
-        if (address.getAddress().getHostAddress().equals("203.0.114.99"))
+        if (address.getAddress().getHostAddress().equals("203.0.114.99")) {
           throw new IOException("refused");
+        }
         SocketChannel c = SocketChannel.open();
         c.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), echo.getLocalPort()));
         return c;
@@ -121,7 +129,9 @@ class EgressProxyTest {
 
   private static void write(SocketChannel c, String text) throws IOException {
     ByteBuffer b = ByteBuffer.wrap(text.getBytes(StandardCharsets.ISO_8859_1));
-    while (b.hasRemaining()) c.write(b);
+    while (b.hasRemaining()) {
+      c.write(b);
+    }
   }
 
   /**
@@ -133,7 +143,9 @@ class EgressProxyTest {
     ByteBuffer b = ByteBuffer.allocate(1);
     while (text.indexOf("\r\n\r\n") < 0 && text.length() < 1024) {
       b.clear();
-      if (c.read(b) < 0) break;
+      if (c.read(b) < 0) {
+        break;
+      }
       text.append((char) (b.get(0) & 0xFF));
     }
     int end = text.indexOf("\r\n");
@@ -190,7 +202,9 @@ class EgressProxyTest {
             }
           }));
     }
-    for (int i = 0; i < 20; i++) assertEquals("message-" + i, results.get(i).get());
+    for (int i = 0; i < 20; i++) {
+      assertEquals("message-" + i, results.get(i).get());
+    }
     pool.shutdown();
   }
 

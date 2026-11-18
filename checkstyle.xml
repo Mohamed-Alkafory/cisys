@@ -5,8 +5,8 @@
 
 <!-- Complements google-java-format, which enforces indentation and import
      order. Enabled rules: FileTabCharacter, UnusedImports, RedundantImport,
-     OneStatementPerLine and JavaDoc on public and protected types and methods
-     outside tests. NeedBraces and AvoidStarImport are not enabled yet -->
+     OneStatementPerLine, NeedBraces, AvoidStarImport, and JavaDoc on public
+     and protected types and methods outside tests. -->
 <module name="Checker">
   <property name="charset" value="UTF-8"/>
   <module name="FileTabCharacter"/>
@@ -37,5 +37,7 @@
     <module name="AtclauseOrder"/>
     <module name="JavadocBlockTagLocation"/>
     <module name="InvalidJavadocPosition"/>
+    <module name="NeedBraces" />
+    <module name="AvoidStarImport" />
   </module>
 </module>

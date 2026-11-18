@@ -235,19 +235,24 @@ final class EgressProxy implements AutoCloseable {
       }
       open.add(upstream);
       deadline.cancel(false);
-      if (reached.size() < MAX_REPORTED && reached.add(parts[1]))
+      if (reached.size() < MAX_REPORTED && reached.add(parts[1])) {
         log.accept("==> Network connected: " + parts[1] + " (" + address.getHostAddress() + ")");
+      }
       reply(client, "200 Connection established");
       // Bytes the client sent after the request head belong to the tunnel.
       ByteBuffer early = ByteBuffer.wrap(header.array(), end + 4, header.position() - end - 4);
-      while (early.hasRemaining()) upstream.write(early);
+      while (early.hasRemaining()) {
+        upstream.write(early);
+      }
       tunnel(client, upstream);
     } catch (IOException | RuntimeException e) {
       // The connection is closed below; a broken client or upstream ends only its own tunnel.
     } finally {
       deadline.cancel(false);
       quietly(client);
-      if (upstream != null) quietly(upstream);
+      if (upstream != null) {
+        quietly(upstream);
+      }
     }
   }
 
@@ -257,10 +262,14 @@ final class EgressProxy implements AutoCloseable {
    */
   private static int readHeader(SocketChannel client, ByteBuffer header) throws IOException {
     while (header.hasRemaining()) {
-      if (client.read(header) < 0) return -1;
+      if (client.read(header) < 0) {
+        return -1;
+      }
       byte[] b = header.array();
       for (int i = 3; i < header.position(); i++) {
-        if (b[i - 3] == '\r' && b[i - 2] == '\n' && b[i - 1] == '\r' && b[i] == '\n') return i - 3;
+        if (b[i - 3] == '\r' && b[i - 2] == '\n' && b[i - 1] == '\r' && b[i] == '\n') {
+          return i - 3;
+        }
       }
     }
     return -1;
@@ -269,15 +278,26 @@ final class EgressProxy implements AutoCloseable {
   private record Target(String host, int port) {
     static Target parse(String value) {
       int colon = value.lastIndexOf(':');
-      if (colon <= 0 || colon == value.length() - 1) return null;
+      if (colon <= 0 || colon == value.length() - 1) {
+        return null;
+      }
       String host = value.substring(0, colon).toLowerCase(Locale.ROOT);
-      if (host.startsWith("[") != host.endsWith("]")) return null;
-      if (host.startsWith("[")) host = host.substring(1, host.length() - 1);
-      else if (host.contains(":")) return null;
-      if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+      if (host.startsWith("[") != host.endsWith("]")) {
+        return null;
+      }
+      if (host.startsWith("[")) {
+        host = host.substring(1, host.length() - 1);
+      } else if (host.contains(":")) {
+        return null;
+      }
+      if (host.endsWith(".")) {
+        host = host.substring(0, host.length() - 1);
+      }
       if (host.isEmpty()
           || host.length() > NetworkAllowlist.MAX_LENGTH
-          || !host.matches("[a-z0-9.:_-]+")) return null;
+          || !host.matches("[a-z0-9.:_-]+")) {
+        return null;
+      }
       int port;
       try {
         port = Integer.parseInt(value.substring(colon + 1));
@@ -299,12 +319,15 @@ final class EgressProxy implements AutoCloseable {
 
   /** The address to connect to, checked once so a later DNS change cannot redirect the tunnel. */
   private InetAddress check(Target target) throws Denied {
-    if (!policy.ports().contains(target.port()))
+    if (!policy.ports().contains(target.port())) {
       throw new Denied("403 Forbidden", "port not allowed");
-    if (!policy.allowlist().allowsHost(target.host()))
+    }
+    if (!policy.allowlist().allowsHost(target.host())) {
       throw new Denied("403 Forbidden", "host not allowed");
-    if (policy.deniedHosts().contains(target.host()))
+    }
+    if (policy.deniedHosts().contains(target.host())) {
       throw new Denied("403 Forbidden", "protected destination");
+    }
     InetAddress literal = NetworkAllowlist.literal(target.host());
     InetAddress[] addresses;
     if (literal != null) {
@@ -316,12 +339,15 @@ final class EgressProxy implements AutoCloseable {
         throw new Denied("502 Bad Gateway", "could not be resolved");
       }
     }
-    if (addresses == null || addresses.length == 0)
+    if (addresses == null || addresses.length == 0) {
       throw new Denied("502 Bad Gateway", "could not be resolved");
+    }
     // Every address is checked, not only the one used, so a name cannot mix a public and a
     // protected address.
     for (InetAddress address : addresses) {
-      if (address == null) throw new Denied("502 Bad Gateway", "could not be resolved");
+      if (address == null) {
+        throw new Denied("502 Bad Gateway", "could not be resolved");
+      }
       if (NetworkAllowlist.isProtected(address)
           || policy.deniedAddresses().contains(unwrapped(address))) {
         throw new Denied("403 Forbidden", "protected destination");
@@ -366,7 +392,9 @@ final class EgressProxy implements AutoCloseable {
       while (from.read(buffer) >= 0) {
         last.set(System.nanoTime());
         buffer.flip();
-        while (buffer.hasRemaining()) to.write(buffer);
+        while (buffer.hasRemaining()) {
+          to.write(buffer);
+        }
         buffer.clear();
       }
     } finally {
@@ -396,7 +424,9 @@ final class EgressProxy implements AutoCloseable {
                     + "\r\n")
                 .getBytes(StandardCharsets.ISO_8859_1));
     try {
-      while (response.hasRemaining()) client.write(response);
+      while (response.hasRemaining()) {
+        client.write(response);
+      }
     } catch (IOException ignored) {
       // The client went away.
     }
@@ -423,8 +453,12 @@ final class EgressProxy implements AutoCloseable {
   @Override
   public void close() {
     closed = true;
-    if (server != null) quietly(server);
-    for (Channel channel : open.toArray(Channel[]::new)) quietly(channel);
+    if (server != null) {
+      quietly(server);
+    }
+    for (Channel channel : open.toArray(Channel[]::new)) {
+      quietly(channel);
+    }
     threads.shutdownNow();
     timer.shutdownNow();
     try {
@@ -432,7 +466,9 @@ final class EgressProxy implements AutoCloseable {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }
-    if (!created) return;
+    if (!created) {
+      return;
+    }
     try {
       Files.deleteIfExists(directory.resolve(SOCKET));
       Files.deleteIfExists(directory);

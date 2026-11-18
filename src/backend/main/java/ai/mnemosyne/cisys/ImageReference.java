@@ -55,10 +55,13 @@ public final class ImageReference {
       String prefix = reference.toLowerCase(Locale.ROOT).replace("sha256:", "");
       List<String> ids =
           images.stream().map(Local::id).filter(id -> id.startsWith(prefix)).distinct().toList();
-      if (ids.size() > 1)
+      if (ids.size() > 1) {
         throw new Workflow.InvalidWorkflowException(
             "Image ID " + base + " matches several local images");
-      if (ids.size() == 1) return resolved(ids.get(0), images);
+      }
+      if (ids.size() == 1) {
+        return resolved(ids.get(0), images);
+      }
       // Not an ID after all; a name may also look like one.
     }
     if (reference.contains("@")) {
@@ -83,8 +86,12 @@ public final class ImageReference {
           .orElseThrow(() -> notAvailable(base));
     }
     List<String> ids = candidates.stream().map(Local::id).distinct().toList();
-    if (ids.isEmpty()) throw notAvailable(base);
-    if (ids.size() == 1) return resolved(ids.get(0), images);
+    if (ids.isEmpty()) {
+      throw notAvailable(base);
+    }
+    if (ids.size() == 1) {
+      return resolved(ids.get(0), images);
+    }
     // Several versions are present: an untagged name means latest, as for the runtime itself.
     return candidates.stream()
         .filter(i -> i.tag().equals("latest"))
@@ -106,7 +113,9 @@ public final class ImageReference {
   static String official(String repository) {
     int slash = repository.indexOf('/');
     String first = slash < 0 ? "" : repository.substring(0, slash);
-    if (first.contains(".") || first.contains(":") || first.equals("localhost")) return repository;
+    if (first.contains(".") || first.contains(":") || first.equals("localhost")) {
+      return repository;
+    }
     return "docker.io/" + (slash < 0 ? "library/" : "") + repository;
   }
 

@@ -58,7 +58,9 @@ public class StatsResource {
     Cached current = cached;
     if (current == null || !Instant.now().isBefore(current.expires())) {
       current = new Cached(compute(), Instant.now().plusSeconds(cacheSeconds));
-      if (cacheSeconds > 0) cached = current;
+      if (cacheSeconds > 0) {
+        cached = current;
+      }
     }
     return Response.ok(current.stats())
         .header("Cache-Control", "public, max-age=" + cacheSeconds)

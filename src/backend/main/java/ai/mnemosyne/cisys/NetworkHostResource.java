@@ -59,8 +59,12 @@ public class NetworkHostResource {
     requireAdmin();
     String name = name(input);
     String host = host(input);
-    if (NetworkHost.count("host", host) > 0) throw error(409, host + " is already allowed");
-    if (NetworkHost.count() >= NetworkAllowlist.MAX_ENTRIES) throw tooMany();
+    if (NetworkHost.count("host", host) > 0) {
+      throw error(409, host + " is already allowed");
+    }
+    if (NetworkHost.count() >= NetworkAllowlist.MAX_ENTRIES) {
+      throw tooMany();
+    }
     return Response.status(201).entity(view(add(name, host))).build();
   }
 
@@ -71,11 +75,14 @@ public class NetworkHostResource {
   public View update(@PathParam("id") Long id, Input input) {
     requireAdmin();
     NetworkHost h = NetworkHost.findById(id);
-    if (h == null) throw new NotFoundException();
+    if (h == null) {
+      throw new NotFoundException();
+    }
     String name = name(input);
     String host = host(input);
-    if (NetworkHost.count("host = ?1 and id <> ?2", host, id) > 0)
+    if (NetworkHost.count("host = ?1 and id <> ?2", host, id) > 0) {
       throw error(409, host + " is already allowed");
+    }
     h.name = name;
     h.host = host;
     return view(h);
@@ -87,7 +94,9 @@ public class NetworkHostResource {
   @Transactional
   public Response delete(@PathParam("id") Long id) {
     requireAdmin();
-    if (!NetworkHost.deleteById(id)) throw new NotFoundException();
+    if (!NetworkHost.deleteById(id)) {
+      throw new NotFoundException();
+    }
     return Response.noContent().build();
   }
 
@@ -109,8 +118,12 @@ public class NetworkHostResource {
     NetworkTemplate template = NetworkTemplate.find(id).orElseThrow(NotFoundException::new);
     List<String> missing =
         template.hosts().stream().filter(h -> NetworkHost.count("host", h) == 0).toList();
-    if (NetworkHost.count() + missing.size() > NetworkAllowlist.MAX_ENTRIES) throw tooMany();
-    for (String host : missing) add(template.name(), host);
+    if (NetworkHost.count() + missing.size() > NetworkAllowlist.MAX_ENTRIES) {
+      throw tooMany();
+    }
+    for (String host : missing) {
+      add(template.name(), host);
+    }
     return views();
   }
 
@@ -126,8 +139,9 @@ public class NetworkHostResource {
 
   private static String name(Input input) {
     String name = input == null || input.name() == null ? "" : input.name().strip();
-    if (name.isEmpty() || name.length() > MAX_NAME)
+    if (name.isEmpty() || name.length() > MAX_NAME) {
       throw error(400, "A name of up to " + MAX_NAME + " characters is required");
+    }
     return name;
   }
 
@@ -162,6 +176,8 @@ public class NetworkHostResource {
   }
 
   private void requireAdmin() {
-    if (!identity.hasRole("admin")) throw new ForbiddenException();
+    if (!identity.hasRole("admin")) {
+      throw new ForbiddenException();
+    }
   }
 }

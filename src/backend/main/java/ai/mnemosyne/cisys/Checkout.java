@@ -111,7 +111,9 @@ final class Checkout {
           fetch(git, url, new RefSpec(revision), credentials, cancelled, 1);
           haveRevision = has(repo, revision);
         } catch (Exception e) {
-          if (repo.exceeded) throw tooLarge(maxMib);
+          if (repo.exceeded) {
+            throw tooLarge(maxMib);
+          }
         }
       }
       if (!haveRevision) {
@@ -124,8 +126,12 @@ final class Checkout {
               cancelled,
               1);
         } catch (Exception e) {
-          if (repo.exceeded) throw tooLarge(maxMib);
-          if (revision == null) throw e;
+          if (repo.exceeded) {
+            throw tooLarge(maxMib);
+          }
+          if (revision == null) {
+            throw e;
+          }
         }
       }
       String target = ref;
@@ -138,7 +144,9 @@ final class Checkout {
           try {
             fetch(git, url, new RefSpec(revision), credentials, cancelled, 1);
           } catch (Exception e) {
-            if (repo.exceeded) throw tooLarge(maxMib);
+            if (repo.exceeded) {
+              throw tooLarge(maxMib);
+            }
           }
           if (!has(repo, revision)) {
             // Fall back to the branch's history when the provider does not allow SHA fetches.
@@ -153,12 +161,15 @@ final class Checkout {
                   cancelled,
                   0);
             } catch (Exception e) {
-              if (repo.exceeded) throw tooLarge(maxMib);
+              if (repo.exceeded) {
+                throw tooLarge(maxMib);
+              }
             }
           }
-          if (!has(repo, revision))
+          if (!has(repo, revision)) {
             throw new IllegalArgumentException(
                 "Commit " + revision + " is not reachable on branch " + branch);
+          }
         }
       }
       checkTree(repo, target, maxMib, maxFiles);
@@ -200,17 +211,26 @@ final class Checkout {
                     return cancelled.getAsBoolean();
                   }
                 });
-    if (depth > 0) fetch.setDepth(depth);
-    else fetch.setUnshallow(true);
-    if (credentials != null) fetch.setCredentialsProvider(credentials);
+    if (depth > 0) {
+      fetch.setDepth(depth);
+    } else {
+      fetch.setUnshallow(true);
+    }
+    if (credentials != null) {
+      fetch.setCredentialsProvider(credentials);
+    }
     fetch.call();
   }
 
   /** A full, lower-case SHA-1, or null when no revision was requested. */
   static String normalizeRevision(String revision) {
-    if (revision == null || revision.isBlank()) return null;
+    if (revision == null || revision.isBlank()) {
+      return null;
+    }
     String value = revision.strip().toLowerCase(java.util.Locale.ROOT);
-    if (!value.matches("[0-9a-f]{40}")) throw new IllegalArgumentException("Invalid commit ID");
+    if (!value.matches("[0-9a-f]{40}")) {
+      throw new IllegalArgumentException("Invalid commit ID");
+    }
     return value;
   }
 
@@ -230,9 +250,13 @@ final class Checkout {
       tree.addTree(revs.parseCommit(repo.resolve(ref)).getTree());
       tree.setRecursive(true);
       while (tree.next()) {
-        if (++files > maxFiles) throw tooMany(maxFiles);
+        if (++files > maxFiles) {
+          throw tooMany(maxFiles);
+        }
         // Submodule commits are not fetched.
-        if (tree.getFileMode(0) == FileMode.GITLINK) continue;
+        if (tree.getFileMode(0) == FileMode.GITLINK) {
+          continue;
+        }
         CoreConfig.EolStreamType eol = tree.getCheckoutEolStreamType(0);
         if (eol == null
             || eol == CoreConfig.EolStreamType.DIRECT
@@ -253,7 +277,9 @@ final class Checkout {
           }
           bytes += written.count;
         }
-        if (bytes > maxMib * MIB) throw tooLarge(maxMib);
+        if (bytes > maxMib * MIB) {
+          throw tooLarge(maxMib);
+        }
       }
     }
   }
@@ -271,9 +297,13 @@ final class Checkout {
 
           @Override
           public FileVisitResult visitFile(Path f, BasicFileAttributes attrs) {
-            if (++total[0] > maxFiles) throw tooMany(maxFiles);
+            if (++total[0] > maxFiles) {
+              throw tooMany(maxFiles);
+            }
             total[1] += attrs.size();
-            if (total[1] > maxMib * MIB) throw tooLarge(maxMib);
+            if (total[1] > maxMib * MIB) {
+              throw tooLarge(maxMib);
+            }
             return FileVisitResult.CONTINUE;
           }
         });
@@ -312,7 +342,9 @@ final class Checkout {
 
     private void add(long n) throws IOException {
       count += n;
-      if (count > max) throw new Exceeded();
+      if (count > max) {
+        throw new Exceeded();
+      }
     }
   }
 
@@ -350,21 +382,27 @@ final class Checkout {
       @Override
       public int read() throws IOException {
         int b = super.read();
-        if (b >= 0) count(1);
+        if (b >= 0) {
+          count(1);
+        }
         return b;
       }
 
       @Override
       public int read(byte[] buf, int off, int len) throws IOException {
         int n = super.read(buf, off, len);
-        if (n > 0) count(n);
+        if (n > 0) {
+          count(n);
+        }
         return n;
       }
 
       @Override
       public long skip(long n) throws IOException {
         long skipped = super.skip(n);
-        if (skipped > 0) count(skipped);
+        if (skipped > 0) {
+          count(skipped);
+        }
         return skipped;
       }
 

@@ -442,7 +442,9 @@ class WorkflowTest {
       }
       StringBuilder body = new StringBuilder();
       int start = i;
-      while (!lines.get(++i).equals(heredoc.group(1))) body.append(lines.get(i)).append('\n');
+      while (!lines.get(++i).equals(heredoc.group(1))) {
+        body.append(lines.get(i)).append('\n');
+      }
       result.add(new Instruction(lines.get(start), body.toString()));
     }
     return result;

@@ -311,7 +311,9 @@ class SettingsResourceTest {
     QuarkusTransaction.requiringNew()
         .run(() -> {
           Settings s = Settings.findById(1L);
-          if (s == null) return;
+          if (s == null) {
+            return;
+          }
           s.pollEnabled = true;
           s.pollGranularity = Settings.Granularity.PER_COMMIT;
           s.pollScope = Settings.Scope.WORKFLOW;
@@ -458,7 +460,9 @@ class SettingsResourceTest {
     QuarkusTransaction.requiringNew()
         .run(() -> {
           Settings s = Settings.findById(1L);
-          if (s == null) return;
+          if (s == null) {
+            return;
+          }
           s.pullRequestsEnabled = false;
         });
   }

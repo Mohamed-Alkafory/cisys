@@ -74,7 +74,9 @@ public class BuildLogs {
             .call(() -> {
               try (Connection c = dataSource.getConnection()) {
                 Long existing = logOid(c, buildId, true);
-                if (existing != null) return existing;
+                if (existing != null) {
+                  return existing;
+                }
                 long created = largeObjects(c).createLO(LargeObjectManager.READWRITE);
                 try (PreparedStatement s =
                     c.prepareStatement("update build set logoid = cast(? as oid) where id = ?")) {
@@ -111,15 +113,23 @@ public class BuildLogs {
    * means no limit. Used by the log endpoints to support partial and tail reads.
    */
   public void streamTo(long buildId, OutputStream out, long offset, long limit) throws IOException {
-    if (offset < 0) throw new IllegalArgumentException("offset must not be negative");
-    if (limit == 0) return;
+    if (offset < 0) {
+      throw new IllegalArgumentException("offset must not be negative");
+    }
+    if (limit == 0) {
+      return;
+    }
     Long oid = logOid(buildId);
-    if (oid == null) return;
+    if (oid == null) {
+      return;
+    }
     long written = 0;
     for (long at = offset; limit < 0 || written < limit; ) {
       int want = (int) Math.min(READ_BYTES, limit < 0 ? READ_BYTES : limit - written);
       byte[] part = read(oid, at, want);
-      if (part.length == 0) return;
+      if (part.length == 0) {
+        return;
+      }
       out.write(part);
       out.flush();
       at += part.length;
@@ -130,7 +140,9 @@ public class BuildLogs {
   /** Total number of bytes stored for a build, or zero when it has no log yet. */
   public long size(long buildId) {
     Long oid = logOid(buildId);
-    if (oid == null) return 0;
+    if (oid == null) {
+      return 0;
+    }
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           try (Connection c = dataSource.getConnection()) {
@@ -154,11 +166,15 @@ public class BuildLogs {
    * {@code maxBytes} is reduced to the maximum, so the caller still gets the end of the log.
    */
   public static Range range(long size, Long offset, Long limit, Long tail, long maxBytes) {
-    if (offset != null && offset < 0)
+    if (offset != null && offset < 0) {
       throw new IllegalArgumentException("offset must not be negative");
-    if (limit != null && limit < 0)
+    }
+    if (limit != null && limit < 0) {
       throw new IllegalArgumentException("limit must not be negative");
-    if (tail != null && tail < 0) throw new IllegalArgumentException("tail must not be negative");
+    }
+    if (tail != null && tail < 0) {
+      throw new IllegalArgumentException("tail must not be negative");
+    }
     long start;
     if (tail != null) {
       long wanted = maxBytes >= 0 ? Math.min(tail, maxBytes) : tail;
@@ -168,7 +184,9 @@ public class BuildLogs {
     }
     long available = Math.max(0, size - start);
     long length = limit == null ? available : Math.min(limit, available);
-    if (maxBytes >= 0) length = Math.min(length, maxBytes);
+    if (maxBytes >= 0) {
+      length = Math.min(length, maxBytes);
+    }
     return new Range(start, length);
   }
 
@@ -196,7 +214,9 @@ public class BuildLogs {
         c.prepareStatement("select logoid from build where id = ?" + (lock ? " for update" : ""))) {
       s.setLong(1, buildId);
       try (ResultSet r = s.executeQuery()) {
-        if (!r.next()) throw new IllegalArgumentException("No build " + buildId);
+        if (!r.next()) {
+          throw new IllegalArgumentException("No build " + buildId);
+        }
         long oid = r.getLong(1);
         return r.wasNull() ? null : oid;
       }
@@ -223,7 +243,9 @@ public class BuildLogs {
   }
 
   private void writeAtEnd(long oid, byte[] data, int length) {
-    if (failWrites) throw new IllegalStateException("Log writes disabled for testing");
+    if (failWrites) {
+      throw new IllegalStateException("Log writes disabled for testing");
+    }
     QuarkusTransaction.requiringNew()
         .call(() -> {
           try (Connection c = dataSource.getConnection()) {
@@ -266,7 +288,9 @@ public class BuildLogs {
         buffer.write(bytes, off, n);
         off += n;
         len -= n;
-        if (buffer.size() >= FLUSH_BYTES) flush();
+        if (buffer.size() >= FLUSH_BYTES) {
+          flush();
+        }
       }
     }
 
@@ -287,11 +311,15 @@ public class BuildLogs {
     }
 
     private synchronized void periodicFlush() {
-      if (!closed) flush();
+      if (!closed) {
+        flush();
+      }
     }
 
     private void flush() {
-      if (failed || buffer.size() == 0) return;
+      if (failed || buffer.size() == 0) {
+        return;
+      }
       try {
         writeAtEnd(oid, buffer.toByteArray(), buffer.size());
         buffer.reset();
@@ -306,7 +334,9 @@ public class BuildLogs {
     public void close() {
       task.cancel(false);
       synchronized (this) {
-        if (closed) return;
+        if (closed) {
+          return;
+        }
         flush();
         closed = true;
       }

@@ -46,7 +46,9 @@ public class GitRepositoryService {
    * without one.
    */
   public List<String> listBranches(Project project) {
-    if (project.privateRepository && project.credentialRef == null) return List.of();
+    if (project.privateRepository && project.credentialRef == null) {
+      return List.of();
+    }
     return listBranches(project.repositoryUrl, project.credentialRef);
   }
 
@@ -87,8 +89,9 @@ public class GitRepositoryService {
         configureTransport(git.getRepository().getConfig(), verifyTls);
         var command =
             git.lsRemote().setRemote(repositoryUrl).setHeads(true).setTimeout(TIMEOUT_SECONDS);
-        if (token != null)
+        if (token != null) {
           command.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", token));
+        }
         return command.call().stream().map(Ref::getName).toList();
       }
     } catch (IOException e) {
@@ -109,26 +112,33 @@ public class GitRepositoryService {
    * the project, so a stored build identity is never re-derived from a changed repository URL.
    */
   public Map<Integer, String> listPullRequests(Project project) {
-    if (project.privateRepository && project.credentialRef == null) return Map.of();
+    if (project.privateRepository && project.credentialRef == null) {
+      return Map.of();
+    }
     String url = project.repositoryUrl;
     boolean local = allowLocal && url != null && url.startsWith("file:");
     String cloneUrl = local ? url : RepositoryUrls.cloneUrl(url);
     if (local) {
-      if (!Files.isDirectory(Path.of(URI.create(url))))
+      if (!Files.isDirectory(Path.of(URI.create(url)))) {
         throw new BranchLookupException("Local repository does not exist: " + url, null);
+      }
     } else {
       // The host rule runs before any provider detection, so an unsupported host is skipped.
       repositoryUrls.validate(cloneUrl);
     }
     PullRequestProvider provider = provider(project);
-    if (provider == null) return Map.of();
+    if (provider == null) {
+      return Map.of();
+    }
     try {
       Map<Integer, String> heads = new TreeMap<>();
       for (Map.Entry<String, String> ref :
           remoteRefs(cloneUrl, project.credentialRef, local || repositoryUrls.verifyTls(url))
               .entrySet()) {
         Integer number = provider.number(ref.getKey());
-        if (number != null) heads.put(number, ref.getValue());
+        if (number != null) {
+          heads.put(number, ref.getValue());
+        }
       }
       return heads;
     } catch (BranchLookupException e) {
@@ -164,11 +174,14 @@ public class GitRepositoryService {
       try (Git git = Git.init().setDirectory(dir.toFile()).call()) {
         configureTransport(git.getRepository().getConfig(), verifyTls);
         var command = git.lsRemote().setRemote(repositoryUrl).setTimeout(TIMEOUT_SECONDS);
-        if (token != null)
+        if (token != null) {
           command.setCredentialsProvider(new UsernamePasswordCredentialsProvider("oauth2", token));
+        }
         Map<String, String> refs = new TreeMap<>();
         for (Ref ref : command.call()) {
-          if (ref.getObjectId() != null) refs.put(ref.getName(), ref.getObjectId().name());
+          if (ref.getObjectId() != null) {
+            refs.put(ref.getName(), ref.getObjectId().name());
+          }
         }
         return refs;
       }
@@ -189,10 +202,13 @@ public class GitRepositoryService {
    * The token of a credential reference, or null when the project has none. Overridden in tests.
    */
   protected String token(String credentialRef) {
-    if (credentialRef == null) return null;
+    if (credentialRef == null) {
+      return null;
+    }
     String token = System.getenv(credentialRef);
-    if (token == null || token.isBlank())
+    if (token == null || token.isBlank()) {
       throw new BranchLookupException("Missing Git credential", null);
+    }
     return token;
   }
 
@@ -208,9 +224,13 @@ public class GitRepositoryService {
   static List<String> branchNames(Collection<String> refs) {
     TreeSet<String> names = new TreeSet<>();
     for (String ref : refs) {
-      if (ref == null || !ref.startsWith("refs/heads/")) continue;
+      if (ref == null || !ref.startsWith("refs/heads/")) {
+        continue;
+      }
       String name = ref.substring("refs/heads/".length());
-      if (!name.isBlank()) names.add(name);
+      if (!name.isBlank()) {
+        names.add(name);
+      }
     }
     return List.copyOf(names);
   }

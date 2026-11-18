@@ -44,7 +44,9 @@ public class BuildRetention {
     try {
       Settings s = QuarkusTransaction.requiringNew().call(Settings::current);
       int deleted = purge(Instant.now(), s.retentionDays, s.retentionMaxBuilds);
-      if (deleted > 0) Log.infof("Retention deleted %d builds", deleted);
+      if (deleted > 0) {
+        Log.infof("Retention deleted %d builds", deleted);
+      }
     } catch (RuntimeException e) {
       Log.error("Build retention failed", e);
     }

@@ -8,7 +8,15 @@
 
 package ai.mnemosyne.cisys;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -93,7 +101,9 @@ class CommitPollerTest {
 
   String commit(Path repo, String path, byte[] content, String message) throws Exception {
     Path file = repo.resolve(path);
-    if (file.getParent() != null) Files.createDirectories(file.getParent());
+    if (file.getParent() != null) {
+      Files.createDirectories(file.getParent());
+    }
     Files.write(file, content);
     try (Git git = Git.open(repo.toFile())) {
       git.add().addFilepattern(".").call();
@@ -119,7 +129,9 @@ class CommitPollerTest {
   String commitAt(Path repo, String path, String content, String message, long epochSeconds)
       throws Exception {
     Path file = repo.resolve(path);
-    if (file.getParent() != null) Files.createDirectories(file.getParent());
+    if (file.getParent() != null) {
+      Files.createDirectories(file.getParent());
+    }
     Files.writeString(file, content);
     PersonIdent who =
         new PersonIdent(
@@ -853,9 +865,10 @@ class CommitPollerTest {
     // A build request has only a branch and a credential. Revision and trigger are internal.
     var components = BuildResource.RunRequest.class.getRecordComponents();
     assertEquals(2, components.length);
-    for (var component : components)
+    for (var component : components) {
       assertFalse(
           component.getName().equals("revision") || component.getName().equals("trigger"),
           component.getName() + " must not be request input");
+    }
   }
 }

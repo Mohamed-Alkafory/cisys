@@ -107,9 +107,15 @@ public class UserResource {
   /** The roles of every user that has one, read once per request. */
   private record Roles(Set<String> admins, Set<String> leads, Set<String> members) {
     String of(String id) {
-      if (admins.contains(id)) return "admin";
-      if (leads.contains(id)) return "lead";
-      if (members.contains(id)) return "member";
+      if (admins.contains(id)) {
+        return "admin";
+      }
+      if (leads.contains(id)) {
+        return "lead";
+      }
+      if (members.contains(id)) {
+        return "member";
+      }
       return null;
     }
   }
@@ -128,9 +134,12 @@ public class UserResource {
     Caller caller = caller();
     int from = first == null ? 0 : Math.max(0, first);
     int size = max == null ? DEFAULT_PAGE : Math.min(MAX_PAGE, Math.max(1, max));
-    if (role != null && !role.isBlank() && !UserDirectory.ROLES.contains(role))
+    if (role != null && !role.isBlank() && !UserDirectory.ROLES.contains(role)) {
       throw error(400, "Unknown role");
-    if (project != null && !caller.inScope(project)) throw new NotFoundException();
+    }
+    if (project != null && !caller.inScope(project)) {
+      throw new NotFoundException();
+    }
     String wantedRole = role == null || role.isBlank() ? null : role;
     Roles roles = roles();
     if (caller.admin() && wantedRole == null && project == null) {
@@ -142,13 +151,15 @@ public class UserResource {
       directory.inRole(wantedRole).forEach(u -> candidates.put(u.id(), u));
     } else {
       Collection<Long> scope = project == null ? caller.projects() : List.of(project);
-      for (String subject : ProjectMember.subjects(scope))
+      for (String subject : ProjectMember.subjects(scope)) {
         directory.find(subject).ifPresent(u -> candidates.put(u.id(), u));
+      }
       // A lead adds members from other projects by searching for them.
-      if (project == null && !caller.admin() && search != null && !search.isBlank())
+      if (project == null && !caller.admin() && search != null && !search.isBlank()) {
         directory.search(search, 0, MAX_PAGE).stream()
             .filter(u -> "member".equals(roles.of(u.id())))
             .forEach(u -> candidates.putIfAbsent(u.id(), u));
+      }
     }
     List<User> matching =
         candidates.values().stream()
@@ -165,7 +176,9 @@ public class UserResource {
   @Path("/projects")
   public List<ProjectRef> projects() {
     Caller caller = caller();
-    if (!caller.admin() && caller.projects().isEmpty()) return List.of();
+    if (!caller.admin() && caller.projects().isEmpty()) {
+      return List.of();
+    }
     List<Project> projects =
         caller.admin()
             ? Project.list("order by name")
@@ -180,14 +193,24 @@ public class UserResource {
   @POST
   public Response create(Input input) {
     Caller caller = caller();
-    if (input == null) throw error(400, "A username and a password are required");
+    if (input == null) {
+      throw error(400, "A username and a password are required");
+    }
     String role = input.role() == null || input.role().isBlank() ? "member" : input.role();
-    if (!UserDirectory.ROLES.contains(role)) throw error(400, "Unknown role");
-    if (!caller.admin() && !role.equals("member")) throw new ForbiddenException();
+    if (!UserDirectory.ROLES.contains(role)) {
+      throw error(400, "Unknown role");
+    }
+    if (!caller.admin() && !role.equals("member")) {
+      throw new ForbiddenException();
+    }
     Set<Long> projects = projectIds(input.projectIds());
     if (!caller.admin()) {
-      if (projects.isEmpty()) throw error(400, "Choose at least one project");
-      if (!caller.projects().containsAll(projects)) throw new ForbiddenException();
+      if (projects.isEmpty()) {
+        throw error(400, "Choose at least one project");
+      }
+      if (!caller.projects().containsAll(projects)) {
+        throw new ForbiddenException();
+      }
     }
     String username = username(input.username());
     String password = password(input.password());
@@ -224,25 +247,34 @@ public class UserResource {
   @Path("/{id}")
   public View update(@PathParam("id") String id, Input input) {
     Caller caller = caller();
-    if (input == null) throw error(400, "Nothing to change");
+    if (input == null) {
+      throw error(400, "Nothing to change");
+    }
     User user = directory.find(id).orElseThrow(NotFoundException::new);
     String current = directory.role(id);
     if (!caller.admin()) {
       // Only members: a user without a cisys role may still hold Keycloak admin rights.
-      if (!"member".equals(current)) throw new NotFoundException();
+      if (!"member".equals(current)) {
+        throw new NotFoundException();
+      }
       if (input.projectIds() != null) {
         Set<Long> wanted = projectIds(input.projectIds());
-        if (!caller.projects().containsAll(wanted)) throw new ForbiddenException();
+        if (!caller.projects().containsAll(wanted)) {
+          throw new ForbiddenException();
+        }
         QuarkusTransaction.requiringNew()
             .run(() -> ProjectMember.replace(id, caller.projects(), wanted));
       }
       return views(caller, roles(), List.of(user)).get(0);
     }
     String role = input.role() == null || input.role().isBlank() ? current : input.role();
-    if (role != null && !UserDirectory.ROLES.contains(role)) throw error(400, "Unknown role");
+    if (role != null && !UserDirectory.ROLES.contains(role)) {
+      throw error(400, "Unknown role");
+    }
     boolean enabled = input.enabled() == null ? user.enabled() : input.enabled();
-    if (id.equals(caller.subject()) && (!"admin".equals(role) || !enabled))
+    if (id.equals(caller.subject()) && (!"admin".equals(role) || !enabled)) {
       throw error(400, "You cannot remove your own admin access");
+    }
     User changed =
         new User(
             id,
@@ -252,7 +284,9 @@ public class UserResource {
             input.lastName() == null ? user.lastName() : name(input.lastName()),
             enabled);
     directory.update(changed);
-    if (role != null && !role.equals(current)) directory.setRole(id, role);
+    if (role != null && !role.equals(current)) {
+      directory.setRole(id, role);
+    }
     if (input.projectIds() != null) {
       Set<Long> wanted = projectIds(input.projectIds());
       QuarkusTransaction.requiringNew().run(() -> ProjectMember.replace(id, null, wanted));
@@ -270,7 +304,9 @@ public class UserResource {
     directory.find(id).orElseThrow(NotFoundException::new);
     if (!caller.admin()) {
       if (!"member".equals(directory.role(id))
-          || !ProjectMember.subjects(caller.projects()).contains(id)) throw new NotFoundException();
+          || !ProjectMember.subjects(caller.projects()).contains(id)) {
+        throw new NotFoundException();
+      }
     }
     directory.setPassword(id, password(input == null ? null : input.password()));
     return Response.noContent().build();
@@ -281,8 +317,12 @@ public class UserResource {
   @Path("/{id}")
   public Response delete(@PathParam("id") String id) {
     Caller caller = caller();
-    if (!caller.admin()) throw new ForbiddenException();
-    if (id.equals(caller.subject())) throw error(400, "You cannot delete yourself");
+    if (!caller.admin()) {
+      throw new ForbiddenException();
+    }
+    if (id.equals(caller.subject())) {
+      throw error(400, "You cannot delete yourself");
+    }
     directory.find(id).orElseThrow(NotFoundException::new);
     directory.delete(id);
     QuarkusTransaction.requiringNew().run(() -> ProjectMember.delete("subject", id));
@@ -308,11 +348,16 @@ public class UserResource {
   }
 
   private Caller caller() {
-    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null)
+    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null) {
       throw new NotAuthorizedException("Bearer");
+    }
     String subject = jwt.getSubject();
-    if (identity.hasRole("admin")) return new Caller(subject, true, Set.of());
-    if (!identity.hasRole("lead")) throw new ForbiddenException();
+    if (identity.hasRole("admin")) {
+      return new Caller(subject, true, Set.of());
+    }
+    if (!identity.hasRole("lead")) {
+      throw new ForbiddenException();
+    }
     Set<Long> projects = new TreeSet<>(ProjectMember.projectIds(subject));
     Project.<Project>list("ownerSubject", subject).forEach(p -> projects.add(p.id));
     return new Caller(subject, false, projects);
@@ -327,7 +372,9 @@ public class UserResource {
   }
 
   private List<View> views(Caller caller, Roles roles, List<User> users) {
-    if (users.isEmpty()) return List.of();
+    if (users.isEmpty()) {
+      return List.of();
+    }
     List<String> ids = users.stream().map(User::id).toList();
     Map<String, List<Long>> memberships = new HashMap<>();
     ProjectMember.<ProjectMember>list("subject in ?1", ids)
@@ -336,8 +383,9 @@ public class UserResource {
     Set<Long> projectIds = new TreeSet<>();
     memberships.values().forEach(projectIds::addAll);
     Map<Long, String> names = new HashMap<>();
-    if (!projectIds.isEmpty())
+    if (!projectIds.isEmpty()) {
       Project.<Project>list("id in ?1", projectIds).forEach(p -> names.put(p.id, p.name));
+    }
     List<View> views = new ArrayList<>();
     for (User u : users) {
       String role = roles.of(u.id());
@@ -365,7 +413,9 @@ public class UserResource {
   }
 
   private static boolean matches(User u, String search) {
-    if (search == null || search.isBlank()) return true;
+    if (search == null || search.isBlank()) {
+      return true;
+    }
     String s = search.strip().toLowerCase(Locale.ROOT);
     return contains(u.username(), s)
         || contains(u.email(), s)
@@ -379,39 +429,50 @@ public class UserResource {
 
   /** The ids, each of an existing project. */
   private static Set<Long> projectIds(List<Long> ids) {
-    if (ids == null) return Set.of();
+    if (ids == null) {
+      return Set.of();
+    }
     Set<Long> set = new TreeSet<>(ids.stream().filter(Objects::nonNull).toList());
-    if (!set.isEmpty() && Project.count("id in ?1", set) != set.size())
+    if (!set.isEmpty() && Project.count("id in ?1", set) != set.size()) {
       throw error(400, "Unknown project");
+    }
     return set;
   }
 
   private static String username(String value) {
     String username = value == null ? "" : value.strip().toLowerCase(Locale.ROOT);
-    if (!USERNAME.matcher(username).matches())
+    if (!USERNAME.matcher(username).matches()) {
       throw error(
           400,
           "Usernames use up to 100 letters, digits, '.', '_', '@' and '-', and start with a letter"
               + " or digit");
+    }
     return username;
   }
 
   private static String email(String value) {
     String email = Optional.ofNullable(value).map(String::strip).orElse("");
-    if (email.isEmpty()) return null;
-    if (email.length() > 254 || !EMAIL.matcher(email).matches()) throw error(400, "Invalid email");
+    if (email.isEmpty()) {
+      return null;
+    }
+    if (email.length() > 254 || !EMAIL.matcher(email).matches()) {
+      throw error(400, "Invalid email");
+    }
     return email;
   }
 
   private static String name(String value) {
     String name = Optional.ofNullable(value).map(String::strip).orElse("");
-    if (name.length() > 100) throw error(400, "Names are up to 100 characters");
+    if (name.length() > 100) {
+      throw error(400, "Names are up to 100 characters");
+    }
     return name.isEmpty() ? null : name;
   }
 
   private static String password(String value) {
-    if (value == null || value.isBlank() || value.length() > 255)
+    if (value == null || value.isBlank() || value.length() > 255) {
       throw error(400, "A password of up to 255 characters is required");
+    }
     return value;
   }
 

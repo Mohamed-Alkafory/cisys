@@ -13,7 +13,20 @@ import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotAuthorizedException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
@@ -91,12 +104,16 @@ public class BuildResource {
   }
 
   private Project visible(Long id) {
-    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin")))
+    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) {
       throw new ForbiddenException();
-    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null)
+    }
+    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null) {
       throw new NotAuthorizedException("Bearer");
+    }
     Project p = Project.findById(id);
-    if (p == null || !access.canView(p)) throw new NotFoundException();
+    if (p == null || !access.canView(p)) {
+      throw new NotFoundException();
+    }
     return p;
   }
 
@@ -115,7 +132,9 @@ public class BuildResource {
   public BuildResponse detail(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
     visible(id);
     Build b = Build.findById(buildId);
-    if (b == null || !id.equals(b.projectId)) throw new NotFoundException();
+    if (b == null || !id.equals(b.projectId)) {
+      throw new NotFoundException();
+    }
     return response(b, true);
   }
 
@@ -163,10 +182,13 @@ public class BuildResource {
   private BuildResponse setPinned(Long id, Long buildId, boolean pinned) {
     Project p = visible(id);
     if (!identity.hasRole("admin")
-        && !((JsonWebToken) identity.getPrincipal()).getSubject().equals(p.ownerSubject))
+        && !((JsonWebToken) identity.getPrincipal()).getSubject().equals(p.ownerSubject)) {
       throw new ForbiddenException();
+    }
     Build b = Build.findById(buildId);
-    if (b == null || !id.equals(b.projectId)) throw new NotFoundException();
+    if (b == null || !id.equals(b.projectId)) {
+      throw new NotFoundException();
+    }
     b.pinned = pinned;
     return response(b, true);
   }
@@ -177,14 +199,19 @@ public class BuildResource {
   public BuildResponse cancel(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
     Project p = visible(id);
     Build b = Build.findById(buildId);
-    if (b == null || !id.equals(b.projectId)) throw new NotFoundException();
-    if (!access.mayCancel(p, b)) throw new ForbiddenException();
-    if (!runner.cancel(buildId))
+    if (b == null || !id.equals(b.projectId)) {
+      throw new NotFoundException();
+    }
+    if (!access.mayCancel(p, b)) {
+      throw new ForbiddenException();
+    }
+    if (!runner.cancel(buildId)) {
       throw new WebApplicationException(
           jakarta.ws.rs.core.Response.status(409)
               .type(MediaType.APPLICATION_JSON)
               .entity(java.util.Map.of("error", "The build has already finished."))
               .build());
+    }
     return response(
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
             .call(() -> Build.<Build>findById(buildId)),
@@ -195,16 +222,23 @@ public class BuildResource {
   @POST
   public BuildResponse start(@PathParam("projectId") Long id, RunRequest input) {
     Project p = visible(id);
-    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
+    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
+      throw new ForbiddenException();
+    }
     if (input == null
         || input.branch() == null
         || !org.eclipse.jgit.lib.Repository.isValidRefName("refs/heads/" + input.branch())
         || input.branch().startsWith("-")
-        || input.branch().length() > 150) throw new BadRequestException("Invalid branch");
-    if (input.credentialRef() != null && !identity.hasRole("admin")) throw new ForbiddenException();
+        || input.branch().length() > 150) {
+      throw new BadRequestException("Invalid branch");
+    }
+    if (input.credentialRef() != null && !identity.hasRole("admin")) {
+      throw new ForbiddenException();
+    }
     if (input.credentialRef() != null
-        && !input.credentialRef().matches("CISYS_GIT_[A-Z0-9_]{1,80}"))
+        && !input.credentialRef().matches("CISYS_GIT_[A-Z0-9_]{1,80}")) {
       throw new BadRequestException("Invalid credential reference");
+    }
     try {
       repositoryUrls.validate(RepositoryUrls.cloneUrl(p.repositoryUrl));
     } catch (IllegalArgumentException e) {

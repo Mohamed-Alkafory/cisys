@@ -112,7 +112,9 @@ public class ProjectPageResource {
   public PageBuild build(@PathParam("name") String name, @PathParam("buildId") Long buildId) {
     Project p = access.visible(name);
     Build b = Build.findById(buildId);
-    if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
+    if (b == null || !p.id.equals(b.projectId)) {
+      throw new NotFoundException();
+    }
     return pageBuild(b, access.canSeePrivate(p), access.canCancel(p, b), true);
   }
 
@@ -161,7 +163,9 @@ public class ProjectPageResource {
       @QueryParam("tail") Long tail) {
     Project p = access.visible(name);
     Build b = Build.findById(buildId);
-    if (b == null || !p.id.equals(b.projectId)) throw new NotFoundException();
+    if (b == null || !p.id.equals(b.projectId)) {
+      throw new NotFoundException();
+    }
     long size = logs.size(buildId);
     // The size and range are a snapshot; a running build may append while this response streams.
     // Signed-in visitors, including the owner on a private project, still get the whole log.

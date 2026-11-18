@@ -19,12 +19,30 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -64,7 +82,9 @@ public class BuildRunner {
 
   private static boolean onPath(String program) {
     for (String dir : System.getenv().getOrDefault("PATH", "").split(File.pathSeparator)) {
-      if (!dir.isEmpty() && Files.isExecutable(Path.of(dir, program))) return true;
+      if (!dir.isEmpty() && Files.isExecutable(Path.of(dir, program))) {
+        return true;
+      }
     }
     return false;
   }
@@ -85,8 +105,9 @@ public class BuildRunner {
   List<String> buildCommand(Path file, String tag, int[] limits) {
     List<String> build =
         new ArrayList<>(List.of(runtime, "build", "--no-cache", "-f", file.toString(), "-t", tag));
-    if (runtime.equals("podman"))
+    if (runtime.equals("podman")) {
       build.addAll(List.of("--pull=never", "--layers=false", "--security-opt=no-new-privileges"));
+    }
     build.addAll(resourceLimits(limits[2], limits[3], limits[4]));
     return build;
   }
@@ -184,9 +205,10 @@ public class BuildRunner {
   private synchronized void retryCompletions() {
     // After shutdown there is no transaction manager; the next start marks the build failed.
     if (!running()) {
-      if (!completions.isEmpty())
+      if (!completions.isEmpty()) {
         Log.warnf(
             "Not saving the result of builds %s: the server has stopped", completions.keySet());
+      }
       return;
     }
     for (Completion result : completions.values()) {
@@ -239,7 +261,9 @@ public class BuildRunner {
                   Instant.now(),
                   id,
                   Build.Status.QUEUED)
-              == 1) return true;
+              == 1) {
+            return true;
+          }
           return Build.update(
                   "cancelRequested = true where id = ?1 and status = ?2", id, Build.Status.RUNNING)
               == 1;
@@ -248,7 +272,9 @@ public class BuildRunner {
 
   /** Stops this runner's builds whose cancellation was requested through the API. */
   void stopCancelled() {
-    if (running.isEmpty()) return;
+    if (running.isEmpty()) {
+      return;
+    }
     List<Long> ids =
         QuarkusTransaction.requiringNew()
             .call(() ->
@@ -261,7 +287,9 @@ public class BuildRunner {
                     .getResultList());
     for (Long id : ids) {
       Running r = running.get(id);
-      if (r != null && !r.cancelled) kill(r);
+      if (r != null && !r.cancelled) {
+        kill(r);
+      }
     }
   }
 
@@ -272,12 +300,16 @@ public class BuildRunner {
   void kill(Running r) {
     r.cancelled = true;
     Process p = r.process;
-    if (p != null) terminate(p);
+    if (p != null) {
+      terminate(p);
+    }
   }
 
   void started(Running r, Process p) {
     r.process = p;
-    if (r.cancelled) terminate(p);
+    if (r.cancelled) {
+      terminate(p);
+    }
   }
 
   /** SIGTERM first so the runtime removes its build container, then forcibly. */
@@ -313,13 +345,18 @@ public class BuildRunner {
   }
 
   void recover(@Observes StartupEvent event) {
-    if (concurrency < 1 || queueLimit < 1)
+    if (concurrency < 1 || queueLimit < 1) {
       throw new IllegalArgumentException("Build concurrency and queue limit must be positive");
-    if (maxCheckoutMib < 1 || maxCheckoutFiles < 1)
+    }
+    if (maxCheckoutMib < 1 || maxCheckoutFiles < 1) {
       throw new IllegalArgumentException("Checkout size and file limits must be positive");
-    if (maxMemoryMib < 1 || maxCpus < 1 || maxPids < 1)
+    }
+    if (maxMemoryMib < 1 || maxCpus < 1 || maxPids < 1) {
       throw new IllegalArgumentException("Build memory, CPU and process limits must be positive");
-    if (timeoutMinutes < 1) throw new IllegalArgumentException("Build timeout must be positive");
+    }
+    if (timeoutMinutes < 1) {
+      throw new IllegalArgumentException("Build timeout must be positive");
+    }
     cleanupOrphans();
     List<Build> interrupted =
         QuarkusTransaction.requiringNew()
@@ -329,13 +366,17 @@ public class BuildRunner {
       boolean cancelled = build.cancelRequested;
       Throwable failure =
           logs.appendLine(id, cancelled ? "Build cancelled" : "Server restarted during build");
-      if (failure != null) Log.errorf(failure, "Could not append to the log of build %d", id);
+      if (failure != null) {
+        Log.errorf(failure, "Could not append to the log of build %d", id);
+      }
       QuarkusTransaction.requiringNew()
           .run(() -> {
             Build b = Build.findById(id);
             b.status = cancelled ? Build.Status.CANCELLED : Build.Status.FAILED;
             b.finishedAt = Instant.now();
-            if (failure != null) b.logTruncated = true;
+            if (failure != null) {
+              b.logTruncated = true;
+            }
           });
     }
     ready = true;
@@ -343,11 +384,15 @@ public class BuildRunner {
 
   /** Containers a previous runner process left behind when it did not get to remove them. */
   List<String> staleContainers() {
-    if (runtime == null) return List.of();
+    if (runtime == null) {
+      return List.of();
+    }
     try {
       Result r =
           commands.run(List.of(runtime, "ps", "-a", "--format", "{{.Names}}"), 15, 1_000_000);
-      if (r.timeout() || r.code() != 0) throw new IllegalStateException("Container listing failed");
+      if (r.timeout() || r.code() != 0) {
+        throw new IllegalStateException("Container listing failed");
+      }
       return r.output()
           .lines()
           .map(String::strip)
@@ -362,7 +407,9 @@ public class BuildRunner {
   void removeContainer(String name) {
     try {
       Result r = commands.run(List.of(runtime, "rm", "-f", name), 15, 4096);
-      if (r.timeout() || r.code() != 0) throw new IllegalStateException("Container command failed");
+      if (r.timeout() || r.code() != 0) {
+        throw new IllegalStateException("Container command failed");
+      }
     } catch (Exception e) {
       throw new IllegalStateException("Could not remove container " + name, e);
     }
@@ -370,11 +417,15 @@ public class BuildRunner {
 
   /** Images of builds a previous runner process did not get to remove. */
   List<String> staleImages() {
-    if (runtime == null) return List.of();
+    if (runtime == null) {
+      return List.of();
+    }
     try {
       Result r =
           commands.run(List.of(runtime, "images", "--format", "{{.Repository}}"), 15, 1_000_000);
-      if (r.timeout() || r.code() != 0) throw new IllegalStateException("Image listing failed");
+      if (r.timeout() || r.code() != 0) {
+        throw new IllegalStateException("Image listing failed");
+      }
       return r.output()
           .lines()
           .map(String::strip)
@@ -389,7 +440,9 @@ public class BuildRunner {
   void removeImage(String name) {
     try {
       Result r = commands.run(List.of(runtime, "rmi", "-f", name), 60, 4096);
-      if (r.timeout() || r.code() != 0) throw new IllegalStateException("Image command failed");
+      if (r.timeout() || r.code() != 0) {
+        throw new IllegalStateException("Image command failed");
+      }
     } catch (Exception e) {
       throw new IllegalStateException("Could not remove image " + name, e);
     }
@@ -438,13 +491,18 @@ public class BuildRunner {
       Log.warn("Could not list orphaned build images", e);
     }
     Path root = checkoutRoot();
-    if (!Files.isDirectory(root)) return;
+    if (!Files.isDirectory(root)) {
+      return;
+    }
     try (var entries = Files.list(root)) {
       for (Path path :
           entries.filter(p -> p.getFileName().toString().startsWith("cisys-")).toList()) {
         try {
-          if (Files.isSymbolicLink(path)) Files.deleteIfExists(path);
-          else delete(path);
+          if (Files.isSymbolicLink(path)) {
+            Files.deleteIfExists(path);
+          } else {
+            delete(path);
+          }
         } catch (Exception e) {
           Log.warnf(e, "Could not remove stale checkout %s", path);
         }
@@ -488,13 +546,16 @@ public class BuildRunner {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           lockQueue();
-          if (Project.findById(projectId) == null) throw new jakarta.ws.rs.NotFoundException();
-          if (Build.count("status", Build.Status.QUEUED) >= queueLimit())
+          if (Project.findById(projectId) == null) {
+            throw new jakarta.ws.rs.NotFoundException();
+          }
+          if (Build.count("status", Build.Status.QUEUED) >= queueLimit()) {
             throw new WebApplicationException(
                 jakarta.ws.rs.core.Response.status(429)
                     .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
                     .entity(Map.of("error", "Build queue is full. Try again later."))
                     .build());
+          }
           Build b = new Build();
           b.projectId = projectId;
           b.number = Build.nextNumber(projectId);
@@ -532,12 +593,17 @@ public class BuildRunner {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           lockQueue();
-          if (Project.findById(projectId) == null) throw new jakarta.ws.rs.NotFoundException();
+          if (Project.findById(projectId) == null) {
+            throw new jakarta.ws.rs.NotFoundException();
+          }
           List<Build> existing =
               Build.<Build>find("projectId = ?1 and revision = ?2 order by id", projectId, revision)
                   .list();
-          for (Build b : existing)
-            if (b.status != Build.Status.CANCELLED) return new Submission(b, false);
+          for (Build b : existing) {
+            if (b.status != Build.Status.CANCELLED) {
+              return new Submission(b, false);
+            }
+          }
           Build revivable =
               existing.stream().filter(BuildRunner::revivablePullRequest).findFirst().orElse(null);
           if (revivable == null) {
@@ -545,7 +611,9 @@ public class BuildRunner {
               // A finished or intentionally cancelled build covers the revision, like before.
               return new Submission(existing.get(0), false);
             }
-            if (Build.count("status", Build.Status.QUEUED) >= queueLimit()) throw queueFull();
+            if (Build.count("status", Build.Status.QUEUED) >= queueLimit()) {
+              throw queueFull();
+            }
             Build b = new Build();
             b.projectId = projectId;
             b.number = Build.nextNumber(projectId);
@@ -563,7 +631,9 @@ public class BuildRunner {
             b.persist();
             return new Submission(b, true);
           }
-          if (Build.count("status", Build.Status.QUEUED) >= queueLimit()) throw queueFull();
+          if (Build.count("status", Build.Status.QUEUED) >= queueLimit()) {
+            throw queueFull();
+          }
           revivable.status = Build.Status.QUEUED;
           revivable.requestedAt = Instant.now();
           revivable.finishedAt = null;
@@ -613,7 +683,9 @@ public class BuildRunner {
                   .list();
           int cancelled = 0;
           for (Build b : queued) {
-            if (eligibleRevisions.contains(b.revision)) continue;
+            if (eligibleRevisions.contains(b.revision)) {
+              continue;
+            }
             // Only a build that is still QUEUED is cancelled; a build that started meanwhile is
             // left alone, and its cursor is not reset.
             if (Build.update(
@@ -639,11 +711,15 @@ public class BuildRunner {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           lockQueue();
-          if (Build.count("status", Build.Status.RUNNING) >= concurrency()) return null;
+          if (Build.count("status", Build.Status.RUNNING) >= concurrency()) {
+            return null;
+          }
           Build b =
               Build.<Build>find("status = ?1 order by requestedAt, id", Build.Status.QUEUED)
                   .firstResult();
-          if (b == null) return null;
+          if (b == null) {
+            return null;
+          }
           int changed =
               Build.update(
                   "status = ?1, startedAt = ?2 where id = ?3 and status = ?4",
@@ -651,7 +727,9 @@ public class BuildRunner {
                   Instant.now(),
                   b.id,
                   Build.Status.QUEUED);
-          if (changed != 1) return null;
+          if (changed != 1) {
+            return null;
+          }
           Build.getEntityManager().refresh(b);
           return b;
         });
@@ -661,7 +739,9 @@ public class BuildRunner {
       every = "1s",
       concurrentExecution = io.quarkus.scheduler.Scheduled.ConcurrentExecution.SKIP)
   synchronized void dispatch() {
-    if (!ready || stopping) return;
+    if (!ready || stopping) {
+      return;
+    }
     try {
       retryCompletions();
       stopCancelled();
@@ -727,10 +807,13 @@ public class BuildRunner {
    */
   EgressProxy network(
       Path dir, NetworkAllowlist allowlist, java.util.function.Consumer<String> log) {
-    if (allowlist.isEmpty()) return null;
+    if (allowlist.isEmpty()) {
+      return null;
+    }
     // Docker's build only forwards SSH agent sockets, so its steps cannot reach the proxy.
-    if (!"podman".equals(runtime))
+    if (!"podman".equals(runtime)) {
       throw new IllegalArgumentException("Network access is not supported with " + runtime);
+    }
     try {
       EgressProxy.Policy policy = networkPolicy(allowlist);
       // What the proxy will allow, so a denied or unreachable host can be read against it.
@@ -757,20 +840,25 @@ public class BuildRunner {
   EgressProxy.Policy networkPolicy(NetworkAllowlist allowlist) throws Exception {
     Set<Integer> ports = new HashSet<>();
     for (String p : networkPorts.split(",")) {
-      if (p.isBlank()) continue;
+      if (p.isBlank()) {
+        continue;
+      }
       int port = Integer.parseInt(p.strip());
-      if (port < 1 || port > 65535)
+      if (port < 1 || port > 65535) {
         throw new IllegalArgumentException("Invalid cisys.build.network.ports");
+      }
       ports.add(port);
     }
     Set<String> hosts = new HashSet<>();
-    for (Optional<String> u : List.of(datasourceUrl, oidcUrl, keycloakUrl))
+    for (Optional<String> u : List.of(datasourceUrl, oidcUrl, keycloakUrl)) {
       u.ifPresent(v -> hosts.addAll(hostsOf(v)));
+    }
     httpHost.ifPresent(h -> hosts.add(h.strip()));
     hosts.removeIf(h -> h.isEmpty() || h.equals("0.0.0.0") || h.equals("::"));
     Set<java.net.InetAddress> addresses = new HashSet<>();
-    for (var nic : Collections.list(java.net.NetworkInterface.getNetworkInterfaces()))
+    for (var nic : Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
       addresses.addAll(Collections.list(nic.getInetAddresses()));
+    }
     for (String h : hosts) {
       java.net.InetAddress literal = NetworkAllowlist.literal(h);
       addresses.addAll(literal != null ? List.of(literal) : List.of(resolver.resolve(h)));
@@ -781,7 +869,9 @@ public class BuildRunner {
   /** The host names in a URL such as {@code jdbc:postgresql://a:5432,b:5432/db}. */
   static List<String> hostsOf(String url) {
     int start = url.indexOf("//");
-    if (start < 0) return List.of();
+    if (start < 0) {
+      return List.of();
+    }
     String authority = url.substring(start + 2).split("[/?#]", 2)[0];
     authority = authority.substring(authority.lastIndexOf('@') + 1);
     List<String> hosts = new ArrayList<>();
@@ -790,7 +880,9 @@ public class BuildRunner {
           part.startsWith("[")
               ? part.substring(1, Math.max(1, part.indexOf(']')))
               : part.replaceFirst(":[0-9]*$", "");
-      if (!h.isBlank()) hosts.add(h.toLowerCase(Locale.ROOT));
+      if (!h.isBlank()) {
+        hosts.add(h.toLowerCase(Locale.ROOT));
+      }
     }
     return hosts;
   }
@@ -852,18 +944,21 @@ public class BuildRunner {
     if (localMirror != null && Files.isDirectory(localMirror)) {
       cloneUrl = localMirror.toUri().toString();
     } else {
-      if (requireLocalMirror)
+      if (requireLocalMirror) {
         throw new IllegalArgumentException(
             "The repository mirror is missing; a pull request build cannot run");
-      if (localMirror != null)
+      }
+      if (localMirror != null) {
         Log.infof("The repository mirror is missing; fetching the commit from the repository");
+      }
       // Checked again here because DNS can change after the project was saved.
       cloneUrl = RepositoryUrls.cloneUrl(url);
       repositoryUrls.validate(cloneUrl);
       if (credentialRef != null) {
         String token = System.getenv(credentialRef);
-        if (token == null || token.isBlank())
+        if (token == null || token.isBlank()) {
           throw new IllegalStateException("Missing Git credential");
+        }
         credentials = new UsernamePasswordCredentialsProvider("oauth2", token);
       }
     }
@@ -935,8 +1030,12 @@ public class BuildRunner {
           .run(() -> Build.update("revision = ?1 where id = ?2", fetched, id));
       // The workflow on the fetched branch describes the image.
       String text = Workflow.read(workspace);
-      if (handle.cancelled) throw new CancellationException();
-      if (text == null) throw new IllegalArgumentException("The branch has no " + Workflow.PATH);
+      if (handle.cancelled) {
+        throw new CancellationException();
+      }
+      if (text == null) {
+        throw new IllegalArgumentException("The branch has no " + Workflow.PATH);
+      }
       // Stored before parsing, so a build keeps the file that it ran or that failed validation.
       QuarkusTransaction.requiringNew()
           .run(() -> Build.update("workflow = ?1 where id = ?2", text, id));
@@ -947,8 +1046,9 @@ public class BuildRunner {
           .run(() -> Build.update("image = ?1 where id = ?2", from.name(), id));
       // Allowed when the admin allowed any name of the image, whichever way the workflow names it.
       if (!QuarkusTransaction.requiringNew()
-          .call(() -> from.names().stream().anyMatch(AllowedImage::isAllowed)))
+          .call(() -> from.names().stream().anyMatch(AllowedImage::isAllowed))) {
         throw new IllegalArgumentException("Image " + base + " is not allowed");
+      }
       // A stored list that no longer validates fails the build rather than running it without its
       // rules.
       NetworkAllowlist allowlist = QuarkusTransaction.requiringNew().call(NetworkHost::allowlist);
@@ -988,7 +1088,9 @@ public class BuildRunner {
         }
         build.add(context.toString());
         header(log, "Dockerfile", containerfile, build);
-        if (handle.cancelled) throw new CancellationException();
+        if (handle.cancelled) {
+          throw new CancellationException();
+        }
         result = stream(build, timeoutSeconds, log, logMaxBytes, p -> started(handle, p));
       } else {
         // The Docker legacy builder enforces the resource flags, but it has no per-RUN network
@@ -1001,7 +1103,9 @@ public class BuildRunner {
         List<String> prepareBuild = buildCommand(prepareFile, prepare, limits);
         prepareBuild.add(context.toString());
         header(log, "Dockerfile.prepare", Files.readString(prepareFile), prepareBuild);
-        if (handle.cancelled) throw new CancellationException();
+        if (handle.cancelled) {
+          throw new CancellationException();
+        }
         Streamed prepared =
             stream(
                 prepareBuild,
@@ -1010,7 +1114,9 @@ public class BuildRunner {
                 logMaxBytes,
                 p -> started(handle, p),
                 LEGACY_BUILDER);
-        if (prepared.readerError() != null) captureError = prepared.readerError();
+        if (prepared.readerError() != null) {
+          captureError = prepared.readerError();
+        }
         if (prepared.truncated()) {
           truncated = true;
           log.line(
@@ -1020,8 +1126,9 @@ public class BuildRunner {
                   + (prepared.totalBytes() - logMaxBytes)
                   + " further bytes discarded]");
         }
-        if (prepared.timeout() || prepared.code() != 0) result = prepared;
-        else {
+        if (prepared.timeout() || prepared.code() != 0) {
+          result = prepared;
+        } else {
           Path file =
               Files.writeString(
                   dir.resolve("Dockerfile"),
@@ -1030,7 +1137,9 @@ public class BuildRunner {
           build.add("--network=none");
           build.add(context.toString());
           header(log, "Dockerfile", Files.readString(file), build);
-          if (handle.cancelled) throw new CancellationException();
+          if (handle.cancelled) {
+            throw new CancellationException();
+          }
           result =
               stream(
                   build,
@@ -1041,7 +1150,9 @@ public class BuildRunner {
                   LEGACY_BUILDER);
         }
       }
-      if (result.readerError() != null) captureError = result.readerError();
+      if (result.readerError() != null) {
+        captureError = result.readerError();
+      }
       if (result.truncated()) {
         truncated = true;
         log.line(
@@ -1052,14 +1163,16 @@ public class BuildRunner {
                 + " further bytes discarded]");
       }
       digest = digest(from.id());
-      if (handle.cancelled) throw new CancellationException();
-      if (result.timeout())
+      if (handle.cancelled) {
+        throw new CancellationException();
+      }
+      if (result.timeout()) {
         log.line(
             "Build timed out after "
                 + limits[5]
                 + (limits[5] == 1 ? " minute" : " minutes")
                 + "; an admin can change the timeout under Settings > Builds");
-      else {
+      } else {
         // The image build stops at the first failing RUN and exits with its exit code.
         exit = result.code();
         status = exit == 0 ? "PASSED" : "FAILED";
@@ -1068,19 +1181,27 @@ public class BuildRunner {
       // A failure caused by the cancellation is not reported as one.
       if (!handle.cancelled) {
         if (e instanceof InterruptedException) {
-          if (log != null) log.line("Build stopped: the server is shutting down");
-          else captureError = e;
+          if (log != null) {
+            log.line("Build stopped: the server is shutting down");
+          } else {
+            captureError = e;
+          }
         } else if (e instanceof IllegalArgumentException) {
-          if (log != null) log.line("Build failed: " + e.getMessage());
-          else captureError = e;
-        } else if (log != null)
+          if (log != null) {
+            log.line("Build failed: " + e.getMessage());
+          } else {
+            captureError = e;
+          }
+        } else if (log != null) {
           log.line(
               stopping
                   ? "Build stopped: the server is shutting down"
                   : "Build failed during checkout or container execution ("
                       + e.getClass().getSimpleName()
                       + "). Check the runner configuration.");
-        else captureError = e;
+        } else {
+          captureError = e;
+        }
       }
     } finally {
       // A shutdown interrupts the build; the cleanup and the result must still run, so clear the
@@ -1090,7 +1211,7 @@ public class BuildRunner {
       // The request can arrive after the last dispatcher poll; persistCompletion also honours one
       // that arrives after this read.
       boolean cancelled = handle.cancelled;
-      if (!cancelled && running())
+      if (!cancelled && running()) {
         try {
           cancelled =
               QuarkusTransaction.requiringNew()
@@ -1098,10 +1219,13 @@ public class BuildRunner {
         } catch (RuntimeException e) {
           Log.warnf(e, "Could not check whether build %d was cancelled", id);
         }
+      }
       if (cancelled) {
         status = "CANCELLED";
         exit = null;
-        if (log != null) log.line("Build cancelled");
+        if (log != null) {
+          log.line("Build cancelled");
+        }
       }
       // The image only exists to run the workflow.
       try {
@@ -1109,33 +1233,43 @@ public class BuildRunner {
       } catch (Exception ignored) {
       }
       // Docker builds prepare tools and dependencies in an intermediate image.
-      if (!runtime.equals("podman"))
+      if (!runtime.equals("podman")) {
         try {
           command(List.of(runtime, "rmi", "-f", prepare), 60, 4096);
         } catch (Exception ignored) {
         }
-      if (proxy != null)
+      }
+      if (proxy != null) {
         try {
           proxy.close();
         } catch (Exception e) {
           Log.errorf(e, "Could not stop the network proxy of build %d", id);
         }
-      if (dir != null)
+      }
+      if (dir != null) {
         try {
           delete(dir);
         } catch (Exception ignored) {
         }
+      }
       // A log failure must not stop the status update.
       try {
         if (log != null && running()) {
-          if (captureError == null) captureError = log.failure();
-          if (captureError != null)
+          if (captureError == null) {
+            captureError = log.failure();
+          }
+          if (captureError != null) {
             log.line("[log capture failed: " + captureError.getClass().getSimpleName() + "]");
+          }
           log.close();
-          if (captureError == null) captureError = log.failure();
+          if (captureError == null) {
+            captureError = log.failure();
+          }
         }
       } catch (Throwable t) {
-        if (captureError == null) captureError = t;
+        if (captureError == null) {
+          captureError = t;
+        }
       }
       if (captureError != null) {
         truncated = true;
@@ -1144,7 +1278,9 @@ public class BuildRunner {
       complete(
           new Completion(
               id, Build.Status.valueOf(status), revision, exit, digest, truncated, Instant.now()));
-      if (interrupted) Thread.currentThread().interrupt();
+      if (interrupted) {
+        Thread.currentThread().interrupt();
+      }
     }
   }
 
@@ -1175,13 +1311,19 @@ public class BuildRunner {
                 runtime, "images", "--no-trunc", "--format", "{{.Repository}}\t{{.Tag}}\t{{.ID}}"),
             30,
             1_000_000);
-    if (r.timeout() || r.code() != 0) throw new IllegalStateException("Container command failed");
+    if (r.timeout() || r.code() != 0) {
+      throw new IllegalStateException("Container command failed");
+    }
     List<ImageReference.Local> images = new ArrayList<>();
     for (String line : r.output().split("\n")) {
       String[] f = line.strip().split("\t");
-      if (f.length != 3) continue;
+      if (f.length != 3) {
+        continue;
+      }
       String id = f[2].replace("sha256:", "");
-      if (id.matches("[0-9a-f]{64}")) images.add(new ImageReference.Local(f[0], f[1], id));
+      if (id.matches("[0-9a-f]{64}")) {
+        images.add(new ImageReference.Local(f[0], f[1], id));
+      }
     }
     return images;
   }
@@ -1199,14 +1341,19 @@ public class BuildRunner {
                 "{{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.Size}}\t{{.CreatedSince}}"),
             30,
             1000000);
-    if (r.timeout() || r.code() != 0) throw new IllegalStateException("Container command failed");
+    if (r.timeout() || r.code() != 0) {
+      throw new IllegalStateException("Container command failed");
+    }
     Map<String, LocalImage> images = new TreeMap<>();
     for (String line : r.output().split("\n")) {
       String[] f = line.split("\t");
-      if (f.length < 5 || f[0].equals("<none>") || f[1].equals("<none>")) continue;
+      if (f.length < 5 || f[0].equals("<none>") || f[1].equals("<none>")) {
+        continue;
+      }
       String name = f[0] + ":" + f[1];
-      if (name.matches(AllowedImage.PATTERN))
+      if (name.matches(AllowedImage.PATTERN)) {
         images.putIfAbsent(name, new LocalImage(name, f[2], f[3], f[4]));
+      }
     }
     return List.copyOf(images.values());
   }
@@ -1256,7 +1403,9 @@ public class BuildRunner {
                   synchronized (buffer) {
                     int count = Math.min(n, limit - buffer.size());
                     buffer.write(bytes, 0, count);
-                    if (count < n) truncated[0] = true;
+                    if (count < n) {
+                      truncated[0] = true;
+                    }
                   }
                 }
               } catch (IOException ignored) {
@@ -1277,13 +1426,17 @@ public class BuildRunner {
                 + (truncated[0] ? "\n[output truncated]\n" : ""));
       }
     } finally {
-      if (p.isAlive()) p.destroyForcibly();
+      if (p.isAlive()) {
+        p.destroyForcibly();
+      }
     }
   }
 
   static String checked(List<String> args, int timeout) throws Exception {
     Result r = command(args, timeout, 4096);
-    if (r.timeout() || r.code() != 0) throw new IllegalStateException("Container command failed");
+    if (r.timeout() || r.code() != 0) {
+      throw new IllegalStateException("Container command failed");
+    }
     return r.output();
   }
 
@@ -1399,7 +1552,9 @@ public class BuildRunner {
                   }
                 }
               } catch (Throwable t) {
-                if (!forced.get()) error.compareAndSet(null, t);
+                if (!forced.get()) {
+                  error.compareAndSet(null, t);
+                }
               }
             });
     try {
@@ -1420,18 +1575,23 @@ public class BuildRunner {
         reader.join(forceMillis);
       }
       Throwable err = error.get();
-      if (err == null && reader.isAlive())
+      if (err == null && reader.isAlive()) {
         err = new IllegalStateException("Log reader did not stop");
+      }
       return new Streamed(
           done ? p.exitValue() : -1, !done, total.get() > maxBytes, total.get(), err);
     } finally {
-      if (p.isAlive()) p.destroyForcibly();
+      if (p.isAlive()) {
+        p.destroyForcibly();
+      }
     }
   }
 
   static void delete(Path dir) throws IOException {
     try (var files = Files.walk(dir)) {
-      for (Path f : files.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(f);
+      for (Path f : files.sorted(Comparator.reverseOrder()).toList()) {
+        Files.deleteIfExists(f);
+      }
     }
   }
 
@@ -1458,8 +1618,9 @@ public class BuildRunner {
     stopping = true;
     executor.shutdownNow();
     try {
-      if (!executor.awaitTermination(STOP_SECONDS, TimeUnit.SECONDS))
+      if (!executor.awaitTermination(STOP_SECONDS, TimeUnit.SECONDS)) {
         Log.warnf("Builds still running after %d seconds of shutdown", STOP_SECONDS);
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
     }

@@ -26,10 +26,16 @@ public enum PullRequestProvider {
   /** The host name this provider supports, or null for a repository without one. */
   public static PullRequestProvider from(String repositoryUrl) {
     String host = RepositoryUrls.host(repositoryUrl);
-    if (host == null) return null;
+    if (host == null) {
+      return null;
+    }
     host = host.toLowerCase(Locale.ROOT);
-    if (host.equals("github.com")) return GITHUB;
-    if (host.equals("gitlab.com")) return GITLAB;
+    if (host.equals("github.com")) {
+      return GITHUB;
+    }
+    if (host.equals("gitlab.com")) {
+      return GITLAB;
+    }
     return null;
   }
 
@@ -40,9 +46,13 @@ public enum PullRequestProvider {
 
   /** The pull request number of a head ref, or null when the ref is not this provider's head. */
   public Integer number(String ref) {
-    if (ref == null || !ref.startsWith(prefix) || !ref.endsWith(suffix)) return null;
+    if (ref == null || !ref.startsWith(prefix) || !ref.endsWith(suffix)) {
+      return null;
+    }
     String number = ref.substring(prefix.length(), ref.length() - suffix.length());
-    if (number.isEmpty() || !number.chars().allMatch(c -> c >= '0' && c <= '9')) return null;
+    if (number.isEmpty() || !number.chars().allMatch(c -> c >= '0' && c <= '9')) {
+      return null;
+    }
     try {
       return Integer.valueOf(number);
     } catch (NumberFormatException e) {

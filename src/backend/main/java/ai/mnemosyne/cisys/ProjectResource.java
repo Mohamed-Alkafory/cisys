@@ -15,7 +15,19 @@ import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotAuthorizedException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.net.URI;
@@ -39,19 +51,24 @@ public class ProjectResource {
   @Inject RepositoryMirror mirrors;
 
   private JsonWebToken token() {
-    if (identity.getPrincipal() instanceof JsonWebToken jwt) return jwt;
+    if (identity.getPrincipal() instanceof JsonWebToken jwt) {
+      return jwt;
+    }
     throw new NotAuthorizedException("Bearer");
   }
 
   private String subject() {
     String sub = token().getSubject();
-    if (sub == null || sub.isBlank()) throw new NotAuthorizedException("Bearer");
+    if (sub == null || sub.isBlank()) {
+      throw new NotAuthorizedException("Bearer");
+    }
     return sub;
   }
 
   private void requireCisysRole() {
-    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin")))
+    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) {
       throw new ForbiddenException();
+    }
   }
 
   private static final Pattern NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,99}");
@@ -129,17 +146,22 @@ public class ProjectResource {
   @Path("/projects")
   @Transactional
   public Response create(CreateProject input) {
-    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
+    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
+      throw new ForbiddenException();
+    }
     if (input == null
         || input.name() == null
         || input.name().isBlank()
         || input.name().length() > 100
         || input.repositoryUrl() == null
-        || input.repositoryUrl().length() > 2048)
+        || input.repositoryUrl().length() > 2048) {
       throw new BadRequestException("Name and repository URL are required");
+    }
     String name = input.name().trim();
     // The name is the project's URL path, for example /cisys/ in the UI.
-    if (!NAME.matcher(name).matches()) throw badRequest(NAME_RULE);
+    if (!NAME.matcher(name).matches()) {
+      throw badRequest(NAME_RULE);
+    }
     String url;
     try {
       url = gitUrl(input.repositoryUrl().trim());
@@ -155,12 +177,16 @@ public class ProjectResource {
     }
     if (input.credentialRef() != null
         && !input.credentialRef().isBlank()
-        && !identity.hasRole("admin")) throw new ForbiddenException();
+        && !identity.hasRole("admin")) {
+      throw new ForbiddenException();
+    }
     // Checked across all projects, including private projects the caller cannot see.
-    if (Project.count("lower(name) = ?1", name.toLowerCase(Locale.ROOT)) > 0)
+    if (Project.count("lower(name) = ?1", name.toLowerCase(Locale.ROOT)) > 0) {
       throw conflict("A project with this name already exists");
-    if (Project.count("repositoryUrl", url) > 0)
+    }
+    if (Project.count("repositoryUrl", url) > 0) {
       throw conflict("A project with this repository URL already exists");
+    }
     Project p = new Project();
     p.name = name;
     p.repositoryUrl = url;
@@ -170,7 +196,9 @@ public class ProjectResource {
     try {
       p.persistAndFlush();
     } catch (PersistenceException e) {
-      if (!isProjectUniqueViolation(e)) throw e;
+      if (!isProjectUniqueViolation(e)) {
+        throw e;
+      }
       throw conflict("A project with this name or repository URL already exists");
     }
     return Response.status(201).entity(response(p)).build();
@@ -181,9 +209,13 @@ public class ProjectResource {
   @Path("/projects/{id}/credential")
   @Transactional
   public ProjectResponse credential(@PathParam("id") Long id, Credential input) {
-    if (!identity.hasRole("admin")) throw new ForbiddenException();
+    if (!identity.hasRole("admin")) {
+      throw new ForbiddenException();
+    }
     Project p = Project.findById(id);
-    if (p == null) throw new NotFoundException();
+    if (p == null) {
+      throw new NotFoundException();
+    }
     p.credentialRef = credential(p.privateRepository, input == null ? null : input.credentialRef());
     return response(p);
   }
@@ -198,13 +230,19 @@ public class ProjectResource {
 
   /** The reference must name an environment variable; the token itself is never stored. */
   private static String credential(boolean privateRepository, String reference) {
-    if (reference == null || reference.isBlank()) return null;
-    if (!privateRepository) throw badRequest("Only private projects can use a credential");
+    if (reference == null || reference.isBlank()) {
+      return null;
+    }
+    if (!privateRepository) {
+      throw badRequest("Only private projects can use a credential");
+    }
     String trimmed = reference.trim();
-    if (RESERVED_CREDENTIALS.contains(trimmed))
+    if (RESERVED_CREDENTIALS.contains(trimmed)) {
       throw badRequest("That environment variable configures the server, not a credential");
-    if (!trimmed.matches("CISYS_GIT_[A-Z0-9_]{1,80}"))
+    }
+    if (!trimmed.matches("CISYS_GIT_[A-Z0-9_]{1,80}")) {
       throw badRequest("Invalid credential reference");
+    }
     return trimmed;
   }
 
@@ -215,7 +253,9 @@ public class ProjectResource {
   @DELETE
   @Path("/projects/{id}")
   public Response delete(@PathParam("id") Long id) {
-    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
+    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
+      throw new ForbiddenException();
+    }
     QuarkusTransaction.requiringNew()
         .run(() -> {
           BuildRunner.lockQueue();
@@ -223,11 +263,16 @@ public class ProjectResource {
           boolean admin = identity.hasRole("admin");
           boolean owner = p != null && subject().equals(p.ownerSubject);
           // Private projects the caller cannot see answer 404, as everywhere else.
-          if (p == null || (p.privateRepository && !admin && !owner)) throw new NotFoundException();
-          if (!admin && !owner) throw new ForbiddenException();
-          if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0)
+          if (p == null || (p.privateRepository && !admin && !owner)) {
+            throw new NotFoundException();
+          }
+          if (!admin && !owner) {
+            throw new ForbiddenException();
+          }
+          if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0) {
             throw conflict(
                 "A build is queued or running. Delete the project when its builds finish.");
+          }
           Build.delete("projectId", id);
           ProjectBranch.delete("projectId", id);
           ProjectPullRequest.delete("projectId", id);
@@ -263,22 +308,31 @@ public class ProjectResource {
   @Path("/projects/{id}")
   @Transactional
   public Response update(@PathParam("id") Long id, UpdateProject input) {
-    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) throw new ForbiddenException();
+    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
+      throw new ForbiddenException();
+    }
     Project p = Project.findById(id);
     boolean admin = identity.hasRole("admin");
     boolean owner = p != null && subject().equals(p.ownerSubject);
     // Private projects the caller cannot see answer 404, as everywhere else.
-    if (p == null || (p.privateRepository && !admin && !owner)) throw new NotFoundException();
-    if (!admin && !owner) throw new ForbiddenException();
+    if (p == null || (p.privateRepository && !admin && !owner)) {
+      throw new NotFoundException();
+    }
+    if (!admin && !owner) {
+      throw new ForbiddenException();
+    }
     if (input == null
         || input.name() == null
         || input.name().isBlank()
         || input.name().length() > 100
         || input.repositoryUrl() == null
-        || input.repositoryUrl().length() > 2048)
+        || input.repositoryUrl().length() > 2048) {
       throw new BadRequestException("Name and repository URL are required");
+    }
     String name = input.name().trim();
-    if (!NAME.matcher(name).matches()) throw badRequest(NAME_RULE);
+    if (!NAME.matcher(name).matches()) {
+      throw badRequest(NAME_RULE);
+    }
     String url;
     try {
       url = gitUrl(input.repositoryUrl().trim());
@@ -293,19 +347,25 @@ public class ProjectResource {
       throw badRequest(e.getMessage());
     }
     // Exclude the current project from the uniqueness checks.
-    if (Project.count("lower(name) = ?1 and id <> ?2", name.toLowerCase(Locale.ROOT), id) > 0)
+    if (Project.count("lower(name) = ?1 and id <> ?2", name.toLowerCase(Locale.ROOT), id) > 0) {
       throw conflict("A project with this name already exists");
-    if (Project.count("repositoryUrl = ?1 and id <> ?2", url, id) > 0)
+    }
+    if (Project.count("repositoryUrl = ?1 and id <> ?2", url, id) > 0) {
       throw conflict("A project with this repository URL already exists");
-    if (!admin && input.credentialRef() != null && !input.credentialRef().isBlank())
+    }
+    if (!admin && input.credentialRef() != null && !input.credentialRef().isBlank()) {
       throw new ForbiddenException();
+    }
     // A lead must not carry the admin-set credential to a new repository.
     boolean urlChanged = !Objects.equals(RepositoryUrls.normalize(p.repositoryUrl), url);
     p.name = name;
     p.repositoryUrl = url;
     p.privateRepository = input.privateRepository();
-    if (admin) p.credentialRef = credential(input.privateRepository(), input.credentialRef());
-    else if (urlChanged || !input.privateRepository()) p.credentialRef = null;
+    if (admin) {
+      p.credentialRef = credential(input.privateRepository(), input.credentialRef());
+    } else if (urlChanged || !input.privateRepository()) {
+      p.credentialRef = null;
+    }
     try {
       p.persistAndFlush();
     } catch (PersistenceException e) {
@@ -333,8 +393,9 @@ public class ProjectResource {
         || parsed.getFragment() != null
         || path == null
         || path.isEmpty()
-        || path.endsWith("/.git"))
+        || path.endsWith("/.git")) {
       throw badRequest("Use the repository's URL, for example https://github.com/org/repo.git");
+    }
     return trimmed;
   }
 
@@ -344,7 +405,9 @@ public class ProjectResource {
           && "23505".equals(violation.getSQLState())
           && ("uk_project_name".equals(violation.getConstraintName())
               || "uk_project_name_lower".equals(violation.getConstraintName())
-              || "uk_project_repositoryurl".equals(violation.getConstraintName()))) return true;
+              || "uk_project_repositoryurl".equals(violation.getConstraintName()))) {
+        return true;
+      }
     }
     return false;
   }

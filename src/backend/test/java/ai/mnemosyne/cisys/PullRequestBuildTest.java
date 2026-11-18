@@ -10,7 +10,13 @@ package ai.mnemosyne.cisys;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -110,7 +116,9 @@ class PullRequestBuildTest {
 
   String commit(Path repo, String path, String content, String message) throws Exception {
     Path file = repo.resolve(path);
-    if (file.getParent() != null) Files.createDirectories(file.getParent());
+    if (file.getParent() != null) {
+      Files.createDirectories(file.getParent());
+    }
     Files.writeString(file, content);
     try (Git git = Git.open(repo.toFile())) {
       git.add().addFilepattern(".").call();
@@ -258,9 +266,12 @@ class PullRequestBuildTest {
         .run(() -> {
           Build b = Build.findById(buildId);
           b.status = status;
-          if (status == Build.Status.RUNNING) b.startedAt = java.time.Instant.now();
-          if (status == Build.Status.PASSED || status == Build.Status.FAILED)
+          if (status == Build.Status.RUNNING) {
+            b.startedAt = java.time.Instant.now();
+          }
+          if (status == Build.Status.PASSED || status == Build.Status.FAILED) {
             b.finishedAt = java.time.Instant.now();
+          }
         });
   }
 
@@ -1712,7 +1723,9 @@ class PullRequestBuildTest {
     Path work = clone(repo, "newest-work");
     String head = workflow(work, "workflow");
     push(work, "main");
-    for (int n = 1; n <= 5; n++) ref(repo, PullRequestProvider.GITHUB, n, head);
+    for (int n = 1; n <= 5; n++) {
+      ref(repo, PullRequestProvider.GITHUB, n, head);
+    }
     Long id = project("newest", repo);
     settings(false, true);
     pullRequests.maxPullRequests = 2;
@@ -1722,7 +1735,9 @@ class PullRequestBuildTest {
     assertNotNull(cursor(id, 4));
     assertNull(cursor(id, 1));
 
-    for (int n = 6; n <= 7; n++) ref(repo, PullRequestProvider.GITHUB, n, head);
+    for (int n = 6; n <= 7; n++) {
+      ref(repo, PullRequestProvider.GITHUB, n, head);
+    }
     assertEquals(1, poller.poll());
     assertEquals(1, builds(id).size(), "both pull requests share the same head");
     assertEquals(head, cursor(id, 6).lastSubmittedRevision);

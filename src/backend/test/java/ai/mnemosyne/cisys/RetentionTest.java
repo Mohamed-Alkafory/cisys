@@ -8,7 +8,9 @@
 
 package ai.mnemosyne.cisys;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -91,12 +93,17 @@ class RetentionTest {
   void keepsTheNewestBuildsOfEachProject() {
     Long p = project(), other = project();
     List<Long> builds = new ArrayList<>();
-    for (int i = 0; i < 53; i++)
+    for (int i = 0; i < 53; i++) {
       builds.add(build(p, "PASSED", now.minusSeconds(60L * (53 - i)), false));
-    for (int i = 0; i < 3; i++) build(other, "PASSED", daysAgo(1), false);
+    }
+    for (int i = 0; i < 3; i++) {
+      build(other, "PASSED", daysAgo(1), false);
+    }
     retention.purge(now, 30, 50);
     assertEquals(50, count(p));
-    for (int i = 0; i < 3; i++) assertFalse(exists(builds.get(i)), "oldest builds go first");
+    for (int i = 0; i < 3; i++) {
+      assertFalse(exists(builds.get(i)), "oldest builds go first");
+    }
     assertTrue(exists(builds.get(3)));
     assertEquals(3, count(other), "each project has its own limit");
   }
@@ -116,7 +123,9 @@ class RetentionTest {
   void pinnedBuildsDoNotCountTowardsTheLimit() {
     Long p = project();
     Long pinned = build(p, "PASSED", daysAgo(2), true);
-    for (int i = 0; i < 50; i++) build(p, "PASSED", daysAgo(1), false);
+    for (int i = 0; i < 50; i++) {
+      build(p, "PASSED", daysAgo(1), false);
+    }
     retention.purge(now, 30, 50);
     assertEquals(51, count(p));
     assertTrue(exists(pinned));
@@ -126,7 +135,9 @@ class RetentionTest {
   void zeroTurnsALimitOff() {
     Long p = project();
     Long old = build(p, "PASSED", daysAgo(400), false);
-    for (int i = 0; i < 3; i++) build(p, "PASSED", daysAgo(1), false);
+    for (int i = 0; i < 3; i++) {
+      build(p, "PASSED", daysAgo(1), false);
+    }
     retention.purge(now, 0, 0);
     assertTrue(exists(old));
     retention.purge(now, 0, 2);
@@ -137,7 +148,9 @@ class RetentionTest {
   @Test
   void deletesInBatches() {
     Long p = project();
-    for (int i = 0; i < BuildRetention.BATCH + 5; i++) build(p, "PASSED", daysAgo(40), false);
+    for (int i = 0; i < BuildRetention.BATCH + 5; i++) {
+      build(p, "PASSED", daysAgo(40), false);
+    }
     assertTrue(retention.purge(now, 30, 50) >= BuildRetention.BATCH + 5);
     assertEquals(0, count(p));
   }

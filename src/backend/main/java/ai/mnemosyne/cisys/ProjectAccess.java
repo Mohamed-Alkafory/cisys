@@ -32,7 +32,9 @@ public class ProjectAccess {
     Project p =
         Project.<Project>find("lower(name) = ?1", name.trim().toLowerCase(Locale.ROOT))
             .firstResult();
-    if (p == null || !canView(p)) throw new NotFoundException();
+    if (p == null || !canView(p)) {
+      throw new NotFoundException();
+    }
     return p;
   }
 
@@ -40,7 +42,9 @@ public class ProjectAccess {
    * Public projects, and private ones for {@link #canSeePrivate} and the users assigned to them.
    */
   boolean canView(Project p) {
-    if (!p.privateRepository || canSeePrivate(p)) return true;
+    if (!p.privateRepository || canSeePrivate(p)) {
+      return true;
+    }
     return hasCisysRole()
         && identity.getPrincipal() instanceof JsonWebToken jwt
         && ProjectMember.isMember(p.id, jwt.getSubject());
@@ -52,8 +56,12 @@ public class ProjectAccess {
   boolean canSeePrivate(Project p) {
     if (identity.isAnonymous()
         || !(identity.getPrincipal() instanceof JsonWebToken jwt)
-        || jwt.getSubject() == null) return false;
-    if (!hasCisysRole()) return false;
+        || jwt.getSubject() == null) {
+      return false;
+    }
+    if (!hasCisysRole()) {
+      return false;
+    }
     return identity.hasRole("admin") || jwt.getSubject().equals(p.ownerSubject);
   }
 
@@ -69,9 +77,12 @@ public class ProjectAccess {
 
   /** Admins, the project's owner and whoever requested the build. */
   boolean mayCancel(Project p, Build b) {
-    if (canSeePrivate(p)) return true;
-    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null)
+    if (canSeePrivate(p)) {
+      return true;
+    }
+    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null) {
       return false;
+    }
     return (identity.hasRole("lead") || identity.hasRole("admin"))
         && jwt.getSubject().equals(b.requestedBy);
   }

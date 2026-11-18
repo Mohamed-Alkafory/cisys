@@ -75,7 +75,9 @@ public class KeycloakUsers implements UserDirectory {
   @Override
   public Optional<User> find(String id) {
     HttpResponse<String> response = call("GET", "/users/" + encode(id), null);
-    if (response.statusCode() == 404) return Optional.empty();
+    if (response.statusCode() == 404) {
+      return Optional.empty();
+    }
     return Optional.of(user(body(response)));
   }
 
@@ -93,7 +95,11 @@ public class KeycloakUsers implements UserDirectory {
     send("GET", "/users/" + encode(id) + "/role-mappings/realm")
         .forEach(r -> names.add(r.path("name").asText()));
     String role = null;
-    for (String r : ROLES) if (names.contains(r)) role = r;
+    for (String r : ROLES) {
+      if (names.contains(r)) {
+        role = r;
+      }
+    }
     return role;
   }
 
@@ -103,7 +109,9 @@ public class KeycloakUsers implements UserDirectory {
     body.put("enabled", true);
     body.putArray("credentials").add(credential(password));
     HttpResponse<String> response = call("POST", "/users", body);
-    if (response.statusCode() == 409) throw new ConflictException(conflict(response));
+    if (response.statusCode() == 409) {
+      throw new ConflictException(conflict(response));
+    }
     body(response);
     String location = response.headers().firstValue("Location").orElse("");
     return location.substring(location.lastIndexOf('/') + 1);
@@ -114,7 +122,9 @@ public class KeycloakUsers implements UserDirectory {
     ObjectNode body = representation(user, true);
     body.put("enabled", user.enabled());
     HttpResponse<String> response = call("PUT", "/users/" + encode(user.id()), body);
-    if (response.statusCode() == 409) throw new ConflictException(conflict(response));
+    if (response.statusCode() == 409) {
+      throw new ConflictException(conflict(response));
+    }
     body(response);
   }
 
@@ -125,9 +135,13 @@ public class KeycloakUsers implements UserDirectory {
     send("GET", path)
         .forEach(r -> {
           String name = r.path("name").asText();
-          if (ROLES.contains(name) && !name.equals(role)) remove.add(r);
+          if (ROLES.contains(name) && !name.equals(role)) {
+            remove.add(r);
+          }
         });
-    if (!remove.isEmpty()) body(call("DELETE", path, remove));
+    if (!remove.isEmpty()) {
+      body(call("DELETE", path, remove));
+    }
     ArrayNode add = json.createArrayNode().add(send("GET", "/roles/" + encode(role)));
     body(call("POST", path, add));
   }
@@ -140,7 +154,9 @@ public class KeycloakUsers implements UserDirectory {
   @Override
   public void delete(String id) {
     HttpResponse<String> response = call("DELETE", "/users/" + encode(id), null);
-    if (response.statusCode() != 404) body(response);
+    if (response.statusCode() != 404) {
+      body(response);
+    }
   }
 
   /**
@@ -157,8 +173,11 @@ public class KeycloakUsers implements UserDirectory {
   }
 
   private static void field(ObjectNode body, String name, String value, boolean clearEmpty) {
-    if (value != null) body.put(name, value);
-    else if (clearEmpty) body.put(name, "");
+    if (value != null) {
+      body.put(name, value);
+    } else if (clearEmpty) {
+      body.put(name, "");
+    }
   }
 
   private ObjectNode credential(String password) {
@@ -196,8 +215,9 @@ public class KeycloakUsers implements UserDirectory {
   /** The parsed body of a successful response; other responses throw. */
   private JsonNode body(HttpResponse<String> response) {
     int status = response.statusCode();
-    if (status == 400)
+    if (status == 400) {
       throw new RejectedException(message(response, "Keycloak refused the request"));
+    }
     if (status / 100 != 2) {
       LOG.warnf("Keycloak answered HTTP %d to %s", status, response.uri().getPath());
       throw new UnavailableException("Keycloak answered HTTP " + status);
@@ -220,7 +240,9 @@ public class KeycloakUsers implements UserDirectory {
       JsonNode body = json.readTree(response.body());
       for (String field : List.of("errorMessage", "error_description", "error")) {
         String value = text(body, field);
-        if (value != null && !value.isBlank()) return value;
+        if (value != null && !value.isBlank()) {
+          return value;
+        }
       }
     } catch (IOException | RuntimeException e) {
       // Not JSON: use the fallback.
@@ -243,7 +265,9 @@ public class KeycloakUsers implements UserDirectory {
       HttpResponse<String> response =
           client.send(request.build(), HttpResponse.BodyHandlers.ofString());
       // A restarted Keycloak no longer accepts the cached token; fetch a new one next time.
-      if (response.statusCode() == 401) forgetToken();
+      if (response.statusCode() == 401) {
+        forgetToken();
+      }
       return response;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -259,7 +283,9 @@ public class KeycloakUsers implements UserDirectory {
   }
 
   private synchronized String token() throws IOException, InterruptedException {
-    if (token != null && Instant.now().isBefore(tokenExpires)) return token;
+    if (token != null && Instant.now().isBefore(tokenExpires)) {
+      return token;
+    }
     String form =
         "grant_type=client_credentials&client_id="
             + encode(clientId)

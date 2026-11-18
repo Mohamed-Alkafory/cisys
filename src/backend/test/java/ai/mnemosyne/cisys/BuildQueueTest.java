@@ -8,7 +8,13 @@
 
 package ai.mnemosyne.cisys;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -16,10 +22,22 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 @QuarkusTest
 class BuildQueueTest {
@@ -104,14 +122,20 @@ class BuildQueueTest {
   @Test
   void concurrentClaimsNeverDuplicateOrExceedCapacity() throws Exception {
     runner.concurrency = 3;
-    for (int i = 0; i < 10; i++) submit();
+    for (int i = 0; i < 10; i++) {
+      submit();
+    }
     Set<Long> claimed = new HashSet<>();
     try (var pool = Executors.newFixedThreadPool(8)) {
       List<Callable<Build>> calls = new ArrayList<>();
-      for (int i = 0; i < 16; i++) calls.add(runner::claim);
+      for (int i = 0; i < 16; i++) {
+        calls.add(runner::claim);
+      }
       for (Future<Build> f : pool.invokeAll(calls)) {
         Build b = f.get();
-        if (b != null) assertTrue(claimed.add(b.id));
+        if (b != null) {
+          assertTrue(claimed.add(b.id));
+        }
       }
     }
     assertEquals(3, claimed.size());
@@ -126,7 +150,7 @@ class BuildQueueTest {
     int accepted = 0, rejected = 0;
     try (var pool = Executors.newFixedThreadPool(8)) {
       List<Callable<Boolean>> calls = new ArrayList<>();
-      for (int i = 0; i < 12; i++)
+      for (int i = 0; i < 12; i++) {
         calls.add(() -> {
           try {
             submit();
@@ -136,9 +160,13 @@ class BuildQueueTest {
             return false;
           }
         });
+      }
       for (Future<Boolean> f : pool.invokeAll(calls)) {
-        if (f.get()) accepted++;
-        else rejected++;
+        if (f.get()) {
+          accepted++;
+        } else {
+          rejected++;
+        }
       }
     }
     assertEquals(3, accepted);
@@ -204,8 +232,9 @@ class BuildQueueTest {
       assertTrue(done.await(10, TimeUnit.SECONDS));
       worker.dispatch();
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-      while (read(second.id).status != Build.Status.PASSED && System.nanoTime() < deadline)
+      while (read(second.id).status != Build.Status.PASSED && System.nanoTime() < deadline) {
         Thread.sleep(10);
+      }
       assertEquals(Build.Status.PASSED, read(second.id).status);
       assertEquals(List.of(first.id, second.id), order);
     } finally {
@@ -267,16 +296,20 @@ class BuildQueueTest {
             complete(
                 new Completion(
                     b.id, Build.Status.PASSED, "revision", 0, "image-digest", true, finished));
-            if (b.id.equals(first.id)) attempted.countDown();
-            else secondDone.countDown();
+            if (b.id.equals(first.id)) {
+              attempted.countDown();
+            } else {
+              secondDone.countDown();
+            }
           }
 
           @Override
           void persistCompletion(Completion r) {
             super.persistCompletion(r);
             // Fail after the SQL update so the test also verifies transaction rollback.
-            if (r.id().equals(first.id) && failures.getAndDecrement() > 0)
+            if (r.id().equals(first.id) && failures.getAndDecrement() > 0) {
               throw new IllegalStateException("database unavailable");
+            }
           }
         };
     worker.logs = logs;
@@ -349,14 +382,16 @@ class BuildQueueTest {
     restarted.commands =
         (args, timeout, limit) -> {
           calls.add(List.copyOf(args));
-          if (args.get(1).equals("ps"))
+          if (args.get(1).equals("ps")) {
             return new BuildRunner.Result(0, false, "cisys-build-1\ncisys-build-2\nunrelated\n");
-          if (args.get(1).equals("images"))
+          }
+          if (args.get(1).equals("images")) {
             return new BuildRunner.Result(
                 0,
                 false,
                 "localhost/cisys-build-3\nlocalhost/cisys-build-4-prepare\n"
                     + "docker.io/library/alpine\nlocalhost/cisys-build-x\n");
+          }
           return new BuildRunner.Result(0, false, "");
         };
     restarted.logs = logs;
@@ -396,7 +431,9 @@ class BuildQueueTest {
     restarted.runtime = "podman";
     restarted.commands =
         (args, timeout, limit) -> {
-          if (args.get(1).equals("ps")) return new BuildRunner.Result(0, false, "cisys-build-1\n");
+          if (args.get(1).equals("ps")) {
+            return new BuildRunner.Result(0, false, "cisys-build-1\n");
+          }
           return new BuildRunner.Result(1, false, "container runtime unavailable");
         };
     restarted.logs = logs;
@@ -419,7 +456,9 @@ class BuildQueueTest {
         new BuildRunner() {
           @Override
           void schedule(Runnable task) {
-            if (reject.get()) throw new RejectedExecutionException("worker stopped");
+            if (reject.get()) {
+              throw new RejectedExecutionException("worker stopped");
+            }
             super.schedule(task);
           }
 
@@ -441,7 +480,9 @@ class BuildQueueTest {
       reject.set(false);
       worker.dispatch();
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-      while (executed.isEmpty() && System.nanoTime() < deadline) Thread.sleep(10);
+      while (executed.isEmpty() && System.nanoTime() < deadline) {
+        Thread.sleep(10);
+      }
       assertEquals(List.of(queued.id), executed);
     } finally {
       worker.stop();
@@ -558,7 +599,9 @@ class BuildQueueTest {
         Thread.ofPlatform()
             .start(() -> {
               try {
-                if (published.await(10, TimeUnit.SECONDS)) runner.kill(handle);
+                if (published.await(10, TimeUnit.SECONDS)) {
+                  runner.kill(handle);
+                }
               } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
               }
@@ -622,8 +665,12 @@ class BuildQueueTest {
     Set<Long> numbers = new TreeSet<>();
     try (var pool = Executors.newFixedThreadPool(8)) {
       List<Callable<Build>> calls = new ArrayList<>();
-      for (int i = 0; i < 20; i++) calls.add(this::submit);
-      for (Future<Build> f : pool.invokeAll(calls)) assertTrue(numbers.add(f.get().number));
+      for (int i = 0; i < 20; i++) {
+        calls.add(this::submit);
+      }
+      for (Future<Build> f : pool.invokeAll(calls)) {
+        assertTrue(numbers.add(f.get().number));
+      }
     }
     assertEquals(20, numbers.size());
     assertEquals(1L, ((TreeSet<Long>) numbers).first());
@@ -642,7 +689,9 @@ class BuildQueueTest {
 
   @Test
   void numbersSurviveRetentionAndRestart() {
-    for (int i = 0; i < 3; i++) assertTrue(runner.cancel(submit().id));
+    for (int i = 0; i < 3; i++) {
+      assertTrue(runner.cancel(submit().id));
+    }
     retention.purge(java.time.Instant.now(), 0, 1);
     QuarkusTransaction.requiringNew().run(() -> Build.delete("projectId", project));
     BuildRunner restarted = new BuildRunner();

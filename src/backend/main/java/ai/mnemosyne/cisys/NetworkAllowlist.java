@@ -70,45 +70,61 @@ record NetworkAllowlist(List<String> entries) {
 
   /** Throws {@link IllegalArgumentException} with a message safe to show to an admin. */
   static NetworkAllowlist of(List<String> values) {
-    if (values == null) return EMPTY;
+    if (values == null) {
+      return EMPTY;
+    }
     Set<String> result = new LinkedHashSet<>();
     for (String value : values) {
-      if (value == null) continue;
+      if (value == null) {
+        continue;
+      }
       String entry = value.strip().toLowerCase(Locale.ROOT);
-      if (entry.isEmpty()) continue;
+      if (entry.isEmpty()) {
+        continue;
+      }
       result.add(validate(entry));
     }
-    if (result.size() > MAX_ENTRIES)
+    if (result.size() > MAX_ENTRIES) {
       throw new IllegalArgumentException("At most " + MAX_ENTRIES + " network entries are allowed");
+    }
     return new NetworkAllowlist(List.copyOf(result));
   }
 
   private static String validate(String entry) {
-    if (entry.length() > MAX_LENGTH)
+    if (entry.length() > MAX_LENGTH) {
       throw new IllegalArgumentException("Invalid network entry: " + entry.substring(0, 40) + "…");
-    if (entry.equals(ANY) || entry.equals("all")) return ANY;
+    }
+    if (entry.equals(ANY) || entry.equals("all")) {
+      return ANY;
+    }
     if (entry.contains("/")) {
       RepositoryUrls.Cidr cidr;
       try {
-        if (literal(entry.substring(0, entry.indexOf('/'))) == null)
+        if (literal(entry.substring(0, entry.indexOf('/'))) == null) {
           throw new IllegalArgumentException();
+        }
         cidr = RepositoryUrls.Cidr.parse(entry);
       } catch (IllegalArgumentException e) {
         throw new IllegalArgumentException("Invalid network entry: " + entry);
       }
       for (RepositoryUrls.Cidr p : PROTECTED) {
-        if (p.contains(cidr.network()) || cidr.contains(p.network())) throw protectedEntry(entry);
+        if (p.contains(cidr.network()) || cidr.contains(p.network())) {
+          throw protectedEntry(entry);
+        }
       }
       return entry;
     }
     InetAddress literal = literal(entry);
     if (literal != null) {
-      if (isProtected(literal)) throw protectedEntry(entry);
+      if (isProtected(literal)) {
+        throw protectedEntry(entry);
+      }
       return literal.getHostAddress();
     }
     String name = entry.startsWith("*.") ? entry.substring(2) : entry;
-    if (!name.matches(NAME) || name.matches("[0-9.]+"))
+    if (!name.matches(NAME) || name.matches("[0-9.]+")) {
       throw new IllegalArgumentException("Invalid network entry: " + entry);
+    }
     return entry;
   }
 
@@ -121,14 +137,21 @@ record NetworkAllowlist(List<String> entries) {
    * entries.
    */
   boolean allowsHost(String target) {
-    if (allowsAny()) return true;
+    if (allowsAny()) {
+      return true;
+    }
     String host = target.toLowerCase(Locale.ROOT);
-    if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+    if (host.endsWith(".")) {
+      host = host.substring(0, host.length() - 1);
+    }
     InetAddress literal = literal(host);
-    if (literal != null) return allowsAddress(literal);
+    if (literal != null) {
+      return allowsAddress(literal);
+    }
     for (String entry : entries) {
-      if (entry.startsWith("*.") ? host.endsWith(entry.substring(1)) : host.equals(entry))
+      if (entry.startsWith("*.") ? host.endsWith(entry.substring(1)) : host.equals(entry)) {
         return true;
+      }
     }
     return false;
   }
@@ -137,12 +160,15 @@ record NetworkAllowlist(List<String> entries) {
     byte[] raw = RepositoryUrls.unwrap(address.getAddress());
     for (String entry : entries) {
       if (entry.contains("/")) {
-        if (RepositoryUrls.Cidr.parse(entry).contains(raw)) return true;
+        if (RepositoryUrls.Cidr.parse(entry).contains(raw)) {
+          return true;
+        }
       } else {
         InetAddress listed = literal(entry);
         if (listed != null
-            && java.util.Arrays.equals(RepositoryUrls.unwrap(listed.getAddress()), raw))
+            && java.util.Arrays.equals(RepositoryUrls.unwrap(listed.getAddress()), raw)) {
           return true;
+        }
       }
     }
     return false;
@@ -164,7 +190,9 @@ record NetworkAllowlist(List<String> entries) {
         host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
     boolean v4 = h.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}");
     boolean v6 = h.contains(":") && h.matches("[0-9a-f:.]+");
-    if (!v4 && !v6) return null;
+    if (!v4 && !v6) {
+      return null;
+    }
     try {
       return InetAddress.ofLiteral(h);
     } catch (IllegalArgumentException e) {

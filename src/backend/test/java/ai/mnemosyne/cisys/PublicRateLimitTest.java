@@ -78,7 +78,9 @@ class PublicRateLimitTest {
   void signedInRequestsAreNotLimited() {
     limiter.requests = 1;
     limiter.windowSeconds = 60;
-    for (int i = 0; i < 5; i++) given().get("/api/stats/public").then().statusCode(200);
+    for (int i = 0; i < 5; i++) {
+      given().get("/api/stats/public").then().statusCode(200);
+    }
   }
 
   @Test

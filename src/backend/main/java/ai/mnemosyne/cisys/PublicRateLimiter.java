@@ -46,7 +46,9 @@ public class PublicRateLimiter {
    * should wait before retrying. A non-positive request limit disables the limiter.
    */
   long acquire(String client, long nowMillis) {
-    if (requests <= 0) return 0;
+    if (requests <= 0) {
+      return 0;
+    }
     long windowMillis = Math.max(1, windowSeconds) * 1000L;
     purge(nowMillis, windowMillis);
     if (maxClients > 0 && windows.size() >= maxClients && !windows.containsKey(client)) {
@@ -55,7 +57,9 @@ public class PublicRateLimiter {
       // only let a flood lock legitimate visitors out. Evicting the first entry the iterator
       // returns keeps this O(1); "oldest" is not important for a fail-open limiter.
       Iterator<String> candidates = windows.keySet().iterator();
-      if (candidates.hasNext()) windows.remove(candidates.next());
+      if (candidates.hasNext()) {
+        windows.remove(candidates.next());
+      }
     }
     Window window =
         windows.compute(
@@ -64,7 +68,9 @@ public class PublicRateLimiter {
                 current == null || nowMillis - current.start() >= windowMillis
                     ? new Window(nowMillis, new AtomicInteger())
                     : current);
-    if (window.count().incrementAndGet() <= requests) return 0;
+    if (window.count().incrementAndGet() <= requests) {
+      return 0;
+    }
     long remaining = window.start() + windowMillis - nowMillis;
     return Math.max(1, (remaining + 999) / 1000);
   }
@@ -76,9 +82,13 @@ public class PublicRateLimiter {
   }
 
   private void purge(long now, long windowMillis) {
-    if (maxClients <= 0 || windows.size() < maxClients) return;
+    if (maxClients <= 0 || windows.size() < maxClients) {
+      return;
+    }
     // A full map is checked on every request, so do the O(n) sweep at most once a second.
-    if (now - lastPurge < PURGE_INTERVAL_MILLIS) return;
+    if (now - lastPurge < PURGE_INTERVAL_MILLIS) {
+      return;
+    }
     lastPurge = now;
     windows.entrySet().removeIf(entry -> now - entry.getValue().start() >= windowMillis);
   }

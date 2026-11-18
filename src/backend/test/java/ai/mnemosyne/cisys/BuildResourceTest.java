@@ -9,8 +9,17 @@
 package ai.mnemosyne.cisys;
 
 import static io.restassured.RestAssured.given;
-import static org.hamcrest.Matchers.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasKey;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -77,13 +86,14 @@ class BuildResourceTest {
               b.persist();
               return b.id;
             });
-    if (logParts.length > 0)
+    if (logParts.length > 0) {
       try (var w = logs.open(id)) {
         for (String part : logParts) {
           byte[] bytes = part.getBytes(java.nio.charset.StandardCharsets.UTF_8);
           w.append(bytes, 0, bytes.length);
         }
       }
+    }
     return id;
   }
 
@@ -206,7 +216,9 @@ class BuildResourceTest {
     } finally {
       runner.dispatch();
       long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-      while (runner.hasPendingBuilds() && System.nanoTime() < deadline) Thread.sleep(50);
+      while (runner.hasPendingBuilds() && System.nanoTime() < deadline) {
+        Thread.sleep(50);
+      }
       assertFalse(runner.hasPendingBuilds(), "Build did not finish");
     }
   }
@@ -275,7 +287,9 @@ class BuildResourceTest {
           .body("branch", equalTo("main"), "credentialRef", equalTo(credentialRef));
     } finally {
       long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
-      while (runner.hasPendingBuilds() && System.nanoTime() < deadline) Thread.sleep(50);
+      while (runner.hasPendingBuilds() && System.nanoTime() < deadline) {
+        Thread.sleep(50);
+      }
       assertFalse(runner.hasPendingBuilds(), "Build did not finish");
     }
   }

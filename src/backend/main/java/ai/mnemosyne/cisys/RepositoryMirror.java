@@ -65,8 +65,9 @@ public class RepositoryMirror {
   volatile java.util.function.BiPredicate<String, String> readFailure = (op, detail) -> false;
 
   private void checkReadable(String operation, String detail) throws IOException {
-    if (readFailure.test(operation, detail))
+    if (readFailure.test(operation, detail)) {
       throw new IOException("injected " + operation + " failure");
+    }
   }
 
   Path root() {
@@ -77,9 +78,10 @@ public class RepositoryMirror {
   static void validateMirrorDirectory(String configured, String temporary) {
     Path dir = Path.of(configured).toAbsolutePath().normalize();
     Path tmp = Path.of(temporary).toAbsolutePath().normalize();
-    if (dir.startsWith(tmp))
+    if (dir.startsWith(tmp)) {
       throw new IllegalStateException(
           "cisys.poll.mirror-dir must not be under " + tmp + ": " + dir);
+    }
   }
 
   @PostConstruct
@@ -90,8 +92,9 @@ public class RepositoryMirror {
   /** Restricts a mirror directory to its owner where the filesystem supports it. */
   private static void ownerOnly(Path dir) {
     try {
-      if (Files.getFileStore(dir).supportsFileAttributeView(PosixFileAttributeView.class))
+      if (Files.getFileStore(dir).supportsFileAttributeView(PosixFileAttributeView.class)) {
         Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"));
+      }
     } catch (IOException | UnsupportedOperationException ignored) {
     }
   }
@@ -131,8 +134,9 @@ public class RepositoryMirror {
     boolean local = local(url);
     String cloneUrl = local ? url : RepositoryUrls.cloneUrl(url);
     if (local) {
-      if (!Files.isDirectory(Path.of(java.net.URI.create(url))))
+      if (!Files.isDirectory(Path.of(java.net.URI.create(url)))) {
         throw new IllegalArgumentException("Local repository does not exist: " + url);
+      }
     } else {
       repositoryUrls.validate(cloneUrl);
     }
@@ -152,24 +156,34 @@ public class RepositoryMirror {
               .setRemoveDeletedRefs(true)
               .setTimeout(60);
       UsernamePasswordCredentialsProvider credentials = credentials(project.credentialRef);
-      if (credentials != null) fetch.setCredentialsProvider(credentials);
+      if (credentials != null) {
+        fetch.setCredentialsProvider(credentials);
+      }
       fetch.call();
     }
     long bytes = size(dir);
-    if (maxMib > 0 && bytes > maxMib * 1024L * 1024L) throw new TooLargeException(bytes);
+    if (maxMib > 0 && bytes > maxMib * 1024L * 1024L) {
+      throw new TooLargeException(bytes);
+    }
   }
 
   private Git open(Path dir) throws Exception {
-    if (Files.isDirectory(dir)) return Git.open(dir.toFile());
+    if (Files.isDirectory(dir)) {
+      return Git.open(dir.toFile());
+    }
     try (Git git = Git.init().setBare(true).setDirectory(dir.toFile()).call()) {
       return Git.open(dir.toFile());
     }
   }
 
   private static UsernamePasswordCredentialsProvider credentials(String credentialRef) {
-    if (credentialRef == null) return null;
+    if (credentialRef == null) {
+      return null;
+    }
     String token = System.getenv(credentialRef);
-    if (token == null || token.isBlank()) throw new IllegalStateException("Missing Git credential");
+    if (token == null || token.isBlank()) {
+      throw new IllegalStateException("Missing Git credential");
+    }
     return new UsernamePasswordCredentialsProvider("oauth2", token);
   }
 
@@ -178,8 +192,9 @@ public class RepositoryMirror {
     checkReadable("branches", null);
     try (Repository repo = openRead(projectId)) {
       Set<String> names = new TreeSet<>();
-      for (Ref ref : repo.getRefDatabase().getRefsByPrefix("refs/heads/"))
+      for (Ref ref : repo.getRefDatabase().getRefsByPrefix("refs/heads/")) {
         names.add(ref.getName().substring("refs/heads/".length()));
+      }
       return names;
     }
   }
@@ -200,7 +215,9 @@ public class RepositoryMirror {
       Map<String, String> tips = new TreeMap<>();
       for (Ref ref : repo.getRefDatabase().getRefsByPrefix("refs/heads/")) {
         ObjectId id = ref.getObjectId();
-        if (id != null) tips.put(ref.getName().substring("refs/heads/".length()), id.name());
+        if (id != null) {
+          tips.put(ref.getName().substring("refs/heads/".length()), id.name());
+        }
       }
       return tips;
     }
@@ -213,7 +230,9 @@ public class RepositoryMirror {
   String branchContaining(Long projectId, String revision, Map<String, String> branchTips)
       throws Exception {
     checkReadable("branchContaining", revision);
-    if (revision == null || branchTips == null || branchTips.isEmpty()) return null;
+    if (revision == null || branchTips == null || branchTips.isEmpty()) {
+      return null;
+    }
     try (Repository repo = openRead(projectId)) {
       ObjectId id;
       try {
@@ -221,14 +240,18 @@ public class RepositoryMirror {
       } catch (IllegalArgumentException e) {
         return null;
       }
-      if (!repo.getObjectDatabase().has(id)) return null;
+      if (!repo.getObjectDatabase().has(id)) {
+        return null;
+      }
       for (Map.Entry<String, String> tip : branchTips.entrySet()) {
         // Both commits must be parsed by the walk that compares them: a RevCommit carries flags
         // from the walk that created it, so mixing walks makes isMergedInto answer false.
         try (RevWalk walk = new RevWalk(repo)) {
           RevCommit commit = walk.parseCommit(id);
           RevCommit tipCommit = walk.parseCommit(ObjectId.fromString(tip.getValue()));
-          if (walk.isMergedInto(commit, tipCommit)) return tip.getKey();
+          if (walk.isMergedInto(commit, tipCommit)) {
+            return tip.getKey();
+          }
         }
       }
       return null;
@@ -264,24 +287,34 @@ public class RepositoryMirror {
     try (Repository repo = openRead(projectId)) {
       checkReadable("commitsSince", branch);
       ObjectId tipId = repo.resolve("refs/heads/" + branch);
-      if (tipId == null) return List.of();
-      if (from == null) return List.of(tipId.name());
+      if (tipId == null) {
+        return List.of();
+      }
+      if (from == null) {
+        return List.of(tipId.name());
+      }
       ObjectId fromId;
       try {
         fromId = ObjectId.fromString(from);
       } catch (IllegalArgumentException e) {
         return List.of(tipId.name());
       }
-      if (!repo.getObjectDatabase().has(fromId)) return List.of(tipId.name());
+      if (!repo.getObjectDatabase().has(fromId)) {
+        return List.of(tipId.name());
+      }
       try (RevWalk walk = new RevWalk(repo)) {
         RevCommit tipCommit = walk.parseCommit(tipId);
         RevCommit fromCommit = walk.parseCommit(fromId);
-        if (!walk.isMergedInto(fromCommit, tipCommit)) return List.of(tipId.name());
+        if (!walk.isMergedInto(fromCommit, tipCommit)) {
+          return List.of(tipId.name());
+        }
         walk.reset();
         walk.markStart(tipCommit);
         walk.markUninteresting(fromCommit);
         List<String> commits = new ArrayList<>();
-        for (RevCommit commit : walk) commits.add(commit.name());
+        for (RevCommit commit : walk) {
+          commits.add(commit.name());
+        }
         Collections.reverse(commits);
         return commits;
       }
@@ -298,7 +331,9 @@ public class RepositoryMirror {
   }
 
   private static long size(Path dir) {
-    if (!Files.isDirectory(dir)) return 0;
+    if (!Files.isDirectory(dir)) {
+      return 0;
+    }
     long[] total = new long[1];
     try {
       Files.walkFileTree(
@@ -325,11 +360,12 @@ public class RepositoryMirror {
    */
   void delete(Long projectId) {
     Path dir = path(projectId);
-    if (Files.exists(dir))
+    if (Files.exists(dir)) {
       try {
         BuildRunner.delete(dir);
       } catch (IOException ignored) {
       }
+    }
     // The lock stays in the map: removing it while this thread (or another) still holds it would
     // hand a second lock to the next caller.
   }
@@ -337,7 +373,9 @@ public class RepositoryMirror {
   /** Removes every mirror, for an instance that is shutting polling down. */
   void deleteAll() {
     Path root = root();
-    if (!Files.isDirectory(root)) return;
+    if (!Files.isDirectory(root)) {
+      return;
+    }
     try (var entries = Files.list(root)) {
       for (Path path : entries.toList()) {
         try {

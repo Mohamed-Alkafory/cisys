@@ -83,7 +83,9 @@ class StatsResourceTest {
           b.requestedBy = "stats-owner";
           b.status = Build.Status.valueOf(status);
           b.startedAt = startedAt;
-          if (!"RUNNING".equals(status)) b.finishedAt = startedAt.plusSeconds(10);
+          if (!"RUNNING".equals(status)) {
+            b.finishedAt = startedAt.plusSeconds(10);
+          }
           b.persist();
         });
   }
@@ -143,7 +145,9 @@ class StatsResourceTest {
     build(privateProject, "PASSED", Instant.now());
     build(privateProject, "FAILED", Instant.now());
     JsonPath after = stats();
-    for (String field : FIELDS) assertEquals(0, delta(before, after, field), field);
+    for (String field : FIELDS) {
+      assertEquals(0, delta(before, after, field), field);
+    }
     assertEquals(before.getString("lastBuildAt"), after.getString("lastBuildAt"));
     assertEquals(before.getString("successRate"), after.getString("successRate"));
   }
@@ -151,8 +155,9 @@ class StatsResourceTest {
   @Test
   void successRateIsNullWithoutFinishedPublicBuilds() {
     JsonPath current = stats();
-    if (current.getLong("passed") + current.getLong("failed") == 0)
+    if (current.getLong("passed") + current.getLong("failed") == 0) {
       assertNull(current.get("successRate"));
+    }
   }
 
   @Test
@@ -186,11 +191,14 @@ class StatsResourceTest {
     String raw = raw();
     JsonPath after = JsonPath.from(raw).using(DOUBLES);
     assertEquals(1, delta(before, after, "projects"));
-    for (String field : FIELDS.subList(1, FIELDS.size()))
+    for (String field : FIELDS.subList(1, FIELDS.size())) {
       assertEquals(0, delta(before, after, field), field);
-    for (String secret : new String[] {id, publicName, privateName, publicUrl, privateUrl})
+    }
+    for (String secret : new String[] {id, publicName, privateName, publicUrl, privateUrl}) {
       assertFalse(raw.contains(secret), secret);
-    for (String key : new String[] {"\"name\"", "\"repositoryUrl\"", "\"ownerSubject\""})
+    }
+    for (String key : new String[] {"\"name\"", "\"repositoryUrl\"", "\"ownerSubject\""}) {
       assertFalse(raw.contains(key), key);
+    }
   }
 }

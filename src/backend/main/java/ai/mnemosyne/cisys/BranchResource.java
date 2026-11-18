@@ -37,12 +37,16 @@ public class BranchResource {
   public record Branches(List<String> branches, String reason) {}
 
   private Project visible(Long id) {
-    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin")))
+    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) {
       throw new ForbiddenException();
-    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null)
+    }
+    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null) {
       throw new NotAuthorizedException("Bearer");
+    }
     Project p = Project.findById(id);
-    if (p == null || !access.canView(p)) throw new NotFoundException();
+    if (p == null || !access.canView(p)) {
+      throw new NotFoundException();
+    }
     return p;
   }
 

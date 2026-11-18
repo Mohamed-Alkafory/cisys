@@ -8,7 +8,11 @@
 
 package ai.mnemosyne.cisys;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -102,8 +106,9 @@ class BuildNetworkTest {
           policy.deniedAddresses().toString());
       for (var nic : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
         for (InetAddress a : java.util.Collections.list(nic.getInetAddresses())) {
-          if (!(a instanceof java.net.Inet6Address))
+          if (!(a instanceof java.net.Inet6Address)) {
             assertTrue(policy.deniedAddresses().contains(a), a.toString());
+          }
         }
       }
     } finally {

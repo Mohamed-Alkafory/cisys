@@ -64,7 +64,9 @@ public class BrandingResource {
   @PermitAll
   public PublicBranding publicBranding() {
     Branding b = em.find(Branding.class, 1L);
-    if (b == null) b = new Branding();
+    if (b == null) {
+      b = new Branding();
+    }
     return new PublicBranding(b.name, b.headerColor, b.headingColor, b.buttonColor);
   }
 
@@ -75,7 +77,9 @@ public class BrandingResource {
   @Produces({"image/png", "image/jpeg"})
   public Response logo() {
     Branding b = em.find(Branding.class, 1L);
-    if (b == null || b.logo == null) throw new NotFoundException();
+    if (b == null || b.logo == null) {
+      throw new NotFoundException();
+    }
     String type = b.logo.substring("data:".length(), b.logo.indexOf(';'));
     byte[] bytes = Base64.getDecoder().decode(b.logo.substring(b.logo.indexOf(',') + 1));
     return Response.ok(bytes, type).header("Cache-Control", "no-cache").build();
@@ -85,12 +89,15 @@ public class BrandingResource {
   @PUT
   @Transactional
   public Branding update(Input input) {
-    if (!identity.hasRole("admin")) throw new ForbiddenException();
+    if (!identity.hasRole("admin")) {
+      throw new ForbiddenException();
+    }
     if (input == null
         || input.name() == null
         || input.name().isBlank()
-        || input.name().trim().length() > 80)
+        || input.name().trim().length() > 80) {
       throw new BadRequestException("A name of up to 80 characters is required");
+    }
     validateColor(input.headerColor());
     validateColor(input.headingColor());
     validateColor(input.buttonColor());
@@ -112,13 +119,15 @@ public class BrandingResource {
   }
 
   private void requireRole() {
-    if (!(identity.hasRole("admin") || identity.hasRole("lead") || identity.hasRole("member")))
+    if (!(identity.hasRole("admin") || identity.hasRole("lead") || identity.hasRole("member"))) {
       throw new ForbiddenException();
+    }
   }
 
   private static void validateColor(String color) {
-    if (color == null || !color.matches("#[0-9a-fA-F]{6}"))
+    if (color == null || !color.matches("#[0-9a-fA-F]{6}")) {
       throw new BadRequestException("Colors must use #RRGGBB format");
+    }
   }
 
   private static String emptyToNull(String value) {
@@ -126,14 +135,19 @@ public class BrandingResource {
   }
 
   private static void validateImage(String value) {
-    if (value == null || value.isBlank()) return;
+    if (value == null || value.isBlank()) {
+      return;
+    }
     if (value.length() > 340000
         || !(value.startsWith("data:image/png;base64,")
-            || value.startsWith("data:image/jpeg;base64,")))
+            || value.startsWith("data:image/jpeg;base64,"))) {
       throw new BadRequestException("Images must be PNG or JPEG and at most 250 KB");
+    }
     try {
       byte[] bytes = Base64.getDecoder().decode(value.substring(value.indexOf(',') + 1));
-      if (bytes.length > 250000 || bytes.length < 8) throw new IllegalArgumentException();
+      if (bytes.length > 250000 || bytes.length < 8) {
+        throw new IllegalArgumentException();
+      }
       boolean png =
           value.startsWith("data:image/png")
               && bytes[0] == (byte) 0x89
@@ -145,7 +159,9 @@ public class BrandingResource {
               && bytes[0] == (byte) 0xff
               && bytes[1] == (byte) 0xd8
               && bytes[2] == (byte) 0xff;
-      if (!png && !jpeg) throw new IllegalArgumentException();
+      if (!png && !jpeg) {
+        throw new IllegalArgumentException();
+      }
     } catch (IllegalArgumentException e) {
       throw new BadRequestException("Invalid image");
     }

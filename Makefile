@@ -18,9 +18,14 @@ lint: frontend
 check: frontend
 	@npm --prefix src/frontend run check
 
-# Reformats Java (google-java-format) and the frontend (Prettier).
+# Reformats Java (OpenRewrite NeedBraces first, then google-java-format, which
+# must run after the rewrite) and the frontend (Prettier).
+#  OpenRewrite required  JDK 25
 format: frontend
-	@mvn -B spotless:apply && npm --prefix src/frontend run format
+	@mvn -B org.openrewrite.maven:rewrite-maven-plugin:run \
+	  -Drewrite.activeRecipes=org.openrewrite.staticanalysis.NeedBraces \
+	  -Dmaven.main.skip=true -Dmaven.test.skip=true && \
+	mvn -B spotless:apply && npm --prefix src/frontend run format
 
 # Checks formatting of Java and the frontend; makes no changes, as CI does.
 format-check: frontend

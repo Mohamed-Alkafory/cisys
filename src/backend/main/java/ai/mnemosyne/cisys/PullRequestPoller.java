@@ -69,7 +69,9 @@ public class PullRequestPoller {
   int pollProject(Project project) {
     long passGeneration = generation.get();
     String provider = ensureProvider(project);
-    if (provider == null) return 0;
+    if (provider == null) {
+      return 0;
+    }
     Map<Integer, String> revisions;
     try {
       revisions = git.listPullRequests(project);
@@ -85,14 +87,17 @@ public class PullRequestPoller {
     // Only the newest N numbers are tracked; older ones are ignored by this feature.
     List<Integer> numbers = new ArrayList<>(revisions.keySet());
     numbers.sort(Comparator.reverseOrder());
-    if (maxPullRequests > 0 && numbers.size() > maxPullRequests)
+    if (maxPullRequests > 0 && numbers.size() > maxPullRequests) {
       numbers = numbers.subList(0, maxPullRequests);
+    }
     Map<Integer, Head> heads = new TreeMap<>();
     try {
       Map<String, String> tips = mirrors.branchTips(project.id);
       for (Integer number : numbers) {
         String revision = revisions.get(number);
-        if (revision == null) continue;
+        if (revision == null) {
+          continue;
+        }
         String branch = mirrors.branchContaining(project.id, revision, tips);
         boolean eligible = branch != null && mirrors.hasFile(project.id, revision, Workflow.PATH);
         heads.put(number, new Head(revision, branch, eligible));
@@ -109,7 +114,11 @@ public class PullRequestPoller {
       return 0;
     }
     Set<String> eligibleRevisions = new HashSet<>();
-    for (Head head : heads.values()) if (head.eligible()) eligibleRevisions.add(head.revision());
+    for (Head head : heads.values()) {
+      if (head.eligible()) {
+        eligibleRevisions.add(head.revision());
+      }
+    }
     List<Candidate> candidates =
         QuarkusTransaction.requiringNew()
             .call(() -> apply(project.id, heads, revisions.keySet(), passGeneration));
@@ -123,7 +132,9 @@ public class PullRequestPoller {
     }
     int queued = 0;
     for (Candidate candidate : candidates) {
-      if (submit(project, provider, candidate)) queued++;
+      if (submit(project, provider, candidate)) {
+        queued++;
+      }
     }
     return queued;
   }
@@ -133,11 +144,17 @@ public class PullRequestPoller {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           Project p = Project.findById(project.id);
-          if (p == null) return null;
+          if (p == null) {
+            return null;
+          }
           PullRequestProvider detected = PullRequestProvider.from(p.repositoryUrl);
           // A local test repository has no provider host; its stored provider is used instead.
-          if (detected == null) detected = stored(p);
-          if (detected == null) return null;
+          if (detected == null) {
+            detected = stored(p);
+          }
+          if (detected == null) {
+            return null;
+          }
           if (stored(p) != detected) {
             ProjectPullRequest.delete("projectId", p.id);
             p.pullRequestProvider = detected.name();
@@ -148,7 +165,9 @@ public class PullRequestPoller {
   }
 
   private static PullRequestProvider stored(Project p) {
-    if (p.pullRequestProvider == null) return null;
+    if (p.pullRequestProvider == null) {
+      return null;
+    }
     try {
       return PullRequestProvider.valueOf(p.pullRequestProvider);
     } catch (IllegalArgumentException e) {
@@ -162,20 +181,30 @@ public class PullRequestPoller {
     // Serialize with the settings transition, which holds this row while it clears the cursors and
     // baseline. A pass that started before a change must not recreate either after it commits.
     Settings settings = Settings.findById(1L, LockModeType.PESSIMISTIC_WRITE);
-    if (settings == null || !settings.pullRequestsEnabled) return List.of();
-    if (generation.get() != passGeneration) return List.of();
+    if (settings == null || !settings.pullRequestsEnabled) {
+      return List.of();
+    }
+    if (generation.get() != passGeneration) {
+      return List.of();
+    }
     Project p = Project.findById(projectId);
-    if (p == null) return List.of();
+    if (p == null) {
+      return List.of();
+    }
     List<Candidate> candidates = new ArrayList<>();
     Instant now = Instant.now();
     if (p.pullRequestBaseline == null) {
       // The first pass only seeds; nothing that already exists is built.
       int baseline = 0;
-      for (Integer number : present) baseline = Math.max(baseline, number);
+      for (Integer number : present) {
+        baseline = Math.max(baseline, number);
+      }
       p.pullRequestBaseline = baseline;
       for (Map.Entry<Integer, Head> entry : heads.entrySet()) {
         ProjectPullRequest cursor = ProjectPullRequest.of(projectId, entry.getKey());
-        if (cursor == null) cursor = new ProjectPullRequest();
+        if (cursor == null) {
+          cursor = new ProjectPullRequest();
+        }
         seed(cursor, projectId, entry.getKey(), entry.getValue(), now);
         cursor.lastSubmittedRevision = entry.getValue().revision();
         cursor.persist();
@@ -191,7 +220,9 @@ public class PullRequestPoller {
         cursor = new ProjectPullRequest();
         seed(cursor, projectId, number, head, now);
         // A number at or below the baseline existed when the feature was enabled: seed it.
-        if (number <= p.pullRequestBaseline) cursor.lastSubmittedRevision = head.revision();
+        if (number <= p.pullRequestBaseline) {
+          cursor.lastSubmittedRevision = head.revision();
+        }
         cursor.persist();
       } else {
         cursor.lastSeenRevision = head.revision();
@@ -201,8 +232,9 @@ public class PullRequestPoller {
       }
       // The baseline only decides which heads are seeded without a build. A seeded pull request
       // that receives a new head afterwards is still built once.
-      if (head.eligible() && !head.revision().equals(cursor.lastSubmittedRevision))
+      if (head.eligible() && !head.revision().equals(cursor.lastSubmittedRevision)) {
         candidates.add(new Candidate(number, head.revision(), head.branch()));
+      }
     }
     markMissing(projectId, present);
     return candidates;
@@ -224,7 +256,9 @@ public class PullRequestPoller {
     Set<Integer> known = new HashSet<>(present);
     for (ProjectPullRequest cursor :
         ProjectPullRequest.<ProjectPullRequest>list("projectId", projectId)) {
-      if (!known.contains(cursor.number)) cursor.refPresent = false;
+      if (!known.contains(cursor.number)) {
+        cursor.refPresent = false;
+      }
     }
   }
 
@@ -246,16 +280,17 @@ public class PullRequestPoller {
       advance(project.id, candidate.number(), candidate.revision());
       return submission.created();
     } catch (WebApplicationException e) {
-      if (CommitPoller.queueFull(e))
+      if (CommitPoller.queueFull(e)) {
         Log.debugf(
             "Project %d pull request %d: the build queue is full; will retry",
             project.id, (Object) candidate.number());
-      else
+      } else {
         Log.warnf(
             e,
             "Project %d pull request %d: submission failed; will retry",
             project.id,
             candidate.number());
+      }
     } catch (RuntimeException e) {
       Log.warnf(
           e,
@@ -287,13 +322,17 @@ public class PullRequestPoller {
         .run(() -> {
           ProjectPullRequest.delete("projectId", projectId);
           Project p = Project.findById(projectId);
-          if (p != null) p.pullRequestBaseline = null;
+          if (p != null) {
+            p.pullRequestBaseline = null;
+          }
         });
   }
 
   private static String message(Throwable e) {
     Throwable root = e;
-    while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+    while (root.getCause() != null && root.getCause() != root) {
+      root = root.getCause();
+    }
     String message = root.getMessage();
     return message == null || message.isBlank() ? root.getClass().getSimpleName() : message;
   }

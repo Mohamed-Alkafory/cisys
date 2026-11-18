@@ -91,10 +91,12 @@ public class SettingsResource {
     if (input == null
         || input.maxAgeDays() == null
         || input.maxAgeDays() < 0
-        || input.maxAgeDays() > MAX_DAYS)
+        || input.maxAgeDays() > MAX_DAYS) {
       throw new BadRequestException("Days must be between 0 and " + MAX_DAYS);
-    if (input.maxBuilds() == null || input.maxBuilds() < 0 || input.maxBuilds() > MAX_BUILDS)
+    }
+    if (input.maxBuilds() == null || input.maxBuilds() < 0 || input.maxBuilds() > MAX_BUILDS) {
       throw new BadRequestException("Builds must be between 0 and " + MAX_BUILDS);
+    }
     Settings s = Settings.findById(1L);
     if (s == null) {
       s = new Settings();
@@ -122,15 +124,18 @@ public class SettingsResource {
     if (input == null
         || input.maxConcurrent() == null
         || input.maxConcurrent() < 1
-        || input.maxConcurrent() > MAX_CONCURRENT)
+        || input.maxConcurrent() > MAX_CONCURRENT) {
       throw new BadRequestException("Concurrent builds must be between 1 and " + MAX_CONCURRENT);
-    if (input.maxQueued() == null || input.maxQueued() < 1 || input.maxQueued() > MAX_QUEUED)
+    }
+    if (input.maxQueued() == null || input.maxQueued() < 1 || input.maxQueued() > MAX_QUEUED) {
       throw new BadRequestException("Queued builds must be between 1 and " + MAX_QUEUED);
+    }
     if (input.timeoutMinutes() == null
         || input.timeoutMinutes() < 1
-        || input.timeoutMinutes() > MAX_TIMEOUT_MINUTES)
+        || input.timeoutMinutes() > MAX_TIMEOUT_MINUTES) {
       throw new BadRequestException(
           "Timeout must be between 1 and " + MAX_TIMEOUT_MINUTES + " minutes");
+    }
     Settings s = Settings.findById(1L);
     if (s == null) {
       s = new Settings();
@@ -159,11 +164,13 @@ public class SettingsResource {
     if (input == null
         || input.maxSizeMib() == null
         || input.maxSizeMib() < 1
-        || input.maxSizeMib() > MAX_CHECKOUT_MIB)
+        || input.maxSizeMib() > MAX_CHECKOUT_MIB) {
       throw new BadRequestException(
           "Checkout size must be between 1 and " + MAX_CHECKOUT_MIB + " MiB");
-    if (input.maxFiles() == null || input.maxFiles() < 1 || input.maxFiles() > MAX_CHECKOUT_FILES)
+    }
+    if (input.maxFiles() == null || input.maxFiles() < 1 || input.maxFiles() > MAX_CHECKOUT_FILES) {
       throw new BadRequestException("Checkout files must be between 1 and " + MAX_CHECKOUT_FILES);
+    }
     Settings s = Settings.findById(1L);
     if (s == null) {
       s = new Settings();
@@ -191,13 +198,16 @@ public class SettingsResource {
     if (input == null
         || input.maxMemoryMib() == null
         || input.maxMemoryMib() < MIN_MEMORY_MIB
-        || input.maxMemoryMib() > MAX_MEMORY_MIB)
+        || input.maxMemoryMib() > MAX_MEMORY_MIB) {
       throw new BadRequestException(
           "Memory must be between " + MIN_MEMORY_MIB + " and " + MAX_MEMORY_MIB + " MiB");
-    if (input.maxCpus() == null || input.maxCpus() < 1 || input.maxCpus() > MAX_CPUS)
+    }
+    if (input.maxCpus() == null || input.maxCpus() < 1 || input.maxCpus() > MAX_CPUS) {
       throw new BadRequestException("CPUs must be between 1 and " + MAX_CPUS);
-    if (input.maxPids() == null || input.maxPids() < MIN_PIDS || input.maxPids() > MAX_PIDS)
+    }
+    if (input.maxPids() == null || input.maxPids() < MIN_PIDS || input.maxPids() > MAX_PIDS) {
       throw new BadRequestException("Processes must be between " + MIN_PIDS + " and " + MAX_PIDS);
+    }
     Settings s = Settings.findById(1L);
     if (s == null) {
       s = new Settings();
@@ -227,19 +237,25 @@ public class SettingsResource {
   @Transactional
   public Polling updatePolling(Polling input) {
     requireAdmin();
-    if (input == null || input.enabled() == null)
+    if (input == null || input.enabled() == null) {
       throw new BadRequestException("Automatic builds must be on or off");
-    if (input.granularity() == null) throw new BadRequestException("Granularity is required");
-    if (input.scope() == null) throw new BadRequestException("Scope is required");
+    }
+    if (input.granularity() == null) {
+      throw new BadRequestException("Granularity is required");
+    }
+    if (input.scope() == null) {
+      throw new BadRequestException("Scope is required");
+    }
     if (input.intervalSeconds() != null
         && (input.intervalSeconds() < MIN_POLL_SECONDS
-            || input.intervalSeconds() > MAX_POLL_SECONDS))
+            || input.intervalSeconds() > MAX_POLL_SECONDS)) {
       throw new BadRequestException(
           "Poll interval must be between "
               + MIN_POLL_SECONDS
               + " and "
               + MAX_POLL_SECONDS
               + " seconds");
+    }
     Settings s = Settings.findById(1L);
     if (s == null) {
       s = new Settings();
@@ -269,8 +285,9 @@ public class SettingsResource {
   @Path("/pull-requests")
   public PullRequests updatePullRequests(PullRequests input) {
     requireAdmin();
-    if (input == null || input.enabled() == null)
+    if (input == null || input.enabled() == null) {
       throw new BadRequestException("Pull request builds must be on or off");
+    }
     // Invalidate first: a discovery pass that read heads before this change must discard its result
     // even if it reaches the database after the new setting commits.
     pullRequests.invalidate();
@@ -308,6 +325,8 @@ public class SettingsResource {
   }
 
   private void requireAdmin() {
-    if (!identity.hasRole("admin")) throw new ForbiddenException();
+    if (!identity.hasRole("admin")) {
+      throw new ForbiddenException();
+    }
   }
 }

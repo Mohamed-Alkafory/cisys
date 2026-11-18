@@ -118,11 +118,15 @@ public record Workflow(
    */
   public static String read(Path checkout) throws IOException {
     Path file = checkout.resolve(PATH);
-    if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) return null;
-    if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS))
+    if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+      return null;
+    }
+    if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
       throw new InvalidWorkflowException(PATH + " must be a regular file");
-    if (Files.size(file) > MAX_BYTES)
+    }
+    if (Files.size(file) > MAX_BYTES) {
       throw new InvalidWorkflowException(PATH + " is larger than " + MAX_BYTES + " bytes");
+    }
     String text;
     try {
       text = Files.readString(file);
@@ -130,16 +134,20 @@ public record Workflow(
       throw new InvalidWorkflowException(PATH + " is not valid UTF-8");
     }
     // PostgreSQL text cannot hold NUL characters.
-    if (text.indexOf('\0') >= 0)
+    if (text.indexOf('\0') >= 0) {
       throw new InvalidWorkflowException(PATH + " contains a NUL character");
+    }
     return text;
   }
 
   /** Parses and validates a workflow document. */
   public static Workflow parse(String yaml) {
-    if (yaml == null || yaml.isBlank()) throw new InvalidWorkflowException("The workflow is empty");
-    if (yaml.length() > MAX_BYTES)
+    if (yaml == null || yaml.isBlank()) {
+      throw new InvalidWorkflowException("The workflow is empty");
+    }
+    if (yaml.length() > MAX_BYTES) {
       throw new InvalidWorkflowException("The workflow is larger than " + MAX_BYTES + " bytes");
+    }
     Workflow workflow;
     try {
       workflow = MAPPER.readValue(yaml, Workflow.class);
@@ -160,28 +168,37 @@ public record Workflow(
     requireName(name, "name");
     validateEnvironment(environment, "environment");
     validateDependencies(dependencies, "dependencies");
-    if (container == null || container.isBlank())
+    if (container == null || container.isBlank()) {
       throw new InvalidWorkflowException("container is required");
-    if (!container.matches(AllowedImage.PATTERN))
+    }
+    if (!container.matches(AllowedImage.PATTERN)) {
       throw new InvalidWorkflowException("container is not a valid image reference");
-    if (jobs == null || jobs.isEmpty())
+    }
+    if (jobs == null || jobs.isEmpty()) {
       throw new InvalidWorkflowException("At least one job is required");
+    }
     for (int j = 0; j < jobs.size(); j++) {
       Job job = jobs.get(j);
       String where = "jobs[" + j + "]";
-      if (job == null) throw new InvalidWorkflowException(where + " is empty");
+      if (job == null) {
+        throw new InvalidWorkflowException(where + " is empty");
+      }
       requireName(job.job(), where + ".job");
       validateEnvironment(job.environment(), where + ".environment");
-      if (job.steps() == null || job.steps().isEmpty())
+      if (job.steps() == null || job.steps().isEmpty()) {
         throw new InvalidWorkflowException(where + " needs at least one step");
+      }
       for (int s = 0; s < job.steps().size(); s++) {
         Step step = job.steps().get(s);
         String at = where + ".steps[" + s + "]";
-        if (step == null) throw new InvalidWorkflowException(at + " is empty");
+        if (step == null) {
+          throw new InvalidWorkflowException(at + " is empty");
+        }
         requireName(step.name(), at + ".name");
         validateEnvironment(step.environment(), at + ".environment");
-        if ((step.run() == null) == (step.port() == null))
+        if ((step.run() == null) == (step.port() == null)) {
           throw new InvalidWorkflowException(at + " needs exactly one of run or wait");
+        }
         if (step.run() != null && (step.run().isBlank() || step.run().length() > MAX_COMMAND)) {
           throw new InvalidWorkflowException(
               at + ".run must be a command of at most " + MAX_COMMAND + " characters");
@@ -197,13 +214,19 @@ public record Workflow(
   }
 
   private static void validateEnvironment(List<Variable> environment, String where) {
-    if (environment == null) return;
+    if (environment == null) {
+      return;
+    }
     java.util.Set<String> seen = new java.util.HashSet<>();
     for (int i = 0; i < environment.size(); i++) {
       Variable v = environment.get(i);
       String at = where + "[" + i + "]";
-      if (v == null) throw new InvalidWorkflowException(at + " is empty");
-      if (v.name() == null) throw new InvalidWorkflowException(at + ".name is required");
+      if (v == null) {
+        throw new InvalidWorkflowException(at + " is empty");
+      }
+      if (v.name() == null) {
+        throw new InvalidWorkflowException(at + ".name is required");
+      }
       if (!v.name().matches("[A-Za-z_][A-Za-z0-9_]{0,199}")) {
         throw new InvalidWorkflowException(
             at
@@ -211,16 +234,20 @@ public record Workflow(
                 + v.name()
                 + "' must be a variable name: letters, digits and _, not starting with a digit");
       }
-      if (!seen.add(v.name()))
+      if (!seen.add(v.name())) {
         throw new InvalidWorkflowException(at + ".name " + v.name() + " appears more than once");
-      if (v.value() == null)
+      }
+      if (v.value() == null) {
         throw new InvalidWorkflowException(at + ".value is required; use \"\" for an empty one");
-      if (v.value().length() > MAX_COMMAND)
+      }
+      if (v.value().length() > MAX_COMMAND) {
         throw new InvalidWorkflowException(
             at + ".value is longer than " + MAX_COMMAND + " characters");
+      }
     }
-    if (exports(environment).length() > MAX_ENVIRONMENT)
+    if (exports(environment).length() > MAX_ENVIRONMENT) {
       throw new InvalidWorkflowException(where + " is too large");
+    }
   }
 
   /**
@@ -230,18 +257,26 @@ public record Workflow(
   static final String PACKAGE = "[A-Za-z0-9][A-Za-z0-9+._:=~@-]{0,199}";
 
   private static void validateDependencies(List<Dependency> dependencies, String where) {
-    if (dependencies == null) return;
+    if (dependencies == null) {
+      return;
+    }
     java.util.Set<String> seen = new java.util.HashSet<>();
     for (int i = 0; i < dependencies.size(); i++) {
       Dependency d = dependencies.get(i);
       String at = where + "[" + i + "]";
-      if (d == null) throw new InvalidWorkflowException(at + " is empty");
+      if (d == null) {
+        throw new InvalidWorkflowException(at + " is empty");
+      }
       requireName(d.name(), at + ".name");
-      if (!seen.add(d.name()))
+      if (!seen.add(d.name())) {
         throw new InvalidWorkflowException(at + ".name " + d.name() + " appears more than once");
-      if (d.value() == null) throw new InvalidWorkflowException(at + ".value is required");
-      if (!d.value().matches(PACKAGE))
+      }
+      if (d.value() == null) {
+        throw new InvalidWorkflowException(at + ".value is required");
+      }
+      if (!d.value().matches(PACKAGE)) {
         throw new InvalidWorkflowException(at + ".value '" + d.value() + "' is not a package name");
+      }
     }
   }
 
@@ -340,8 +375,9 @@ public record Workflow(
    * per-{@code RUN} network flag.
    */
   String prepareContainerfile(String baseId, boolean network) {
-    if (!baseId.matches("[0-9a-f]{64}"))
+    if (!baseId.matches("[0-9a-f]{64}")) {
       throw new IllegalArgumentException("Not an image ID: " + baseId);
+    }
     StringBuilder f = new StringBuilder();
     f.append("FROM ").append(baseId).append('\n');
     f.append("USER 0\n");
@@ -369,8 +405,9 @@ public record Workflow(
       int waitSeconds,
       boolean installToolsAndDependencies,
       boolean perRunNetworkFlags) {
-    if (installToolsAndDependencies && !baseId.matches("[0-9a-f]{64}"))
+    if (installToolsAndDependencies && !baseId.matches("[0-9a-f]{64}")) {
       throw new IllegalArgumentException("Not an image ID: " + baseId);
+    }
     StringBuilder f = new StringBuilder();
     f.append("FROM ").append(baseId).append('\n');
     f.append("USER 0\n");
@@ -435,8 +472,9 @@ public record Workflow(
   }
 
   private static void checkSize(StringBuilder file) {
-    if (file.length() > MAX_CONTAINERFILE)
+    if (file.length() > MAX_CONTAINERFILE) {
       throw new InvalidWorkflowException("The workflow is too large to run");
+    }
   }
 
   /**
@@ -527,7 +565,9 @@ public record Workflow(
           """;
 
   private static void install(StringBuilder f, boolean readable, List<Dependency> dependencies) {
-    if (dependencies == null || dependencies.isEmpty()) return;
+    if (dependencies == null || dependencies.isEmpty()) {
+      return;
+    }
     List<String> args = new java.util.ArrayList<>();
     for (Dependency d : dependencies) {
       args.add(d.name());
@@ -554,11 +594,15 @@ public record Workflow(
     StringBuilder body = new StringBuilder();
     if (args.length > 0) {
       body.append("set --");
-      for (String arg : args) body.append(' ').append(quote(arg));
+      for (String arg : args) {
+        body.append(' ').append(quote(arg));
+      }
       body.append('\n');
     }
     body.append(script);
-    if (body.charAt(body.length() - 1) != '\n') body.append('\n');
+    if (body.charAt(body.length() - 1) != '\n') {
+      body.append('\n');
+    }
     String end = delimiter("CISYS", body.toString());
     f.append("<<'").append(end).append("'\n").append(body).append(end).append('\n');
   }
@@ -569,7 +613,9 @@ public record Workflow(
   static String delimiter(String base, String body) {
     java.util.Set<String> lines = new java.util.HashSet<>(body.lines().toList());
     String end = base;
-    for (int i = 1; lines.contains(end); i++) end = base + "_" + i;
+    for (int i = 1; lines.contains(end); i++) {
+      end = base + "_" + i;
+    }
     return end;
   }
 
@@ -594,7 +640,9 @@ public record Workflow(
   String script(int waitSeconds) {
     // Each RUN is a new shell, so each runs in a subshell here.
     StringBuilder s = new StringBuilder(exports());
-    for (String run : runs(waitSeconds)) s.append("(\n").append(run).append(") || exit $?\n");
+    for (String run : runs(waitSeconds)) {
+      s.append("(\n").append(run).append(") || exit $?\n");
+    }
     return s.toString();
   }
 
@@ -607,7 +655,9 @@ public record Workflow(
       String jobEnvironment = exports(job.environment());
       if (job.steps().stream().anyMatch(step -> !step.isRun())) {
         StringBuilder s = new StringBuilder(jobEnvironment + header);
-        for (Step step : job.steps()) s.append(step(step, waitSeconds));
+        for (Step step : job.steps()) {
+          s.append(step(step, waitSeconds));
+        }
         runs.add(s.toString());
       } else {
         for (int i = 0; i < job.steps().size(); i++) {
@@ -668,9 +718,10 @@ public record Workflow(
 
   private static String exports(List<Variable> environment) {
     StringBuilder s = new StringBuilder();
-    if (environment != null)
+    if (environment != null) {
       environment.forEach(v ->
           s.append("export ").append(v.name()).append('=').append(quote(v.value())).append('\n'));
+    }
     return s.toString();
   }
 
@@ -679,10 +730,12 @@ public record Workflow(
   }
 
   private static void requireName(String value, String field) {
-    if (value == null || value.isBlank())
+    if (value == null || value.isBlank()) {
       throw new InvalidWorkflowException(field + " is required");
-    if (value.length() > MAX_NAME)
+    }
+    if (value.length() > MAX_NAME) {
       throw new InvalidWorkflowException(field + " is longer than " + MAX_NAME + " characters");
+    }
   }
 
   /** The workflow file is not valid; the message is safe to show to the user. */

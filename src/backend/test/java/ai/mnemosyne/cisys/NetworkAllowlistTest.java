@@ -8,7 +8,12 @@
 
 package ai.mnemosyne.cisys;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.InetAddress;
 import java.util.Collections;
@@ -109,7 +114,9 @@ class NetworkAllowlistTest {
   @Test
   void limitsTheNumberOfEntries() {
     List<String> many = new java.util.ArrayList<>();
-    for (int i = 0; i <= NetworkAllowlist.MAX_ENTRIES; i++) many.add("h" + i + ".example.com");
+    for (int i = 0; i <= NetworkAllowlist.MAX_ENTRIES; i++) {
+      many.add("h" + i + ".example.com");
+    }
     assertThrows(IllegalArgumentException.class, () -> NetworkAllowlist.of(many));
     assertEquals(
         NetworkAllowlist.MAX_ENTRIES,

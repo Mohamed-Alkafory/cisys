@@ -74,7 +74,9 @@ public class CommitPoller {
     Instant now = Instant.now();
     Instant last = lastRun;
     Duration interval = interval();
-    if (last != null && now.isBefore(last.plus(interval))) return;
+    if (last != null && now.isBefore(last.plus(interval))) {
+      return;
+    }
     lastRun = now;
     try {
       poll();
@@ -96,8 +98,12 @@ public class CommitPoller {
   /** The configured interval, clamped to the range the settings endpoint accepts. */
   int defaultIntervalSeconds() {
     long seconds = pollEvery.getSeconds();
-    if (seconds < MIN_INTERVAL_SECONDS) return MIN_INTERVAL_SECONDS;
-    if (seconds > MAX_INTERVAL_SECONDS) return MAX_INTERVAL_SECONDS;
+    if (seconds < MIN_INTERVAL_SECONDS) {
+      return MIN_INTERVAL_SECONDS;
+    }
+    if (seconds > MAX_INTERVAL_SECONDS) {
+      return MAX_INTERVAL_SECONDS;
+    }
     return (int) seconds;
   }
 
@@ -110,7 +116,9 @@ public class CommitPoller {
     }
     // Turning branch polling off resets the branch cursors, so a later enable seeds instead of
     // building what happened while it was off. The mirror is kept while pull request builds run.
-    if (!settings.pollEnabled) resetBranchCursors();
+    if (!settings.pollEnabled) {
+      resetBranchCursors();
+    }
     List<Project> projects = QuarkusTransaction.requiringNew().call(() -> Project.listAll());
     int queued = 0;
     Set<Long> live = new HashSet<>();
@@ -132,18 +140,23 @@ public class CommitPoller {
 
   private int pollProject(Project project, Settings settings) {
     if (project.privateRepository && project.credentialRef == null) {
-      if (fetchFailures.add(project.id))
+      if (fetchFailures.add(project.id)) {
         Log.warnf("Skipping private project %d: no credential reference", project.id);
+      }
       return 0;
     }
-    if (oversized.contains(project.id)) return 0;
+    if (oversized.contains(project.id)) {
+      return 0;
+    }
     try {
       mirrors.fetch(project);
-      if (fetchFailures.remove(project.id))
+      if (fetchFailures.remove(project.id)) {
         Log.infof("Project %d can be fetched again", project.id);
+      }
     } catch (RepositoryMirror.TooLargeException e) {
-      if (oversized.add(project.id))
+      if (oversized.add(project.id)) {
         Log.warnf("Project %d: %s; polling stops", project.id, e.getMessage());
+      }
       return 0;
     } catch (Exception e) {
       if (fetchFailures.add(project.id)) {
@@ -162,8 +175,9 @@ public class CommitPoller {
     }
     // Re-read under the project lock: a concurrent disable may have been committed after this
     // tick captured its settings, and a disabled feature must not recreate cursors.
-    if (settings.pullRequestsEnabled && pullRequestsEnabled())
+    if (settings.pullRequestsEnabled && pullRequestsEnabled()) {
       queued += pullRequests.pollProject(project);
+    }
     return queued;
   }
 
@@ -186,14 +200,18 @@ public class CommitPoller {
     int queued = 0;
     for (String branch : branches) {
       try {
-        if (!eligible(project, branch, settings.pollScope, branches)) continue;
+        if (!eligible(project, branch, settings.pollScope, branches)) {
+          continue;
+        }
         queued += pollBranch(project, settings, branch);
       } catch (Exception e) {
         readFailed = true;
         readFailure(project, branch, e);
       }
     }
-    if (!readFailed) readFailures.remove(project.id);
+    if (!readFailed) {
+      readFailures.remove(project.id);
+    }
     return queued;
   }
 
@@ -210,7 +228,9 @@ public class CommitPoller {
   /** The root cause's message, so an expected failure is one line instead of a stack trace. */
   private static String reason(Throwable e) {
     Throwable root = e;
-    while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+    while (root.getCause() != null && root.getCause() != root) {
+      root = root.getCause();
+    }
     String message = root.getMessage();
     return message == null || message.isBlank() ? root.getClass().getSimpleName() : message;
   }
@@ -227,9 +247,12 @@ public class CommitPoller {
 
   private boolean eligible(
       Project project, String branch, Settings.Scope scope, Set<String> branches) throws Exception {
-    if (!branches.contains(branch)) return false;
-    if (scope == Settings.Scope.MAIN_ONLY && !branch.equals("main") && !branch.equals("master"))
+    if (!branches.contains(branch)) {
       return false;
+    }
+    if (scope == Settings.Scope.MAIN_ONLY && !branch.equals("main") && !branch.equals("master")) {
+      return false;
+    }
     String tip = mirrors.tip(project.id, branch);
     return tip != null && mirrors.hasFile(project.id, tip, Workflow.PATH);
   }
@@ -237,7 +260,9 @@ public class CommitPoller {
   /** Queues the commits that appeared on one branch, oldest first, and advances its cursor. */
   private int pollBranch(Project project, Settings settings, String branch) throws Exception {
     String tip = mirrors.tip(project.id, branch);
-    if (tip == null) return 0;
+    if (tip == null) {
+      return 0;
+    }
     ProjectBranch cursor =
         QuarkusTransaction.requiringNew().call(() -> ProjectBranch.of(project.id, branch));
     if (cursor == null) {
@@ -253,7 +278,9 @@ public class CommitPoller {
       return 0;
     }
     String from = cursor.lastSeenRevision;
-    if (tip.equals(from)) return 0;
+    if (tip.equals(from)) {
+      return 0;
+    }
     List<String> commits;
     if (settings.pollGranularity == Settings.Granularity.TIP) {
       commits = List.of(tip);
@@ -266,10 +293,11 @@ public class CommitPoller {
     for (String commit : commits) {
       if (queued >= maxCommits) {
         stopped = true;
-        if (limitWarned.add(project.id))
+        if (limitWarned.add(project.id)) {
           Log.warnf(
               "Project %d branch %s: reached the %d commits per poll limit; the rest follow next tick",
               project.id, branch, maxCommits);
+        }
         break;
       }
       if (!mirrors.hasFile(project.id, commit, Workflow.PATH)) {
@@ -317,7 +345,9 @@ public class CommitPoller {
       advance(project.id, branch, commit);
       queued++;
     }
-    if (!stopped) limitWarned.remove(project.id);
+    if (!stopped) {
+      limitWarned.remove(project.id);
+    }
     return queued;
   }
 
@@ -367,10 +397,14 @@ public class CommitPoller {
     for (Project project : projects) {
       ids.add(project.id);
       ReentrantLock lock = mirrors.lock(project.id);
-      if (!tryLock(lock)) continue;
+      if (!tryLock(lock)) {
+        continue;
+      }
       try {
         pullRequests.disableProject(project.id);
-        if (hasActiveBuild(project.id)) continue;
+        if (hasActiveBuild(project.id)) {
+          continue;
+        }
         mirrors.delete(project.id);
         QuarkusTransaction.requiringNew().run(() -> ProjectBranch.delete("projectId", project.id));
         fetchFailures.remove(project.id);
@@ -396,15 +430,23 @@ public class CommitPoller {
   /** Removes mirrors whose project is gone, unless a poll build still reads them. */
   private void sweepOrphans(Set<Long> live) {
     Path root = mirrors.root();
-    if (!Files.isDirectory(root)) return;
+    if (!Files.isDirectory(root)) {
+      return;
+    }
     try (var entries = Files.list(root)) {
       for (Path dir : entries.toList()) {
         Long id = parseProjectId(dir.getFileName().toString());
-        if (id == null || live.contains(id)) continue;
+        if (id == null || live.contains(id)) {
+          continue;
+        }
         ReentrantLock lock = mirrors.lock(id);
-        if (!tryLock(lock)) continue;
+        if (!tryLock(lock)) {
+          continue;
+        }
         try {
-          if (hasActiveBuild(id)) continue;
+          if (hasActiveBuild(id)) {
+            continue;
+          }
           mirrors.delete(id);
         } finally {
           lock.unlock();
@@ -415,7 +457,9 @@ public class CommitPoller {
   }
 
   private static Long parseProjectId(String name) {
-    if (!name.endsWith(".git")) return null;
+    if (!name.endsWith(".git")) {
+      return null;
+    }
     try {
       return Long.parseLong(name.substring(0, name.length() - 4));
     } catch (NumberFormatException e) {

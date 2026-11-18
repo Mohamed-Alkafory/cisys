@@ -39,8 +39,9 @@ public class TestGitRepositoryService extends GitRepositoryService {
   @Override
   protected String token(String credentialRef) {
     // The test alternative never reads the environment.
-    if ("CISYS_GIT_MISSING".equals(credentialRef))
+    if ("CISYS_GIT_MISSING".equals(credentialRef)) {
       throw new BranchLookupException("Missing Git credential", null);
+    }
     return credentialRef == null ? null : "test-token";
   }
 
@@ -50,7 +51,9 @@ public class TestGitRepositoryService extends GitRepositoryService {
     CALLS.incrementAndGet();
     token(credentialRef);
     CREDENTIAL.set(credentialRef);
-    if (repositoryUrl.contains("unreachable")) throw new GitAPIException("unreachable") {};
+    if (repositoryUrl.contains("unreachable")) {
+      throw new GitAPIException("unreachable") {};
+    }
     return List.of("refs/heads/main", "refs/heads/dev", "refs/tags/v1", "refs/heads/dev");
   }
 }

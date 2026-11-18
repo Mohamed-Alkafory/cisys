@@ -9,7 +9,10 @@
 package ai.mnemosyne.cisys;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import java.time.Instant;
 
 /** A build. Its log is a large object in the unmapped logoid column, see {@link BuildLogs}. */

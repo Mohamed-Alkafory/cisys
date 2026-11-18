@@ -30,7 +30,9 @@ class RepositoryUrlValidatorTest {
   private static HostResolver resolved(String... addresses) {
     return host -> {
       InetAddress[] result = new InetAddress[addresses.length];
-      for (int i = 0; i < addresses.length; i++) result[i] = InetAddress.getByName(addresses[i]);
+      for (int i = 0; i < addresses.length; i++) {
+        result[i] = InetAddress.getByName(addresses[i]);
+      }
       return result;
     };
   }

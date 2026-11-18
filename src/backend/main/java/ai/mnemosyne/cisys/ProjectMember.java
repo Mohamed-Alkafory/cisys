@@ -39,7 +39,9 @@ public class ProjectMember extends PanacheEntity {
 
   /** The subjects assigned to any of the projects. */
   static Set<String> subjects(Collection<Long> projectIds) {
-    if (projectIds.isEmpty()) return Set.of();
+    if (projectIds.isEmpty()) {
+      return Set.of();
+    }
     return new TreeSet<>(
         ProjectMember.<ProjectMember>list("projectId in ?1", projectIds).stream()
             .map(m -> m.subject)
@@ -51,10 +53,15 @@ public class ProjectMember extends PanacheEntity {
    * outside {@code scope} are left alone. A null scope is every project.
    */
   static void replace(String subject, Collection<Long> scope, Collection<Long> wanted) {
-    if (scope == null) delete("subject", subject);
-    else if (!scope.isEmpty()) delete("subject = ?1 and projectId in ?2", subject, scope);
+    if (scope == null) {
+      delete("subject", subject);
+    } else if (!scope.isEmpty()) {
+      delete("subject = ?1 and projectId in ?2", subject, scope);
+    }
     for (Long id : new TreeSet<>(wanted)) {
-      if (scope != null && !scope.contains(id)) continue;
+      if (scope != null && !scope.contains(id)) {
+        continue;
+      }
       ProjectMember m = new ProjectMember();
       m.projectId = id;
       m.subject = subject;
