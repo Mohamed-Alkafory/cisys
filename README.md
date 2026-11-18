@@ -82,6 +82,8 @@ Wait for Keycloak to become available at <http://localhost:8180>.
 
 Run `make platform-stop` to stop the containers and keep their data, or `make reset` to stop them and delete their data after asking for confirmation.
 
+Introducing the project team requires a database reset for databases created before this change: run `make reset`, which deletes the local PostgreSQL and Keycloak data volumes, including projects, builds and users. New projects automatically assign their creator the LEAD role at creation time; existing team data is not migrated or repaired. Databases created after the change are not affected, and not every future upgrade requires a reset.
+
 Start the backend and the frontend in development mode:
 
 ```sh

@@ -846,8 +846,8 @@ class ProjectResourceTest {
   }
 
   @Test
-  @TestSecurity(user = "lead", roles = "lead")
-  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
   void deletingAProjectWaitsBrieflyForThePollerLock() throws Exception {
     Long id = project("lead-id", false);
     java.nio.file.Path dir = mirrors.path(id);
@@ -875,8 +875,8 @@ class ProjectResourceTest {
   }
 
   @Test
-  @TestSecurity(user = "lead", roles = "lead")
-  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
   void deletingAProjectDoesNotHoldTheQueueWhileWaitingForThePoller() throws Exception {
     Long id = project("lead-id", false);
     java.nio.file.Path dir = mirrors.path(id);
@@ -918,6 +918,12 @@ class ProjectResourceTest {
           p.ownerSubject = owner;
           p.privateRepository = priv;
           p.persist();
+          ProjectMember m = new ProjectMember();
+          m.projectId = p.id;
+          m.subject = p.ownerSubject;
+          m.role = ProjectMember.TeamRole.LEAD;
+          m.createdAt = java.time.Instant.now();
+          m.persist();
           return p.id;
         });
   }
@@ -941,9 +947,9 @@ class ProjectResourceTest {
   }
 
   @Test
-  @TestSecurity(user = "lead", roles = "lead")
-  @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
-  void ownerDeletesProjectAndItsBuilds() {
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void adminDeletesProjectAndItsBuilds() {
     Long id = project("lead-id", false);
     Long b = build(id, "PASSED");
     given().when().delete("/api/projects/" + id).then().statusCode(204);

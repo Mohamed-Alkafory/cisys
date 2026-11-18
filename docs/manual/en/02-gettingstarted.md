@@ -39,6 +39,8 @@ The default local configuration expects a PostgreSQL database named `cisys` with
 
 The Keycloak realm is imported on the first startup only; existing Keycloak data is not overwritten. To recreate the local development data, run `make reset`. This deletes the local databases.
 
+Introducing the project team requires a database reset for databases created before this change: run `make reset`, which deletes the local PostgreSQL and Keycloak data volumes, including projects, builds and users. New projects automatically assign their creator the LEAD role at creation time; existing team data is not migrated or repaired. Databases created after the change are not affected, and not every future upgrade requires a reset.
+
 ## Start the application
 
 Start the application:

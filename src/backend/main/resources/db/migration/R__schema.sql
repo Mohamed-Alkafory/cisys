@@ -218,13 +218,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS build_project_poll_revision
     WHERE trigger = 'POLL' AND revision IS NOT NULL;
 
 -- Users assigned to a project, by Keycloak subject; the users themselves live in Keycloak.
+-- A project member is either a MEMBER (read the project) or a LEAD (MEMBER + manage its membership and settings).
 CREATE TABLE IF NOT EXISTS projectmember (
     id bigint NOT NULL,
     projectid bigint NOT NULL,
     subject character varying(255) NOT NULL,
+    role character varying(16) NOT NULL DEFAULT 'MEMBER',
+    createdat timestamp(6) with time zone NOT NULL DEFAULT now(),
     CONSTRAINT projectmember_pkey PRIMARY KEY (id),
     CONSTRAINT projectmember_project_subject UNIQUE (projectid, subject),
-    CONSTRAINT projectmember_project FOREIGN KEY (projectid) REFERENCES project (id) ON DELETE CASCADE
+    CONSTRAINT projectmember_project FOREIGN KEY (projectid) REFERENCES project (id) ON DELETE CASCADE,
+    CONSTRAINT projectmember_role_check CHECK (role IN ('MEMBER', 'LEAD'))
 );
 CREATE INDEX IF NOT EXISTS projectmember_subject ON projectmember (subject);
 CREATE SEQUENCE IF NOT EXISTS projectmember_seq START WITH 1 INCREMENT BY 50;
@@ -303,3 +307,12 @@ CREATE TABLE IF NOT EXISTS projectpullrequest (
     CONSTRAINT projectpullrequest_project_number UNIQUE (projectid, number)
 );
 CREATE SEQUENCE IF NOT EXISTS projectpullrequest_seq START WITH 1 INCREMENT BY 50;
+-- Upgrades a projectmember table created before membership roles existed: rows gain the default MEMBER role.
+ALTER TABLE projectmember ADD COLUMN IF NOT EXISTS role character varying(16) NOT NULL DEFAULT 'MEMBER';
+ALTER TABLE projectmember ADD COLUMN IF NOT EXISTS createdat timestamp(6) with time zone NOT NULL DEFAULT now();
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'projectmember_role_check') THEN
+        ALTER TABLE projectmember ADD CONSTRAINT projectmember_role_check CHECK (role IN ('MEMBER', 'LEAD'));
+    END IF;
+END $$;

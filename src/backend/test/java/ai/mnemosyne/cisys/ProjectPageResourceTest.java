@@ -53,6 +53,12 @@ class ProjectPageResourceTest {
               p.ownerSubject = "owner-id";
               p.privateRepository = priv;
               p.persist();
+              ProjectMember m = new ProjectMember();
+              m.projectId = p.id;
+              m.subject = p.ownerSubject;
+              m.role = ProjectMember.TeamRole.LEAD;
+              m.createdAt = java.time.Instant.now();
+              m.persist();
               Build b = new Build();
               b.projectId = p.id;
               b.number = Build.nextNumber(p.id);
@@ -81,6 +87,50 @@ class ProjectPageResourceTest {
           b.branch = branch;
           b.persist();
         });
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "member-id"))
+  void memberSeesPageWithCannotPin() {
+    String name = project(true);
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Project p = Project.<Project>find("name", name).firstResult();
+          ProjectMember m = new ProjectMember();
+          m.projectId = p.id;
+          m.subject = "member-id";
+          m.role = ProjectMember.TeamRole.MEMBER;
+          m.createdAt = java.time.Instant.now();
+          m.persist();
+        });
+    given()
+        .get("/api/project-pages/" + name.toLowerCase())
+        .then()
+        .statusCode(200)
+        .body("builds[0].canPin", org.hamcrest.Matchers.equalTo(false));
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "member-id"))
+  void projectLeadSeesPinEnabled() {
+    Seeded s = seed(true);
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Project p = Project.<Project>find("name", s.name()).firstResult();
+          ProjectMember m = new ProjectMember();
+          m.projectId = p.id;
+          m.subject = "member-id";
+          m.role = ProjectMember.TeamRole.LEAD;
+          m.createdAt = java.time.Instant.now();
+          m.persist();
+        });
+    given()
+        .get("/api/project-pages/" + s.name().toLowerCase() + "/builds/" + s.buildId())
+        .then()
+        .statusCode(200)
+        .body("canPin", org.hamcrest.Matchers.equalTo(true));
   }
 
   @Test

@@ -48,6 +48,12 @@ class RetentionTest {
           p.repositoryUrl = "https://github.com/octocat/retention-" + n + ".git";
           p.ownerSubject = "owner-id";
           p.persist();
+          ProjectMember m = new ProjectMember();
+          m.projectId = p.id;
+          m.subject = p.ownerSubject;
+          m.role = ProjectMember.TeamRole.LEAD;
+          m.createdAt = java.time.Instant.now();
+          m.persist();
           return p.id;
         });
   }

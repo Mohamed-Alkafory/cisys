@@ -55,6 +55,12 @@ class BuildResourceTest {
           p.ownerSubject = "owner-id";
           p.privateRepository = priv;
           p.persist();
+          ProjectMember m = new ProjectMember();
+          m.projectId = p.id;
+          m.subject = p.ownerSubject;
+          m.role = ProjectMember.TeamRole.LEAD;
+          m.createdAt = java.time.Instant.now();
+          m.persist();
           return p.id;
         });
   }
@@ -635,6 +641,18 @@ class BuildResourceTest {
         .run(() -> Build.update("requestedBy = ?1 where id = ?2", subject, build));
   }
 
+  private static void membership(Long projectId, String subject, ProjectMember.TeamRole role) {
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          ProjectMember m = new ProjectMember();
+          m.projectId = projectId;
+          m.subject = subject;
+          m.role = role;
+          m.createdAt = java.time.Instant.now();
+          m.persist();
+        });
+  }
+
   private static String cancel(Long project, Long build) {
     return "/api/projects/" + project + "/builds/" + build + "/cancel";
   }
@@ -696,6 +714,63 @@ class BuildResourceTest {
   void memberCannotCancel() {
     Long id = project(false);
     Long b = build(id, "RUNNING");
+    given().contentType("application/json").post(cancel(id, b)).then().statusCode(403);
+    assertFalse(stored(b).cancelRequested);
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "lead2-id"))
+  void projectLeadWithGlobalMemberCanCancelAnotherUsersBuild() {
+    Long id = project(false);
+    Long b = build(id, "RUNNING");
+    membership(id, "lead2-id", ProjectMember.TeamRole.LEAD);
+    given().contentType("application/json").post(cancel(id, b)).then().statusCode(200);
+    assertTrue(stored(b).cancelRequested);
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "lead2-id"))
+  void projectLeadWithGlobalMemberCanPinAndUnpin() {
+    Long id = project(false);
+    Long b = build(id, "PASSED");
+    membership(id, "lead2-id", ProjectMember.TeamRole.LEAD);
+    String link = "/api/projects/" + id + "/builds/" + b + "/pin";
+    given()
+        .contentType("application/json")
+        .put(link)
+        .then()
+        .statusCode(200)
+        .body("pinned", org.hamcrest.Matchers.equalTo(true));
+    given()
+        .contentType("application/json")
+        .delete(link)
+        .then()
+        .statusCode(200)
+        .body("pinned", org.hamcrest.Matchers.equalTo(false));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "other-id"))
+  void globalLeadWithOnlyMembershipAsMemberCannotCancelAnotherUsersBuild() {
+    Long id = project(false);
+    Long b = build(id, "RUNNING");
+    membership(id, "other-id", ProjectMember.TeamRole.MEMBER);
+    given().contentType("application/json").post(cancel(id, b)).then().statusCode(403);
+    assertFalse(stored(b).cancelRequested);
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "other-id"))
+  void memberCannotCancelOwnBuild() {
+    // A global member cannot cancel a build they started, even as project member.
+    Long id = project(false);
+    Long b = build(id, "RUNNING");
+    membership(id, "other-id", ProjectMember.TeamRole.MEMBER);
+    requestedBy(b, "other-id");
     given().contentType("application/json").post(cancel(id, b)).then().statusCode(403);
     assertFalse(stored(b).cancelRequested);
   }

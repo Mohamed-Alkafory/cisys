@@ -31,7 +31,7 @@ Each project keeps
 
 * A name and an HTTPS repository URL
 * A private flag, which controls project and build-log visibility
-* The owner, recorded as the Keycloak subject
+* The team is recorded as the Keycloak subject with a per-project role
 
 ## Build handling
 

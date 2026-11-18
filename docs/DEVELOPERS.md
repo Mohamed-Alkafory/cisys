@@ -71,7 +71,7 @@ See [BUILDING.md](BUILDING.md) for the current development, build, test and fron
 Cisys uses **Keycloak** for sign-in and bearer-token authentication.
 
 * The frontend is a public client (`cisys-ui`) using the authorization-code flow with PKCE.
-* The backend is a Quarkus OIDC `service` application. It reads roles from the access token claim `realm_access/roles` and uses the immutable `sub` claim as the principal and project owner.
+* The backend is a Quarkus OIDC `service` application. It reads roles from the access token claim `realm_access/roles` and uses the immutable `sub` claim as the principal and project member subject. The project team is stored per user per project, with a project-level role.
 * The realm roles are `member`, `lead` and `admin`.
 
 The development realm is `contrib/keycloak/realm.json`. It is imported on the first Keycloak start only.

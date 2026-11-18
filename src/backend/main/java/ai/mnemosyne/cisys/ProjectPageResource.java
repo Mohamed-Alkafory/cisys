@@ -95,8 +95,8 @@ public class ProjectPageResource {
                     "projectId = ?1 and branch = ?2 order by number desc", p.id, branchFilter)
                 .page(0, 50)
                 .list();
-    // Whoever may see a private project may also pin its builds.
-    boolean canPin = access.canSeePrivate(p);
+    // Pin/unpin authority: Project LEAD and Global ADMIN, whatever the caller may see.
+    boolean canPin = access.canPin(p);
     List<PageBuild> builds =
         rows.stream().map(b -> pageBuild(b, canPin, access.canCancel(p, b), false)).toList();
     return new ProjectPage(
@@ -115,7 +115,7 @@ public class ProjectPageResource {
     if (b == null || !p.id.equals(b.projectId)) {
       throw new NotFoundException();
     }
-    return pageBuild(b, access.canSeePrivate(p), access.canCancel(p, b), true);
+    return pageBuild(b, access.canPin(p), access.canCancel(p, b), true);
   }
 
   /**

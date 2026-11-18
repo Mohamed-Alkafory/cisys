@@ -17,7 +17,7 @@ The sources are in `src/backend/main/java/ai/mnemosyne/cisys`.
 * Authentication uses [Quarkus OIDC](https://quarkus.io/guides/security-oidc-bearer-token-authentication) in `service` mode with Keycloak realm roles.
 * Health and metrics come from the [SmallRye Health](https://quarkus.io/guides/smallrye-health) and [Micrometer](https://quarkus.io/guides/telemetry-micrometer) extensions, exposed as `/health`, `/health/live`, `/health/ready` and `/metrics` on the management interface (port `9000`). They are plain HTTP routes, not Jakarta REST resources, so they are not covered by the authentication of the API. The management interface has no authentication by default. The readiness check includes the database connection and comes from the datasource extension.
 
-Quarkus configuration is in `src/backend/main/resources/application.properties`. The schema is managed by [Flyway](https://quarkus.io/guides/flyway) migrations in `src/backend/main/resources/db/migration`, applied at startup; Hibernate only validates it. Databases created before migrations existed are adopted automatically. Until the 1.0 release the whole schema is one repeatable migration, `R__schema.sql`, which is changed in place and must stay idempotent; Flyway reruns it whenever it changes, so existing databases never need a manual reset.
+Quarkus configuration is in `src/backend/main/resources/application.properties`. The schema is managed by [Flyway](https://quarkus.io/guides/flyway) migrations in `src/backend/main/resources/db/migration`, applied at startup; Hibernate only validates it. Databases created before migrations existed are adopted automatically. Until the 1.0 release the whole schema is one repeatable migration, `R__schema.sql`, which is changed in place and must stay idempotent; Flyway reruns it whenever it changes. The migration carries only schema DDL; team data is never repaired by it. Introducing the project team requires a database reset for databases created before this change: run `make reset`, which deletes the local PostgreSQL and Keycloak data volumes, including projects, builds and users. New projects automatically assign their creator the LEAD role at creation time; existing team data is not migrated or repaired. Databases created after the change are not affected, and not every future upgrade requires a reset.
 
 ## Frontend
 
@@ -86,4 +86,4 @@ erDiagram
     PROJECT ||--o{ BUILD : has
 ```
 
-Users and roles are stored in Keycloak and managed from the Users page through the Keycloak Admin REST API; `owner_subject`, `requested_by` and `projectmember.subject` hold the Keycloak subject.
+Users and roles are stored in Keycloak and managed from the Users page through the Keycloak Admin REST API; `owner_subject`, `requested_by` and `projectmember.subject` hold the Keycloak subject. `projectmember.role` decides what a member can do in the project.

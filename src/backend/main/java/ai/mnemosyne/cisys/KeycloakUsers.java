@@ -208,6 +208,28 @@ public class KeycloakUsers implements UserDirectory {
     return value == null || value.isNull() ? null : value.asText();
   }
 
+  /** The subject of the user whose username matches, or null. */
+  public String subjectOf(String username) {
+    if (username == null || username.isBlank()) {
+      return null;
+    }
+    String wanted = username.trim();
+    for (User u : search(wanted, 0, 10_000)) {
+      if (wanted.equalsIgnoreCase(u.username())) {
+        return u.id();
+      }
+    }
+    return null;
+  }
+
+  /** The username of the user with the given subject, or "unknown" when they do not exist. */
+  public String usernameOf(String subject) {
+    if (subject == null || subject.isBlank()) {
+      return "unknown";
+    }
+    return find(subject).map(User::username).orElse("unknown");
+  }
+
   private JsonNode send(String method, String path) {
     return body(call(method, path, null));
   }

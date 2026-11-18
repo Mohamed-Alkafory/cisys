@@ -22,6 +22,7 @@ import {
   Plus,
   Trash2,
   UserRound,
+  Users,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -93,6 +94,35 @@ async function publicJson(path, opts = {}) {
   return response.json();
 }
 
+/**
+ * The caller's project role, keyed by project id. Global admins short-circuit to ADMIN
+ * without calling the backend; everyone else learns their role from the team list,
+ * which the backend exposes to members and admins. A failed call means no rights, not a
+ * relaxed gate — the server still enforces everything.
+ */
+async function fetchTeamRoles(list, userInfo) {
+  if (userInfo.roles.includes("admin"))
+    return new Map(list.map((p) => [p.id, "ADMIN"]));
+  const entries = await Promise.all(
+    list.map(async (p) => {
+      try {
+        const members = await api(`/projects/${p.id}/team`);
+        const me = Array.isArray(members)
+          ? members.find(
+              (m) =>
+                m.username &&
+                m.username.toLowerCase() === userInfo.username.toLowerCase(),
+            )
+          : null;
+        return [p.id, me?.role ?? null];
+      } catch {
+        return [p.id, null];
+      }
+    }),
+  );
+  return new Map(entries);
+}
+
 async function api(path, opts = {}) {
   try {
     await keycloak.updateToken(30);
@@ -142,6 +172,7 @@ function App() {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [team, setTeam] = useState(() => new Map());
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -150,6 +181,13 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [branding, setBranding] = useState(null);
   const [page, setPage] = useState("projects");
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const settingsDirtyRef = React.useRef(false);
+  settingsDirtyRef.current = settingsDirty;
+  // Blocks leaving the settings page while there are unsaved changes.
+  const confirmLeave = () =>
+    !settingsDirtyRef.current ||
+    window.confirm("You have unsaved changes. Leave anyway?");
   // Set when the URL is a project page such as /cisys/, a build such as /cisys/master/build/51,
   // or the project's settings page /cisys/settings.
   const [projectName, setProjectName] = useState(
@@ -226,9 +264,12 @@ function App() {
     const showApp = async () => {
       setMode("app");
       try {
-        setUser(await api("/session"));
+        const session = await api("/session");
+        setUser(session);
         setBranding(await api("/branding"));
-        setProjects(await api("/projects"));
+        const list = await api("/projects");
+        setProjects(list);
+        setTeam(await fetchTeamRoles(list, session));
         setReady(true);
       } catch (e) {
         setError(e.message || "Unable to load Cisys");
@@ -266,29 +307,38 @@ function App() {
 
   // Switches to an in-app page, leaving any project URL behind.
   function go(target, replace = false) {
-    if (submitting) return;
+    if (submitting || !confirmLeave()) return;
     if (window.location.pathname !== "/")
       window.history[replace ? "replaceState" : "pushState"](null, "", "/");
     setProjectName(null);
     setProjectBranch("");
     setBuildId(null);
     setProjectSettings(false);
+    setSettingsDirty(false);
     setPage(target);
   }
 
+  const goRef = React.useRef(null);
+  goRef.current = go;
   // A project or build that does not exist, or that the visitor may not see, and any unknown path,
   // goes straight to the front page. The URL is replaced, so Back does not return to it.
-  const showFrontPage = useCallback(() => go("home", true), []);
+  const showFrontPage = useCallback(() => goRef.current("home", true), []);
 
   useEffect(() => {
     const path = window.location.pathname;
-    if (path !== "/" && projectName === null && buildId === null)
+    if (
+      path !== "/" &&
+      projectName === null &&
+      buildId === null &&
+      !projectSettings
+    )
       showFrontPage();
-  }, [projectName, buildId, showFrontPage]);
+  }, [projectName, buildId, projectSettings, showFrontPage]);
 
   function openProject(name, branch = "") {
-    if (submitting) return;
+    if (submitting || !confirmLeave()) return;
     window.history.pushState(null, "", projectPath(name));
+    setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch(branch);
     setBuildId(null);
@@ -296,16 +346,19 @@ function App() {
   }
 
   function openBuild(name, branch, id) {
+    if (!confirmLeave()) return;
     window.history.pushState(null, "", buildPath(name, branch, id));
+    setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch(branch);
     setBuildId(id);
     setProjectSettings(false);
   }
 
-  function openProjectSettings(name) {
-    if (submitting) return;
-    window.history.pushState(null, "", projectSettingsPath(name));
+  function openProjectSettings(name, tab = "general") {
+    if (submitting || !confirmLeave()) return;
+    window.history.pushState(null, "", projectSettingsPath(name, tab));
+    setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch("");
     setBuildId(null);
@@ -317,6 +370,14 @@ function App() {
     setUrl("");
     setPriv(false);
     setCredential("");
+  }
+
+  /** Reloads the project list together with the caller's role per project. */
+  async function refreshProjects() {
+    const list = await api("/projects");
+    setProjects(list);
+    if (user) setTeam(await fetchTeamRoles(list, user));
+    return list;
   }
 
   async function submitProject(event) {
@@ -334,7 +395,7 @@ function App() {
         method: "POST",
         body: JSON.stringify(body),
       });
-      setProjects(await api("/projects"));
+      await refreshProjects();
       resetProjectForm();
     } catch (e) {
       setError(e.message);
@@ -354,7 +415,7 @@ function App() {
     setError("");
     try {
       await api(`/projects/${project.id}`, { method: "DELETE" });
-      setProjects(await api("/projects"));
+      await refreshProjects();
     } catch (e) {
       setError(e.message);
     }
@@ -375,10 +436,9 @@ function App() {
   const canEditSettings =
     settingsProject != null &&
     user != null &&
-    (user.roles.includes("admin") ||
-      (user.roles.includes("lead") && settingsProject.owned));
+    (user.roles.includes("admin") || team.get(settingsProject.id) === "LEAD");
 
-  // The settings page is for the project's owner or an admin, like the pencil button.
+  // The settings page is for the project's LEADs and admins, like the pencil button.
   useEffect(() => {
     if (
       mode === "app" &&
@@ -440,13 +500,18 @@ function App() {
     );
   const canCreate = user.roles.includes("lead") || user.roles.includes("admin");
   const canManageUsers = canCreate;
-  // Admins may delete any project; leads only the projects they own.
-  const canDelete = (project) =>
-    user.roles.includes("admin") ||
-    (user.roles.includes("lead") && project.owned);
-  const canEdit = (project) =>
-    user.roles.includes("admin") ||
-    (user.roles.includes("lead") && project.owned);
+  // Action visibility follows each project's team, as reported by the backend:
+  // global admins do anything, project LEADs edit (they cannot delete), project
+  // MEMBERs only view and build. project.owned is not consulted.
+  const isAdmin = user.roles.includes("admin");
+  const canDelete = () => isAdmin;
+  const canEdit = (project) => isAdmin || team.get(project.id) === "LEAD";
+  const viewedProject =
+    projectName !== null ? projects.find((p) => p.name === projectName) : null;
+  const canStartBuilds =
+    viewedProject != null && (isAdmin || team.get(viewedProject.id) != null);
+  const canOpenTeam =
+    viewedProject != null && (isAdmin || team.get(viewedProject.id) === "LEAD");
   // Only admins can set a project credential, and only a private project can have one.
   const showCredential = user.roles.includes("admin") && priv;
   const role = user.roles.includes("admin")
@@ -588,11 +653,12 @@ function App() {
               project={settingsProject}
               api={api}
               isAdmin={user.roles.includes("admin")}
+              user={user}
+              onDirtyChange={setSettingsDirty}
               onSaved={async (saved) => {
-                setProjects(await api("/projects"));
+                await refreshProjects();
                 openProject(saved.name);
               }}
-              onCancel={() => openProject(settingsProject.name)}
             />
           ) : null
         ) : buildId !== null ? (
@@ -612,7 +678,12 @@ function App() {
             initialBranch={projectBranch}
             load={api}
             onOpenBuild={openBuild}
-            onBuild={canCreate ? startBranchBuild : undefined}
+            onBuild={canStartBuilds ? startBranchBuild : undefined}
+            onOpenTeam={
+              canOpenTeam
+                ? () => openProjectSettings(projectName, "team")
+                : undefined
+            }
             onNotFound={showFrontPage}
           />
         )
@@ -798,7 +869,21 @@ function App() {
                           <Pencil size={16} aria-hidden="true" />
                         </Button>
                       )}
-                      {canDelete(project) && (
+                      {canEdit(project) && (
+                        <Button
+                          type="button"
+                          size="icon"
+                          disabled={submitting}
+                          title="Members"
+                          aria-label={`Members of ${project.name}`}
+                          onClick={() =>
+                            openProjectSettings(project.name, "team")
+                          }
+                        >
+                          <Users size={16} aria-hidden="true" />
+                        </Button>
+                      )}
+                      {canDelete() && (
                         <Button
                           type="button"
                           size="icon"

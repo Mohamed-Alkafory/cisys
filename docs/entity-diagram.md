@@ -94,7 +94,8 @@ erDiagram
     PROJECT ||--o{ PROJECT_MEMBER : assigns
 ```
 
-* `PROJECT.owner_subject` and `BUILD.requested_by` hold the Keycloak subject (`sub`) of the user.
+* `PROJECT.owner_subject` and `BUILD.requested_by` hold the Keycloak subject (`sub`) of the user. `PROJECT_MEMBER.subject` also holds a `sub`.
+* `PROJECT_MEMBER.project_id` enforces one team row per subject per project via a unique `(project_id, subject)` index, and `PROJECT.owner_subject` is a leftover for init/compatibility; authorization uses `PROJECT_MEMBER`'s `role`, never the owner column.
 * `BUILD.project_id` is a plain column, not a foreign key constraint.
 * `BUILD.number` is unique within a project and taken from `PROJECT.build_counter`, which never goes back.
 * `BUILD.logoid` (type `lo`, from the `lo` extension) references the build log, stored as one PostgreSQL large object. It is not mapped in the `Build` entity. The `lo_manage` trigger unlinks the large object when the build is deleted, so no logs are orphaned.

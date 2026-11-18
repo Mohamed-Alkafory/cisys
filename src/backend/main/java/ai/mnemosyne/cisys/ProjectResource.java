@@ -49,6 +49,7 @@ public class ProjectResource {
   @Inject SecurityIdentity identity;
   @Inject RepositoryUrlValidator repositoryUrls;
   @Inject RepositoryMirror mirrors;
+  @Inject ProjectAccess access;
 
   private JsonWebToken token() {
     if (identity.getPrincipal() instanceof JsonWebToken jwt) {
@@ -130,15 +131,7 @@ public class ProjectResource {
   @GET
   @Path("/projects")
   public List<ProjectResponse> list() {
-    requireCisysRole();
-    List<Project> projects =
-        identity.hasRole("admin")
-            ? Project.listAll()
-            : Project.list(
-                "privateRepository = false or ownerSubject = ?1 or id in (select m.projectId from"
-                    + " ProjectMember m where m.subject = ?1)",
-                subject());
-    return projects.stream().map(this::response).toList();
+    return access.listVisible().stream().map(this::response).toList();
   }
 
   /** Creates a project. Leads and admins only. */
@@ -201,6 +194,12 @@ public class ProjectResource {
       }
       throw conflict("A project with this name or repository URL already exists");
     }
+    ProjectMember lead = new ProjectMember();
+    lead.projectId = p.id;
+    lead.subject = subject();
+    lead.role = ProjectMember.TeamRole.LEAD;
+    lead.createdAt = java.time.Instant.now();
+    lead.persist();
     return Response.status(201).entity(response(p)).build();
   }
 
@@ -246,29 +245,15 @@ public class ProjectResource {
     return trimmed;
   }
 
-  /**
-   * Deletes a project and its builds; the database unlinks their logs. Admins, or the lead who owns
-   * it.
-   */
+  /** Deletes a project and its builds; the database unlinks their logs. Global admins only. */
   @DELETE
   @Path("/projects/{id}")
   public Response delete(@PathParam("id") Long id) {
-    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
-      throw new ForbiddenException();
-    }
     QuarkusTransaction.requiringNew()
         .run(() -> {
           BuildRunner.lockQueue();
-          Project p = Project.findById(id);
-          boolean admin = identity.hasRole("admin");
-          boolean owner = p != null && subject().equals(p.ownerSubject);
-          // Private projects the caller cannot see answer 404, as everywhere else.
-          if (p == null || (p.privateRepository && !admin && !owner)) {
-            throw new NotFoundException();
-          }
-          if (!admin && !owner) {
-            throw new ForbiddenException();
-          }
+          // By spec, only global admins may delete a project.
+          Project p = access.deletable(id);
           if (Build.count("projectId = ?1 and status in ('RUNNING', 'QUEUED')", id) > 0) {
             throw conflict(
                 "A build is queued or running. Delete the project when its builds finish.");
@@ -299,28 +284,17 @@ public class ProjectResource {
   }
 
   /**
-   * Updates a project. Admins can update any project; leads can only update their own projects.
-   * Safe while builds are queued or running: a build snapshots its repository URL, branch, image,
-   * command and credential reference when submitted, so in-flight builds keep building what was
-   * requested and edits affect only new page views and new builds.
+   * Updates a project. Admins can update any project; project LEADs can update the projects they
+   * hold the LEAD role in. Safe while builds are queued or running: a build snapshots its
+   * repository URL, branch, image, command and credential reference when submitted, so in-flight
+   * builds keep building what was requested and edits affect only new page views and new builds.
    */
   @PUT
   @Path("/projects/{id}")
   @Transactional
   public Response update(@PathParam("id") Long id, UpdateProject input) {
-    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
-      throw new ForbiddenException();
-    }
-    Project p = Project.findById(id);
     boolean admin = identity.hasRole("admin");
-    boolean owner = p != null && subject().equals(p.ownerSubject);
-    // Private projects the caller cannot see answer 404, as everywhere else.
-    if (p == null || (p.privateRepository && !admin && !owner)) {
-      throw new NotFoundException();
-    }
-    if (!admin && !owner) {
-      throw new ForbiddenException();
-    }
+    Project p = access.editable(id);
     if (input == null
         || input.name() == null
         || input.name().isBlank()
@@ -353,6 +327,7 @@ public class ProjectResource {
     if (Project.count("repositoryUrl = ?1 and id <> ?2", url, id) > 0) {
       throw conflict("A project with this repository URL already exists");
     }
+    // Only global admins set or clear credentials — LEADs must not carry one to a new repository.
     if (!admin && input.credentialRef() != null && !input.credentialRef().isBlank()) {
       throw new ForbiddenException();
     }

@@ -46,8 +46,8 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
 /**
- * Users and the projects they are assigned to. Admins manage every user; leads create members and
- * assign members to the projects they own or are assigned to; members have no access.
+ * Users and the projects they are assigned to. Admins manage every user; project LEADs manage the
+ * members of the projects where they hold the LEAD role; members have no access.
  */
 @Path("/api/users")
 @Authenticated
@@ -61,6 +61,7 @@ public class UserResource {
 
   @Inject SecurityIdentity identity;
   @Inject UserDirectory directory;
+  @Inject ProjectMemberService memberService;
 
   /** A user to create or change; leads only send {@code projectIds} when changing a user. */
   public record Input(
@@ -97,7 +98,9 @@ public class UserResource {
   /** One page of users and how many match in all. */
   public record Page(List<View> users, int total) {}
 
-  /** The signed-in admin or lead, with the projects a lead may assign. */
+  /**
+   * The signed-in admin or lead, with the projects the caller may manage (admin, or project LEAD).
+   */
   private record Caller(String subject, boolean admin, Set<Long> projects) {
     boolean inScope(Long projectId) {
       return admin || projects.contains(projectId);
@@ -225,7 +228,10 @@ public class UserResource {
     String id = directory.create(user, password);
     try {
       directory.setRole(id, role);
-      QuarkusTransaction.requiringNew().run(() -> ProjectMember.replace(id, null, projects));
+      // New assignments come from the shared safe path; existing rows cannot exist yet, so this
+      // cannot demote anyone.
+      QuarkusTransaction.requiringNew()
+          .run(() -> memberService.assign(id, caller.admin() ? null : caller.projects(), projects));
     } catch (RuntimeException e) {
       // Leave no half-created user behind.
       try {
@@ -263,7 +269,7 @@ public class UserResource {
           throw new ForbiddenException();
         }
         QuarkusTransaction.requiringNew()
-            .run(() -> ProjectMember.replace(id, caller.projects(), wanted));
+            .run(() -> memberService.assign(id, caller.projects(), wanted));
       }
       return views(caller, roles(), List.of(user)).get(0);
     }
@@ -274,6 +280,15 @@ public class UserResource {
     boolean enabled = input.enabled() == null ? user.enabled() : input.enabled();
     if (id.equals(caller.subject()) && (!"admin".equals(role) || !enabled)) {
       throw error(400, "You cannot remove your own admin access");
+    }
+    // Memberships are updated first, in one transaction, so a safeguard failure (for example a
+    // last-LEAD conflict) leaves both the membership rows and the directory untouched. The
+    // directory is external to the database, though: if a directory call fails after this
+    // commits, assignments stay updated while the profile is not (retrying re-applies
+    // idempotently).
+    if (input.projectIds() != null) {
+      Set<Long> wanted = projectIds(input.projectIds());
+      QuarkusTransaction.requiringNew().run(() -> memberService.assign(id, null, wanted));
     }
     User changed =
         new User(
@@ -286,10 +301,6 @@ public class UserResource {
     directory.update(changed);
     if (role != null && !role.equals(current)) {
       directory.setRole(id, role);
-    }
-    if (input.projectIds() != null) {
-      Set<Long> wanted = projectIds(input.projectIds());
-      QuarkusTransaction.requiringNew().run(() -> ProjectMember.replace(id, null, wanted));
     }
     return views(caller, roles(), List.of(changed)).get(0);
   }
@@ -324,8 +335,11 @@ public class UserResource {
       throw error(400, "You cannot delete yourself");
     }
     directory.find(id).orElseThrow(NotFoundException::new);
+    // Memberships are removed first with the last-LEAD safeguards; the directory is external, so
+    // if deleting the user fails, the user still exists without memberships and can be deleted on
+    // retry. The reverse order could strand projects without a LEAD.
+    QuarkusTransaction.requiringNew().run(() -> memberService.removeSubject(id));
     directory.delete(id);
-    QuarkusTransaction.requiringNew().run(() -> ProjectMember.delete("subject", id));
     return Response.noContent().build();
   }
 
@@ -358,9 +372,9 @@ public class UserResource {
     if (!identity.hasRole("lead")) {
       throw new ForbiddenException();
     }
-    Set<Long> projects = new TreeSet<>(ProjectMember.projectIds(subject));
-    Project.<Project>list("ownerSubject", subject).forEach(p -> projects.add(p.id));
-    return new Caller(subject, false, projects);
+    // Shared project LEAD rule, as in ProjectAccess: the team alone grants no management.
+    return new Caller(
+        subject, false, ProjectMember.projectIds(subject, ProjectMember.TeamRole.LEAD));
   }
 
   private Roles roles() {

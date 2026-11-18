@@ -18,7 +18,6 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
@@ -31,7 +30,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 import java.util.List;
-import org.eclipse.microprofile.jwt.JsonWebToken;
 
 /** Lists, starts, cancels and pins a project's builds. */
 @Path("/api/projects/{projectId}/builds")
@@ -103,24 +101,10 @@ public class BuildResource {
         withWorkflow ? build.workflow : null);
   }
 
-  private Project visible(Long id) {
-    if (!(identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"))) {
-      throw new ForbiddenException();
-    }
-    if (!(identity.getPrincipal() instanceof JsonWebToken jwt) || jwt.getSubject() == null) {
-      throw new NotAuthorizedException("Bearer");
-    }
-    Project p = Project.findById(id);
-    if (p == null || !access.canView(p)) {
-      throw new NotFoundException();
-    }
-    return p;
-  }
-
   /** The project's 50 newest builds. */
   @GET
   public List<BuildResponse> list(@PathParam("projectId") Long id) {
-    visible(id);
+    access.visible(id);
     return Build.<Build>find("projectId = ?1 order by number desc", id).page(0, 50).list().stream()
         .map(this::response)
         .toList();
@@ -130,7 +114,7 @@ public class BuildResource {
   @GET
   @Path("/{buildId}")
   public BuildResponse detail(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
-    visible(id);
+    access.visible(id);
     Build b = Build.findById(buildId);
     if (b == null || !id.equals(b.projectId)) {
       throw new NotFoundException();
@@ -178,13 +162,9 @@ public class BuildResource {
     return setPinned(id, buildId, false);
   }
 
-  /** Only the project's owner and admins may pin. */
+  /** Project LEADs and global admins may pin. */
   private BuildResponse setPinned(Long id, Long buildId, boolean pinned) {
-    Project p = visible(id);
-    if (!identity.hasRole("admin")
-        && !((JsonWebToken) identity.getPrincipal()).getSubject().equals(p.ownerSubject)) {
-      throw new ForbiddenException();
-    }
+    access.editable(id);
     Build b = Build.findById(buildId);
     if (b == null || !id.equals(b.projectId)) {
       throw new NotFoundException();
@@ -193,11 +173,11 @@ public class BuildResource {
     return response(b, true);
   }
 
-  /** Admins, the project's owner and whoever requested the build may cancel it. */
+  /** Global admins, project LEADs, or a requester with a global lead role may cancel. */
   @POST
   @Path("/{buildId}/cancel")
   public BuildResponse cancel(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
-    Project p = visible(id);
+    Project p = access.visible(id);
     Build b = Build.findById(buildId);
     if (b == null || !id.equals(b.projectId)) {
       throw new NotFoundException();
@@ -218,13 +198,10 @@ public class BuildResource {
         true);
   }
 
-  /** Queues a build of a branch. Leads and admins only. */
+  /** Queues a build of a branch. Project members (any role) and global admins. */
   @POST
   public BuildResponse start(@PathParam("projectId") Long id, RunRequest input) {
-    Project p = visible(id);
-    if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
-      throw new ForbiddenException();
-    }
+    Project p = access.buildable(id);
     if (input == null
         || input.branch() == null
         || !org.eclipse.jgit.lib.Repository.isValidRefName("refs/heads/" + input.branch())
@@ -248,8 +225,6 @@ public class BuildResource {
         input.credentialRef() == null && p.privateRepository
             ? new RunRequest(input.branch(), p.credentialRef)
             : input;
-    return response(
-        runner.submit(
-            id, ((JsonWebToken) identity.getPrincipal()).getSubject(), p.repositoryUrl, request));
+    return response(runner.submit(id, access.subject(), p.repositoryUrl, request));
   }
 }

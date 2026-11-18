@@ -9,7 +9,7 @@ A **project** registers a Git repository with cisys so that it can be built.
 ## Visibility
 
 * **Public** projects are visible to every signed-in user.
-* **Private** projects are visible only to their creator, the users assigned to them and admins. Users are assigned on the Users page.
+* **Private** projects are visible only to their members and admins. Users are assigned on the project's settings page (Team tab, `/<name>/settings?tab=team`).
 
 The private flag controls visibility of the project and its build logs inside cisys. It does not grant or restrict access to the Git repository itself.
 
@@ -23,7 +23,7 @@ Selecting a branch in the left panel filters the build history to that branch. T
 
 Selecting a build opens its own page at `/<name>/<branch>/build/<id>`, for example `http://localhost:5173/cisys/master/build/51`, with the build details and the full log. The `<id>` is the internal build ID, not the build number.
 
-Private projects use the same page once you sign in as their owner or an administrator; everyone else is told the project does not exist. The branches panel reads the repository when the project has a credential reference (see below); without one it lists only the branches that already have builds.
+Private projects use the same page once you sign in as a member of the project or an administrator; everyone else is told the project does not exist. The branches panel reads the repository when the project has a credential reference (see below); without one it lists only the branches that already have builds.
 
 ## Create a project
 
@@ -44,10 +44,15 @@ Projects created before this naming rule keep working. An administrator can rena
 UPDATE project SET name = 'new-name' WHERE name = 'old name';
 ```
 
-The creator's Keycloak subject is stored as the owner.
-
 The repository must be on an allowed host and must not resolve to a loopback, private, link-local or metadata address. By default only `github.com` and `gitlab.com` on port 443 are allowed; the backend settings `cisys.git.allowed-hosts`, `cisys.git.allowed-ports` and `cisys.git.allowed-networks` extend that list. A local server with a self-signed certificate can be named in `cisys.git.insecure-tls-hosts`; adding its certificate to the JVM truststore is preferred.
 
 ## Ownership
 
-Ownership uses the immutable Keycloak subject ID, not the user name. Development projects created before subject-based ownership was introduced must be reset or migrated to Keycloak subject IDs.
+Two different things are recorded per project:
+
+* `owner_subject` — the Keycloak subject of the user who created the project. It is written once at creation and **never changes afterwards**, not even when the team changes. It identifies the original creator and is useful as a marker of who started the project (for example, for audit). It is not used to drive current authorization, and it does not follow an administrator who promotes other users to `LEAD`.
+* `projectmember` rows — one row per (project, user), holding `MEMBER` or `LEAD`. These rows decide what a user can actually do in the project: `MEMBER` can view and start builds; `LEAD` can also edit the project, pin and unpin builds, and manage its team.
+
+The creator is automatically assigned a `LEAD` membership at project creation. A project can have more than one `LEAD`. A project always keeps at least one `LEAD`; the system refuses to remove or demote the last `LEAD` and reports an `HTTP 409 Conflict` — even for an administrator. A project `LEAD` (including the creator themselves, and another `LEAD`) cannot remove the creator or demote them out of `LEAD` while they remain `LEAD`; that is reserved for administrators. Once an administrator has demoted the creator to `MEMBER`, the creator is no longer protected and the normal team rules apply; `owner_subject` is left untouched either way.
+
+Databases created before the project team was introduced do not carry any team data over: `R__schema.sql` repairs nothing, so the team is absent for existing projects. Upgrading such a database requires `make reset`, which deletes the local PostgreSQL and Keycloak data volumes, including projects, builds and users. Databases created after this change are not affected, and not every future upgrade requires a reset.

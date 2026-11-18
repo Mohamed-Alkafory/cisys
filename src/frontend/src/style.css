@@ -842,3 +842,65 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Project members (settings page) */
+.members-note {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  margin: 0 0 0.75rem;
+}
+.members-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.member-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.5fr) auto minmax(10rem, auto);
+  gap: 0.75rem;
+  align-items: center;
+  justify-items: start;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--card-border);
+}
+.members-list .member-row:first-child {
+  border-top: 0;
+}
+.member-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.member-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-self: end;
+}
+.member-actions select {
+  width: auto;
+}
+.member-add {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1.5fr) minmax(9rem, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--card-border);
+}
+@media (max-width: 860px) {
+  .member-row,
+  .member-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .member-actions {
+    justify-self: start;
+  }
+  .member-add > button {
+    justify-self: end;
+  }
+}
+.member-add-error {
+  color: #a32020;
+  font-size: 0.8rem;
+  margin: 0.35rem 0 0;
+}

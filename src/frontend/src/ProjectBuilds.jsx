@@ -13,8 +13,10 @@ import {
   LockKeyhole,
   LockKeyholeOpen,
   Pin,
+  Users,
 } from "lucide-react";
 import { Badge } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
 import { Card, CardContent } from "./components/ui/card";
 import PageHeader from "./components/layout/PageHeader";
 import BuildStatus from "./BuildStatus";
@@ -63,12 +65,14 @@ export function projectPath(name) {
  * The API answers 404 both for unknown projects and for private projects the visitor may not see;
  * either way `onNotFound()` is called. Render it with `key={name}` so state resets per project.
  * `onBuild(projectId, branch)` starts a build; without it no Build buttons are shown.
+ * `onOpenTeam()` opens the project settings page on the Team tab; without it no team button is shown.
  */
 export default function ProjectBuilds({
   name,
   load,
   onOpenBuild,
   onBuild,
+  onOpenTeam,
   onNotFound,
   initialBranch = "",
 }) {
@@ -206,22 +210,37 @@ export default function ProjectBuilds({
         className="mb-2"
         title={project.name}
         actions={
-          <Badge variant="outline">
-            {project.privateRepository ? (
-              <LockKeyhole
-                size={12}
-                className="text-red-600 dark:text-red-400"
-                aria-hidden="true"
-              />
-            ) : (
-              <LockKeyholeOpen
-                size={12}
-                className="text-green-600 dark:text-green-400"
-                aria-hidden="true"
-              />
+          <>
+            {onOpenTeam && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-10 w-10"
+                title="Members"
+                aria-label="Members"
+                onClick={onOpenTeam}
+              >
+                <Users size={16} aria-hidden="true" />
+              </Button>
             )}
-            {project.privateRepository ? "Private" : "Public"}
-          </Badge>
+            <Badge variant="outline">
+              {project.privateRepository ? (
+                <LockKeyhole
+                  size={12}
+                  className="text-red-600 dark:text-red-400"
+                  aria-hidden="true"
+                />
+              ) : (
+                <LockKeyholeOpen
+                  size={12}
+                  className="text-green-600 dark:text-green-400"
+                  aria-hidden="true"
+                />
+              )}
+              {project.privateRepository ? "Private" : "Public"}
+            </Badge>
+          </>
         }
       />
       <p className="project-url project-repository">{project.repositoryUrl}</p>
