@@ -19,7 +19,7 @@ import {
 import { CircleCheckIcon, CopyIcon } from "lucide-react";
 
 import { useDebounce } from "@/components/editor/use-debounce";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { cn } from "@/lib/utils";
 
 interface Props {

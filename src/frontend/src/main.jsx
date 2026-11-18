@@ -47,16 +47,16 @@ import SettingsPanel from "./SettingsPanel";
 import UsersPanel from "./UsersPanel";
 import PublicHome from "./PublicHome";
 import PublicStats from "./PublicStats";
-import ProjectBuilds, {
+import ProjectBuilds from "./ProjectBuilds";
+import ProjectBuild from "./ProjectBuild";
+import ProjectSettings from "./ProjectSettings";
+import {
   projectBuildFromPath,
   projectNameFromPath,
   projectPath,
-} from "./ProjectBuilds";
-import ProjectBuild from "./ProjectBuild";
-import ProjectSettings, {
   projectSettingsFromPath,
   projectSettingsPath,
-} from "./ProjectSettings";
+} from "./project-paths";
 import { buildPath } from "./build-format";
 import headerLogo from "./assets/logo-header.svg";
 import "./style.css";
@@ -204,8 +204,6 @@ function App() {
   const [projectSettings, setProjectSettings] = useState(
     () => projectSettingsFromPath(window.location.pathname) !== null,
   );
-  // The tab the project settings page opens on; not part of the URL.
-  const [settingsTab, setSettingsTab] = useState("general");
   const [dark, setDark] = useState(
     () => localStorage.getItem("cisys-theme") === "dark",
   );
@@ -294,7 +292,6 @@ function App() {
       setBuildId(build ? build.buildId : null);
       setProjectBranch(build ? build.branch : "");
       setProjectSettings(settings !== null);
-      setSettingsTab("general");
       setProjectName(
         settings
           ? settings.name
@@ -357,10 +354,9 @@ function App() {
     setProjectSettings(false);
   }
 
-  function openProjectSettings(name, tab = "general") {
+  function openProjectSettings(name) {
     if (submitting || !confirmLeave()) return;
     window.history.pushState(null, "", projectSettingsPath(name));
-    setSettingsTab(tab);
     setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch("");
@@ -513,8 +509,6 @@ function App() {
     projectName !== null ? projects.find((p) => p.name === projectName) : null;
   const canStartBuilds =
     viewedProject != null && (isAdmin || team.get(viewedProject.id) != null);
-  const canOpenTeam =
-    viewedProject != null && (isAdmin || team.get(viewedProject.id) === "LEAD");
   // Only admins can set a project credential, and only a private project can have one.
   const showCredential = user.roles.includes("admin") && priv;
   const role = user.roles.includes("admin")
@@ -654,7 +648,6 @@ function App() {
             <ProjectSettings
               key={settingsProject.id}
               project={settingsProject}
-              initialTab={settingsTab}
               api={api}
               isAdmin={user.roles.includes("admin")}
               user={user}
@@ -683,11 +676,6 @@ function App() {
             load={api}
             onOpenBuild={openBuild}
             onBuild={canStartBuilds ? startBranchBuild : undefined}
-            onOpenTeam={
-              canOpenTeam
-                ? () => openProjectSettings(projectName, "team")
-                : undefined
-            }
             onNotFound={showFrontPage}
           />
         )

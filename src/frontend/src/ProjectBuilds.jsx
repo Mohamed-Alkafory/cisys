@@ -13,15 +13,12 @@ import {
   LockKeyhole,
   LockKeyholeOpen,
   Pin,
-  Users,
 } from "lucide-react";
 import { Badge } from "./components/ui/badge";
-import { Button } from "./components/ui/button";
 import { Card, CardContent } from "./components/ui/card";
 import PageHeader from "./components/layout/PageHeader";
 import BuildStatus from "./BuildStatus";
 import {
-  branchFromSegment,
   buildPath,
   duration,
   pullRequestLabel,
@@ -30,49 +27,17 @@ import {
   triggerLabel,
 } from "./build-format";
 
-/** Returns the project name for paths like /cisys/ (or /cisys), otherwise null. */
-export function projectNameFromPath(pathname) {
-  const match = /^\/([^/]+)\/?$/.exec(pathname);
-  if (!match) return null;
-  try {
-    return decodeURIComponent(match[1]);
-  } catch {
-    return null;
-  }
-}
-
-/** Returns { name, branch, buildId } for paths like /cisys/master/build/51, otherwise null. */
-export function projectBuildFromPath(pathname) {
-  const match = /^\/([^/]+)\/([^/]+)\/build\/(\d+)\/?$/.exec(pathname);
-  if (!match) return null;
-  try {
-    return {
-      name: decodeURIComponent(match[1]),
-      branch: branchFromSegment(decodeURIComponent(match[2])),
-      buildId: Number(match[3]),
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function projectPath(name) {
-  return `/${encodeURIComponent(name)}/`;
-}
-
 /**
  * Builds of one project, addressed by name. `load(path)` fetches JSON from the API, with or without a token.
  * The API answers 404 both for unknown projects and for private projects the visitor may not see;
  * either way `onNotFound()` is called. Render it with `key={name}` so state resets per project.
  * `onBuild(projectId, branch)` starts a build; without it no Build buttons are shown.
- * `onOpenTeam()` opens the project settings page on the Team tab; without it no team button is shown.
  */
 export default function ProjectBuilds({
   name,
   load,
   onOpenBuild,
   onBuild,
-  onOpenTeam,
   onNotFound,
   initialBranch = "",
 }) {
@@ -211,19 +176,6 @@ export default function ProjectBuilds({
         title={project.name}
         actions={
           <>
-            {onOpenTeam && (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="h-10 w-10"
-                title="Members"
-                aria-label="Members"
-                onClick={onOpenTeam}
-              >
-                <Users size={16} aria-hidden="true" />
-              </Button>
-            )}
             <Badge variant="outline">
               {project.privateRepository ? (
                 <LockKeyhole

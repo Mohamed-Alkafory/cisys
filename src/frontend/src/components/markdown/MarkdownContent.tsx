@@ -24,7 +24,7 @@ import type { Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import type {
   CrossReferenceEntry,
   ArticleReferenceEntry,

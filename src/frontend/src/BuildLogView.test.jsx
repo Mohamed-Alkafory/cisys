@@ -1,7 +1,8 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { BuildLogPanel, copyLog, logFileName } from "./BuildLogView";
+import { BuildLogPanel } from "./BuildLogView";
+import { copyLog, logFileName } from "./build-log";
 
 function response(text, size) {
   return {

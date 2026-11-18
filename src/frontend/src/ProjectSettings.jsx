@@ -13,27 +13,11 @@ import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import PageHeader from "./components/layout/PageHeader";
-import { projectPath } from "./ProjectBuilds";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import ProjectMembers from "./ProjectMembers";
 import { diffMembers, toMap } from "./member-diff";
 
-/** Returns { name } for paths like /cisys/settings, otherwise null. */
-export function projectSettingsFromPath(pathname) {
-  const match = /^\/([^/]+)\/settings\/?$/.exec(pathname);
-  if (!match) return null;
-  try {
-    return { name: decodeURIComponent(match[1]) };
-  } catch {
-    return null;
-  }
-}
-
 const USERS_PAGE = 100;
-
-export function projectSettingsPath(name) {
-  return `${projectPath(name)}settings`;
-}
 
 /**
  * Dedicated page for a project's settings.
@@ -48,9 +32,8 @@ export default function ProjectSettings({
   user,
   onSaved,
   onDirtyChange,
-  initialTab = "general",
 }) {
-  const [tab, setTab] = useState(initialTab === "team" ? "team" : "general");
+  const [tab, setTab] = useState("general");
   const [name, setName] = useState(project.name);
   const [url, setUrl] = useState(project.repositoryUrl);
   const [priv, setPriv] = useState(project.privateRepository);
