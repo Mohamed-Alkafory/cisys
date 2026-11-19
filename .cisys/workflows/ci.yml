@@ -22,6 +22,9 @@ environment:
   # Plain log output: no colors or download progress.
   - name: MAVEN_ARGS
     value: --batch-mode --no-transfer-progress
+  # CI installs dependencies from the lockfile; it must not install Git hooks.
+  - name: HUSKY
+    value: "0"
 
 jobs:
   # One job with a wait step runs as one shell, so PostgreSQL keeps running for the tests.
@@ -40,3 +43,9 @@ jobs:
         wait: 5432
       - name: Test
         run: make test
+      # GitHub runs the frontend checks as `npm run check`; `make test` already covers
+      # lint/format, so only Vitest and the Vite production build are added here.
+      - name: Test frontend
+        run: npm --prefix src/frontend run test
+      - name: Build frontend
+        run: npm --prefix src/frontend run build

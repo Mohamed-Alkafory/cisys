@@ -127,6 +127,17 @@ Docker and Podman
 * Tested on Podman 4.9 and Docker 29.9 with BuildKit (buildx 0.38), on 2026-11-14. With rootless Podman, the mounted socket worked from `RUN --network=none` as `65534:65534`, and so did several concurrent connections, while direct connections failed with *Network is unreachable*.
 * Docker's builder can forward a socket only through `--ssh`, which accepts the connection but passes no data unless it speaks the SSH agent protocol. Docker builds cannot mount host directories. With Docker, a build with a non-empty list therefore fails with `Network access is not supported with docker`.
 
+### Self-hosting CISys on itself
+
+These are the verified settings for the workflow in this repository.
+
+* Use rootless Podman. Docker cannot mount the proxy socket, so a build with a non-empty allowlist fails with `Network access is not supported with docker`.
+* Allow exactly `registry.npmjs.org` and `repo.maven.apache.org` on port 443 under **Settings → Network**. These cover npm (`package-lock.json`) and Maven Central. Do not add `repo.gradle.org`: Maven requests it during the build and the proxy denies it, but the build passes without it. Installing the tools and dependencies from Alpine repositories does not use the proxy and needs no allowlist entry.
+* Set the timeout to at least 20 minutes under **Settings → Builds**. The workflow, including the full backend suite, Vitest and the Vite production build, took 679 s (11 min 19 s) with this setting; the 10-minute default is too short.
+* Set **Settings → Performance** to 2048 MiB of memory, 2 CPUs and 512 PIDs. PostgreSQL and the Maven JVM share the build's cgroup.
+* Do not start a second backend against the same database while a build runs. At startup a backend marks every `RUNNING` build `FAILED` with `Server restarted during build`; this is recovery behaviour, not a build failure.
+* On WSL2 the host cannot run `BuildNetworkTest` and `NetworkHostResourceTest`: Testcontainers with rootless Podman fails in `netavark` with `nft did not return successfully while applying ruleset`. The same tests pass inside the self-hosted build container, where the workflow's PostgreSQL is already running. This is an environment limitation, not a code defect.
+
 Residual risk
 
 * The proxy sees only the host and port, not the paths or the content inside TLS. Any allowed host can receive whatever a step sends it, so an allowed host is a possible exfiltration channel; a wildcard such as `*.example.com` widens that to every subdomain. Allow only registries you trust, and prefer exact names.
