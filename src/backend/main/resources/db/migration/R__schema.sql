@@ -186,10 +186,64 @@ BEGIN
     END IF;
 END $$;
 
+-- Serves the branch-filtered build list and the branch dropdown.
+CREATE INDEX IF NOT EXISTS build_project_branch_number ON build (projectid, branch, number DESC);
+
+-- Serves retention cleanup: final, unpinned builds, newest first.
+CREATE INDEX IF NOT EXISTS build_retention
+    ON build (projectid, (coalesce(finishedat, startedat)) DESC NULLS LAST, id DESC)
+    WHERE status IN ('PASSED', 'FAILED', 'CANCELLED') AND NOT pinned;
+
+-- Builds whose project is gone cannot satisfy the foreign key added below; remove them.
+-- The lo_manage trigger unlinks their logs. This runs only until the foreign key exists, so
+-- repeatable-migration re-runs do not scan the table. Rows with projectid IS NULL are kept.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                   WHERE conname = 'build_project_fk'
+                     AND conrelid = 'build'::regclass) THEN
+        DELETE FROM build
+            WHERE projectid IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM project p WHERE p.id = build.projectid);
+    END IF;
+END $$;
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'build_project_fk') THEN
+        ALTER TABLE build ADD CONSTRAINT build_project_fk
+            FOREIGN KEY (projectid) REFERENCES project (id) ON DELETE CASCADE;
+    END IF;
+END $$;
+
+-- Counters never go negative.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'build_number_check') THEN
+        ALTER TABLE build ADD CONSTRAINT build_number_check CHECK (number >= 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'project_buildcounter_check') THEN
+        ALTER TABLE project ADD CONSTRAINT project_buildcounter_check CHECK (buildcounter >= 0);
+    END IF;
+END $$;
+
 -- Automatic builds poll the repository on a timer. The workflow file stays execution-only.
 
 -- How a build was started. Existing builds were started by hand.
 ALTER TABLE build ADD COLUMN IF NOT EXISTS trigger character varying(20) NOT NULL DEFAULT 'MANUAL';
+
+-- Status and trigger are enforced by the database, not only by the Java enums.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'build_status_check') THEN
+        ALTER TABLE build ADD CONSTRAINT build_status_check
+            CHECK (status IN ('QUEUED', 'RUNNING', 'PASSED', 'FAILED', 'CANCELLED'));
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'build_trigger_check') THEN
+        ALTER TABLE build ADD CONSTRAINT build_trigger_check
+            CHECK (trigger IN ('MANUAL', 'POLL', 'PULL_REQUEST'));
+    END IF;
+END $$;
+
 ALTER TABLE build ADD COLUMN IF NOT EXISTS triggeractor character varying(255);
 
 -- Settings for the poller: on by default, per commit by default, every workflow branch by default.

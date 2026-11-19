@@ -59,12 +59,18 @@ class RetentionTest {
   }
 
   private static Long build(Long project, String status, Instant finishedAt, boolean pinned) {
+    return build(project, status, finishedAt, pinned, null);
+  }
+
+  private static Long build(
+      Long project, String status, Instant finishedAt, boolean pinned, String trigger) {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
           Build b = new Build();
           b.projectId = project;
           b.number = Build.nextNumber(project);
           b.status = Build.Status.valueOf(status);
+          b.trigger = trigger == null ? Build.Trigger.MANUAL : Build.Trigger.valueOf(trigger);
           b.startedAt = (finishedAt == null ? Instant.now() : finishedAt).minusSeconds(60);
           b.finishedAt = finishedAt;
           b.pinned = pinned;
@@ -181,6 +187,63 @@ class RetentionTest {
                             .getSingleResult())
                     .longValue());
     assertEquals(0, left);
+  }
+
+  @Test
+  void deletesExpiredPullRequestBuilds() {
+    Long p = project();
+    Long pr = build(p, "PASSED", daysAgo(31), false, "PULL_REQUEST");
+    Long poll = build(p, "PASSED", daysAgo(31), false, "POLL");
+    retention.purge(now, 30, 50);
+    assertFalse(exists(pr), "pull request builds are retention-eligible");
+    assertFalse(exists(poll), "poll builds are retention-eligible");
+  }
+
+  @Test
+  void deletesExpiredCancelledBuilds() {
+    Long p = project();
+    Long cancelled = build(p, "CANCELLED", daysAgo(31), false);
+    retention.purge(now, 30, 50);
+    assertFalse(exists(cancelled), "cancelled builds are retention-eligible");
+  }
+
+  @Test
+  void handlesNullFinishedAtUsingStartedAt() {
+    Long p = project();
+    Long unfinished = build(p, "FAILED", null, false);
+    QuarkusTransaction.requiringNew()
+        .run(() -> Build.update("startedAt = ?1 where id = ?2", daysAgo(90), unfinished));
+    retention.purge(now, 30, 50);
+    assertFalse(exists(unfinished), "null finishedAt falls back to startedAt");
+  }
+
+  @Test
+  void keepsHigherIdWhenTimestampsAreEqual() {
+    Long p = project();
+    // Both builds are within the age limit so only the count limit can delete them.
+    Instant at = now.minus(Duration.ofDays(10));
+    Long first = build(p, "PASSED", at, false), second = build(p, "PASSED", at, false);
+    retention.purge(now, 30, 1);
+    assertFalse(exists(first), "same coalesce(at, startedAt) ordering falls back to id desc");
+    assertTrue(exists(second));
+  }
+
+  @Test
+  void queuedBuildsAreNotRetentionEligible() {
+    Long p = project();
+    Long queued = build(p, "QUEUED", null, false);
+    QuarkusTransaction.requiringNew()
+        .run(() ->
+            Build.update(
+                "startedAt = ?1, requestedAt = ?2 where id = ?3",
+                daysAgo(90),
+                daysAgo(90),
+                queued));
+    retention.purge(now, 30, 50);
+    assertTrue(exists(queued));
+    // Free the shared runner: synthetic queued rows must not block other tests' runner.dispatch().
+    QuarkusTransaction.requiringNew()
+        .run(() -> Build.update("status = ?1 where id = ?2", Build.Status.CANCELLED, queued));
   }
 
   private static void saveSettings(int days, int maxBuilds) {

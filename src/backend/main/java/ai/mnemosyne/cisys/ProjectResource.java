@@ -258,7 +258,6 @@ public class ProjectResource {
             throw conflict(
                 "A build is queued or running. Delete the project when its builds finish.");
           }
-          Build.delete("projectId", id);
           ProjectBranch.delete("projectId", id);
           ProjectPullRequest.delete("projectId", id);
           p.delete();
