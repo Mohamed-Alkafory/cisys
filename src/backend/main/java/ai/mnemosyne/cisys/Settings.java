@@ -86,6 +86,13 @@ public class Settings extends PanacheEntityBase {
   @Column(nullable = false)
   public boolean pullRequestsEnabled = false;
 
+  /**
+   * Whether manual builds, re-runs included, fetch into the project's repository mirror and check
+   * out from it, like poll builds, instead of cloning from the repository. Off by default.
+   */
+  @Column(nullable = false)
+  public boolean mirrorManualBuilds = false;
+
   /** The saved settings, or the defaults. */
   public static Settings current() {
     Settings s = findById(1L);

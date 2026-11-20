@@ -37,6 +37,7 @@ const SAVED = {
   granularity: "PER_COMMIT",
   scope: "WORKFLOW",
   intervalSeconds: 60,
+  mirrorManualBuilds: false,
 };
 
 async function choose(label, option) {
@@ -108,6 +109,7 @@ describe("PollingPanel", () => {
       granularity: "TIP",
       scope: "MAIN_ONLY",
       intervalSeconds: 120,
+      mirrorManualBuilds: false,
     });
   });
 
@@ -129,6 +131,27 @@ describe("PollingPanel", () => {
     await waitFor(() => expect(api).toHaveBeenCalledTimes(2));
     const body = JSON.parse(api.mock.calls[1][1].body);
     expect(body.intervalSeconds).toBeNull();
+  });
+
+  it("saves the manual build mirror choice", async () => {
+    const api = vi
+      .fn()
+      .mockResolvedValueOnce(SAVED)
+      .mockResolvedValueOnce({ ...SAVED, mirrorManualBuilds: true });
+    render(<PollingPanel api={api} />);
+    const box = await screen.findByLabelText("Manual builds");
+    expect(box.checked).toBe(false);
+
+    fireEvent.click(box);
+    fireEvent.submit(
+      screen.getByLabelText("Save automatic build settings").closest("form"),
+    );
+
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(api.mock.calls[1][1].body).mirrorManualBuilds).toBe(true);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Manual builds").checked).toBe(true),
+    );
   });
 
   it("clears a stale error when a field is edited", async () => {

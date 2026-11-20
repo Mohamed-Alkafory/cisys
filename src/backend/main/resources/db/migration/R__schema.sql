@@ -289,6 +289,7 @@ CREATE SEQUENCE IF NOT EXISTS projectmember_seq START WITH 1 INCREMENT BY 50;
 
 -- Pull request and merge request builds are opt-in and off by default.
 ALTER TABLE settings ADD COLUMN IF NOT EXISTS pullrequestsenabled boolean NOT NULL DEFAULT false;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS mirrormanualbuilds boolean NOT NULL DEFAULT false;
 
 -- The provider detected when PR builds were enabled, and the highest number present at that time.
 -- A null baseline means the next discovery seeds the current pull requests without building them.

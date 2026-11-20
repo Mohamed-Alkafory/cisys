@@ -341,6 +341,33 @@ class SettingsResourceTest {
 
   @Test
   @TestSecurity(user = "admin", roles = "admin")
+  void adminTurnsOnMirroredManualBuildsAndAnOlderClientKeepsIt() {
+    given().get(POLLING).then().statusCode(200).body("mirrorManualBuilds", equalTo(false));
+    try {
+      given()
+          .contentType("application/json")
+          .body(
+              "{\"enabled\":true,\"granularity\":\"PER_COMMIT\",\"scope\":\"WORKFLOW\",\"mirrorManualBuilds\":true}")
+          .put(POLLING)
+          .then()
+          .statusCode(200)
+          .body("mirrorManualBuilds", equalTo(true));
+      // A client that does not know the field leaves it as it was.
+      given()
+          .contentType("application/json")
+          .body("{\"enabled\":true,\"granularity\":\"PER_COMMIT\",\"scope\":\"WORKFLOW\"}")
+          .put(POLLING)
+          .then()
+          .statusCode(200)
+          .body("mirrorManualBuilds", equalTo(true));
+      given().get(POLLING).then().statusCode(200).body("mirrorManualBuilds", equalTo(true));
+    } finally {
+      clearPolling();
+    }
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
   void adminSavesPolling() {
     given()
         .get(POLLING)

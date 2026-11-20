@@ -908,8 +908,40 @@ public class BuildRunner {
         b.branch,
         pullRequest ? null : b.credentialRef,
         b.revision,
-        b.trigger == Build.Trigger.POLL || pullRequest ? mirrors.path(b.projectId) : null,
+        mirrorFor(b),
         pullRequest);
+  }
+
+  /**
+   * The mirror a build checks out from, or null to clone from the repository. Poll and pull request
+   * builds always use it. A manual build uses it when {@link Settings#mirrorManualBuilds} is on:
+   * the mirror is fetched first, so the build gets the branch's current tip, and a failed fetch
+   * falls back to the repository.
+   */
+  Path mirrorFor(Build b) {
+    if (b.trigger == Build.Trigger.POLL || b.trigger == Build.Trigger.PULL_REQUEST) {
+      return mirrors.path(b.projectId);
+    }
+    Project p =
+        QuarkusTransaction.requiringNew()
+            .call(() ->
+                Settings.current().mirrorManualBuilds
+                    ? Project.<Project>findById(b.projectId)
+                    : null);
+    if (p == null) {
+      return null;
+    }
+    java.util.concurrent.locks.ReentrantLock lock = mirrors.lock(p.id);
+    lock.lock();
+    try {
+      mirrors.fetch(p);
+      return mirrors.path(p.id);
+    } catch (Exception e) {
+      Log.warnf("Project %d: could not fetch the mirror; cloning from the repository: %s", p.id, e);
+      return null;
+    } finally {
+      lock.unlock();
+    }
   }
 
   @Inject HostResolver resolver;

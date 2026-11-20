@@ -68,7 +68,8 @@ public class SettingsResource {
       Boolean enabled,
       Settings.Granularity granularity,
       Settings.Scope scope,
-      Integer intervalSeconds) {}
+      Integer intervalSeconds,
+      Boolean mirrorManualBuilds) {}
 
   /** Whether pull request and merge request builds are enabled. */
   public record PullRequests(Boolean enabled) {}
@@ -228,7 +229,8 @@ public class SettingsResource {
   public Polling polling() {
     requireAdmin();
     Settings s = Settings.current();
-    return new Polling(s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s));
+    return new Polling(
+        s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s), s.mirrorManualBuilds);
   }
 
   /** Saves the automatic-build settings. */
@@ -265,7 +267,12 @@ public class SettingsResource {
     s.pollGranularity = input.granularity();
     s.pollScope = input.scope();
     s.pollIntervalSeconds = input.intervalSeconds();
-    return new Polling(s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s));
+    // Left out by an older client: keep the stored value.
+    if (input.mirrorManualBuilds() != null) {
+      s.mirrorManualBuilds = input.mirrorManualBuilds();
+    }
+    return new Polling(
+        s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s), s.mirrorManualBuilds);
   }
 
   /** The pull request build setting. */

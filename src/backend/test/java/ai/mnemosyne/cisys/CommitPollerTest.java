@@ -626,6 +626,71 @@ class CommitPollerTest {
     assertEquals(RepositoryUrls.SHAPE, failure.getMessage());
   }
 
+  void mirrorManualBuilds(boolean on) {
+    QuarkusTransaction.requiringNew()
+        .run(() -> {
+          Settings s = Settings.findById(1L);
+          if (s == null) {
+            s = new Settings();
+            s.persist();
+          }
+          s.mirrorManualBuilds = on;
+        });
+  }
+
+  static Build manual(Long projectId) {
+    Build b = new Build();
+    b.projectId = projectId;
+    b.trigger = Build.Trigger.MANUAL;
+    return b;
+  }
+
+  @Test
+  void aManualBuildFetchesTheMirrorAndChecksOutTheCurrentTipFromIt() throws Exception {
+    source = newRepository("manual");
+    workflow(source, "add workflow");
+    Long id = project("manual", source);
+    poller.poll();
+    // Committed after the last poll: only a fetch at build time puts it in the mirror.
+    String tip = commit(source, "b.txt", "b", "newer");
+    mirrorManualBuilds(true);
+
+    Path mirror = runner.mirrorFor(manual(id));
+    assertEquals(mirrors.path(id), mirror);
+    Path workspace = root.resolve("manual-workspace");
+    String got =
+        runner.prepareWorkspace(
+            workspace, source.toUri().toString(), "main", null, null, mirror, 1, 100, () -> false);
+    assertEquals(tip, got);
+    assertEquals("b", Files.readString(workspace.resolve("b.txt")));
+    try (Git git = Git.open(workspace.toFile())) {
+      String origin = git.getRepository().getConfig().getString("remote", "origin", "url");
+      assertTrue(origin.startsWith("file:"), "the mirror must be the source, was " + origin);
+    }
+  }
+
+  @Test
+  void aManualBuildClonesFromTheRepositoryWhenMirroringIsOff() throws Exception {
+    source = newRepository("manual-off");
+    workflow(source, "add workflow");
+    Long id = project("manual-off", source);
+    poller.poll();
+    assertNull(runner.mirrorFor(manual(id)));
+  }
+
+  @Test
+  void aManualBuildFallsBackToTheRepositoryWhenTheMirrorCannotBeFetched() throws Exception {
+    source = newRepository("manual-gone");
+    workflow(source, "add workflow");
+    Long id = project("manual-gone", source);
+    poller.poll();
+    mirrorManualBuilds(true);
+    // The repository disappears, so the fetch at build time fails.
+    org.eclipse.jgit.util.FileUtils.delete(
+        source.toFile(), org.eclipse.jgit.util.FileUtils.RECURSIVE);
+    assertNull(runner.mirrorFor(manual(id)));
+  }
+
   @Test
   void mirroredCommitSurvivesLaterPollsWhileABuildIsQueued() throws Exception {
     source = newRepository("survive");

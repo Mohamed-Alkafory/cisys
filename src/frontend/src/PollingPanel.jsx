@@ -63,6 +63,7 @@ export default function PollingPanel({ api }) {
             String(draft.intervalSeconds) === String(savedInterval)
               ? null
               : Number(draft.intervalSeconds),
+          mirrorManualBuilds: draft.mirrorManualBuilds,
         }),
       });
       setDraft(saved);
@@ -161,6 +162,24 @@ export default function PollingPanel({ api }) {
                   value={draft.intervalSeconds}
                   onChange={(e) => change("intervalSeconds", e.target.value)}
                 />
+              </div>
+              <div className="form-field">
+                <Label htmlFor="polling-mirror-manual">Manual builds</Label>
+                <span className="private-choice gap-2">
+                  <input
+                    id="polling-mirror-manual"
+                    type="checkbox"
+                    checked={Boolean(draft.mirrorManualBuilds)}
+                    onChange={(e) =>
+                      change("mirrorManualBuilds", e.target.checked)
+                    }
+                  />
+                  <span>Check out from the repository mirror</span>
+                </span>
+                <span className="file-help">
+                  Manual builds and re-runs fetch into the mirror first instead
+                  of cloning the repository.
+                </span>
               </div>
             </div>
             <div className="flex justify-end mt-4">
