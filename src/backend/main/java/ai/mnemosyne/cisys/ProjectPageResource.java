@@ -142,6 +142,25 @@ public class ProjectPageResource {
     return BuildCommentResource.views(BuildComment.of(buildId), access.subjectOrNull(), directory);
   }
 
+  /** One stored report of a build; see {@link ReportType}. */
+  public record PageReport(
+      String type, String name, ReportType.Format format, String content, boolean truncated) {}
+
+  /** The build's reports, in workflow order, for whoever can see the build. */
+  @GET
+  @Path("/builds/{buildId}/reports")
+  public List<PageReport> reports(
+      @PathParam("name") String name, @PathParam("buildId") Long buildId) {
+    Project p = access.visible(name);
+    Build b = Build.findById(buildId);
+    if (b == null || !p.id.equals(b.projectId)) {
+      throw new NotFoundException();
+    }
+    return BuildReport.of(buildId).stream()
+        .map(r -> new PageReport(r.type, r.name, r.format, r.content, r.truncated))
+        .toList();
+  }
+
   /**
    * The workflow file and the generated Dockerfile are sent for a single build only, as they can be
    * large.

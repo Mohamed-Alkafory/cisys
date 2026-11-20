@@ -20,7 +20,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * A CI workflow, read from {@value #PATH} in a project's repository.
@@ -58,7 +61,8 @@ public record Workflow(
     String container,
     List<Variable> environment,
     List<Dependency> dependencies,
-    List<Job> jobs) {
+    List<Job> jobs,
+    Map<String, List<Map<String, String>>> reports) {
   /**
    * Where the steps read {@link #environment()} from. Root writes it before the checkout and makes
    * it read-only, so a step cannot add variables for the steps after it.
@@ -73,6 +77,12 @@ public record Workflow(
   static final int MAX_BYTES = 64 * 1024;
   static final int MAX_NAME = 200;
   static final int MAX_COMMAND = 4000;
+
+  /** The most reports one workflow can ask for. */
+  static final int MAX_REPORTS = 20;
+
+  /** A report type key under {@code reports}, such as {@code list}. */
+  static final String REPORT_TYPE = "[a-z][a-z0-9-]{0,49}";
 
   /** One entry of an {@code environment} list. */
   public record Variable(String name, String value) {}
@@ -174,6 +184,7 @@ public record Workflow(
     if (!container.matches(AllowedImage.PATTERN)) {
       throw new InvalidWorkflowException("container is not a valid image reference");
     }
+    validateReports(reports);
     if (jobs == null || jobs.isEmpty()) {
       throw new InvalidWorkflowException("At least one job is required");
     }
@@ -208,6 +219,52 @@ public record Workflow(
         }
         if (step.port() != null && step.environment() != null) {
           throw new InvalidWorkflowException(at + ".environment applies to run steps only");
+        }
+      }
+    }
+  }
+
+  /**
+   * Each report type key holds a list of reports; every report has a {@code name}, unique in the
+   * workflow as it labels the report's tab, and any further options are strings.
+   */
+  private static void validateReports(Map<String, List<Map<String, String>>> reports) {
+    if (reports == null) {
+      return;
+    }
+    Set<String> names = new HashSet<>();
+    for (Map.Entry<String, List<Map<String, String>>> e : reports.entrySet()) {
+      String type = e.getKey();
+      if (type == null || !type.matches(REPORT_TYPE)) {
+        throw new InvalidWorkflowException("reports." + type + " is not a valid report type");
+      }
+      List<Map<String, String>> list = e.getValue();
+      if (list == null || list.isEmpty()) {
+        throw new InvalidWorkflowException("reports." + type + " needs at least one report");
+      }
+      for (int i = 0; i < list.size(); i++) {
+        String at = "reports." + type + "[" + i + "]";
+        Map<String, String> report = list.get(i);
+        if (report == null) {
+          throw new InvalidWorkflowException(at + " is empty");
+        }
+        requireName(report.get("name"), at + ".name");
+        for (Map.Entry<String, String> option : report.entrySet()) {
+          if (option.getValue() == null || option.getValue().length() > MAX_COMMAND) {
+            throw new InvalidWorkflowException(
+                at
+                    + "."
+                    + option.getKey()
+                    + " must be text of at most "
+                    + MAX_COMMAND
+                    + " characters");
+          }
+        }
+        if (!names.add(report.get("name"))) {
+          throw new InvalidWorkflowException(at + ".name is used by another report");
+        }
+        if (names.size() > MAX_REPORTS) {
+          throw new InvalidWorkflowException("At most " + MAX_REPORTS + " reports are allowed");
         }
       }
     }

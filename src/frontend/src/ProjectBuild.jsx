@@ -27,6 +27,7 @@ import {
 import PageHeader from "./components/layout/PageHeader";
 import BuildStatus from "./BuildStatus";
 import BuildComments from "./BuildComments";
+import BuildReports from "./BuildReports";
 import { BuildLogPanel } from "./BuildLogView";
 import {
   duration,
@@ -329,6 +330,7 @@ export default function ProjectBuild({
           />
         </CardContent>
       </Card>
+      <BuildReports name={name} buildId={build.id} load={load} />
       <BuildComments
         name={name}
         projectId={build.projectId}

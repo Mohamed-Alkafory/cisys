@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -1354,6 +1355,9 @@ public class BuildRunner {
         exit = result.code();
         status = exit == 0 ? "PASSED" : "FAILED";
       }
+      if (!handle.cancelled) {
+        runReports(id, workflow, workspace, log::line);
+      }
     } catch (Exception e) {
       // A failure caused by the cancellation is not reported as one.
       if (!handle.cancelled) {
@@ -1462,6 +1466,60 @@ public class BuildRunner {
               id, Build.Status.valueOf(status), revision, exit, digest, truncated, Instant.now()));
       if (interrupted) {
         Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  @Inject jakarta.enterprise.inject.Instance<ReportType> reportTypes;
+
+  /**
+   * Runs the reports the workflow asks for, in workflow order, against the checkout and stores each
+   * one with the build. A report that fails or has no registered type is noted in the log; neither
+   * changes the build's result.
+   */
+  void runReports(
+      Long id, Workflow workflow, Path checkout, java.util.function.Consumer<String> log) {
+    if (workflow.reports() == null) {
+      return;
+    }
+    Map<String, ReportType> types = new HashMap<>();
+    for (ReportType t : reportTypes) {
+      types.put(t.type(), t);
+    }
+    for (Map.Entry<String, List<Map<String, String>>> e : workflow.reports().entrySet()) {
+      ReportType type = types.get(e.getKey());
+      for (Map<String, String> options : e.getValue()) {
+        String name = options.get("name");
+        if (type == null) {
+          log.accept("Report " + name + " skipped: no report type " + e.getKey());
+          continue;
+        }
+        try {
+          ReportType.Report report =
+              type.run(new ReportType.Context(checkout, workflow, Map.copyOf(options)));
+          if (report == null || report.format() == null || report.content() == null) {
+            throw new IllegalStateException("the report type returned no content");
+          }
+          String content = report.content();
+          boolean truncated = content.length() > BuildReport.MAX_CONTENT;
+          String kept = truncated ? content.substring(0, BuildReport.MAX_CONTENT) : content;
+          QuarkusTransaction.requiringNew()
+              .run(() -> {
+                BuildReport r = new BuildReport();
+                r.buildId = id;
+                r.type = e.getKey();
+                r.name = name;
+                r.format = report.format();
+                r.content = kept;
+                r.truncated = truncated;
+                r.createdAt = Instant.now();
+                r.persist();
+              });
+          log.accept("Report " + name + " done");
+        } catch (Exception ex) {
+          Log.warnf(ex, "Report %s of build %d failed", name, id);
+          log.accept("Report " + name + " failed: " + ex.getClass().getSimpleName());
+        }
       }
     }
   }

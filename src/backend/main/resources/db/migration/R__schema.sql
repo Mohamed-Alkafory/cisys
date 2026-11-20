@@ -385,3 +385,20 @@ CREATE TABLE IF NOT EXISTS buildcomment (
 );
 CREATE INDEX IF NOT EXISTS buildcomment_build ON buildcomment (buildid);
 CREATE SEQUENCE IF NOT EXISTS buildcomment_seq START WITH 1 INCREMENT BY 50;
+
+-- Reports a build's workflow asked for, in workflow order. They go with the build.
+CREATE TABLE IF NOT EXISTS buildreport (
+    id bigint NOT NULL,
+    buildid bigint NOT NULL,
+    type character varying(50) NOT NULL,
+    name character varying(200) NOT NULL,
+    format character varying(10) NOT NULL,
+    content text NOT NULL,
+    truncated boolean NOT NULL,
+    createdat timestamp(6) with time zone NOT NULL,
+    CONSTRAINT buildreport_pkey PRIMARY KEY (id),
+    CONSTRAINT buildreport_build FOREIGN KEY (buildid) REFERENCES build (id) ON DELETE CASCADE,
+    CONSTRAINT buildreport_format_check CHECK (format IN ('TEXT', 'HTML'))
+);
+CREATE INDEX IF NOT EXISTS buildreport_build ON buildreport (buildid);
+CREATE SEQUENCE IF NOT EXISTS buildreport_seq START WITH 1 INCREMENT BY 50;

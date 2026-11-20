@@ -50,6 +50,36 @@ class WorkflowTest {
       """;
 
   @Test
+  void parsesReportsInOrder() {
+    Workflow w =
+        Workflow.parse(
+            VALID
+                + """
+                reports:
+                  list:
+                    - name: List
+                  orangu:
+                    - name: Review
+                      prompt: /auto_review
+                """);
+    assertEquals(List.of("list", "orangu"), List.copyOf(w.reports().keySet()));
+    assertEquals("/auto_review", w.reports().get("orangu").get(0).get("prompt"));
+  }
+
+  @Test
+  void rejectsInvalidReports() {
+    for (String reports :
+        List.of(
+            "reports:\n  list:\n    - prompt: x\n",
+            "reports:\n  list: []\n",
+            "reports:\n  Bad_Type:\n    - name: X\n",
+            "reports:\n  list:\n    - name: Same\n  orangu:\n    - name: Same\n")) {
+      assertThrows(
+          Workflow.InvalidWorkflowException.class, () -> Workflow.parse(VALID + reports), reports);
+    }
+  }
+
+  @Test
   void parsesWorkflow() {
     Workflow w = Workflow.parse(VALID);
     assertEquals("main branch", w.name());
