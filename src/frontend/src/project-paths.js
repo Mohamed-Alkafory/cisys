@@ -8,8 +8,9 @@
 
 import { branchFromSegment } from "./build-format";
 
-// The manual lives at /manual, so no project may be named "manual".
+// The manual lives at /manual and articles at /articles, so no project may use those names.
 const MANUAL = "manual";
+const ARTICLES = "articles";
 
 /** Returns { slug } for /manual (slug null) or /manual/builds, otherwise null. */
 export function manualFromPath(pathname) {
@@ -26,8 +27,27 @@ export function manualPath(slug) {
   return slug ? `/${MANUAL}/${encodeURIComponent(slug)}` : `/${MANUAL}`;
 }
 
-function isManual(name) {
-  return name.toLowerCase() === MANUAL;
+/**
+ * Returns { id, edit } for /articles (id null), /articles/new (edit), /articles/7 and
+ * /articles/7/edit, otherwise null.
+ */
+export function articlesFromPath(pathname) {
+  const match = /^\/articles(?:\/(new|\d+)(\/edit)?)?\/?$/i.exec(pathname);
+  if (!match) return null;
+  if (!match[1]) return { id: null, edit: false };
+  if (match[1].toLowerCase() === "new")
+    return match[2] ? null : { id: null, edit: true };
+  return { id: Number(match[1]), edit: Boolean(match[2]) };
+}
+
+export function articlesPath({ id = null, edit = false } = {}) {
+  if (id === null) return edit ? `/${ARTICLES}/new` : `/${ARTICLES}`;
+  return `/${ARTICLES}/${id}${edit ? "/edit" : ""}`;
+}
+
+function isReserved(name) {
+  const lower = name.toLowerCase();
+  return lower === MANUAL || lower === ARTICLES;
 }
 
 /** Returns the project name for paths like /cisys/ (or /cisys), otherwise null. */
@@ -36,7 +56,7 @@ export function projectNameFromPath(pathname) {
   if (!match) return null;
   try {
     const name = decodeURIComponent(match[1]);
-    return isManual(name) ? null : name;
+    return isReserved(name) ? null : name;
   } catch {
     return null;
   }
@@ -47,7 +67,7 @@ export function projectBuildFromPath(pathname) {
   const match = /^\/([^/]+)\/([^/]+)\/build\/(\d+)\/?$/.exec(pathname);
   if (!match) return null;
   try {
-    if (isManual(decodeURIComponent(match[1]))) return null;
+    if (isReserved(decodeURIComponent(match[1]))) return null;
     return {
       name: decodeURIComponent(match[1]),
       branch: branchFromSegment(decodeURIComponent(match[2])),
@@ -68,7 +88,7 @@ export function projectSettingsFromPath(pathname) {
   if (!match) return null;
   try {
     const name = decodeURIComponent(match[1]);
-    return isManual(name) ? null : { name };
+    return isReserved(name) ? null : { name };
   } catch {
     return null;
   }

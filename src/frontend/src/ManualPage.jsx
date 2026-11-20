@@ -7,12 +7,10 @@
  */
 
 import React, { useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { chapters as allChapters, headingId, imageUrl } from "./manual";
 import { manualPath } from "./project-paths";
+import Markdown from "./Markdown";
 
 function textOf(children) {
   return React.Children.toArray(children)
@@ -35,14 +33,6 @@ const components = {
   h3: heading("h3"),
   h4: heading("h4"),
   img: ({ src, alt }) => <img src={imageUrl(src)} alt={alt} />,
-  a: ({ href, children }) =>
-    /^https?:/.test(href) ? (
-      <a href={href} target="_blank" rel="noreferrer">
-        {children}
-      </a>
-    ) : (
-      <a href={href}>{children}</a>
-    ),
 };
 
 export default function ManualPage({ slug, onOpen, chapters = allChapters }) {
@@ -93,13 +83,7 @@ export default function ManualPage({ slug, onOpen, chapters = allChapters }) {
         ))}
       </nav>
       <article className="manual">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeHighlight]}
-          components={components}
-        >
-          {chapter.body}
-        </ReactMarkdown>
+        <Markdown components={components}>{chapter.body}</Markdown>
         <div className="manual-pager">
           {prev ? (
             link(

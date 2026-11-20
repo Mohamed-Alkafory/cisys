@@ -52,8 +52,12 @@ import ProjectBuild from "./ProjectBuild";
 import ProjectSettings from "./ProjectSettings";
 import ManualPage from "./ManualPage";
 import ManualButton from "./ManualButton";
+import ArticlesButton from "./ArticlesButton";
+import ArticlesPage from "./ArticlesPage";
 import { chapterBySlug, chapters } from "./manual";
 import {
+  articlesFromPath,
+  articlesPath,
   manualFromPath,
   manualPath,
   projectBuildFromPath,
@@ -213,6 +217,10 @@ function App() {
   const [manual, setManual] = useState(() =>
     manualFromPath(window.location.pathname),
   );
+  // Set to { id, edit } when the URL is /articles, /articles/new, /articles/7 or /articles/7/edit.
+  const [articles, setArticles] = useState(() =>
+    articlesFromPath(window.location.pathname),
+  );
   const [dark, setDark] = useState(
     () => localStorage.getItem("cisys-theme") === "dark",
   );
@@ -302,6 +310,7 @@ function App() {
       setProjectBranch(build ? build.branch : "");
       setProjectSettings(settings !== null);
       setManual(manualFromPath(window.location.pathname));
+      setArticles(articlesFromPath(window.location.pathname));
       setProjectName(
         settings
           ? settings.name
@@ -324,6 +333,7 @@ function App() {
     setBuildId(null);
     setProjectSettings(false);
     setManual(null);
+    setArticles(null);
     setSettingsDirty(false);
     setPage(target);
   }
@@ -341,10 +351,11 @@ function App() {
       projectName === null &&
       buildId === null &&
       !projectSettings &&
-      manual === null
+      manual === null &&
+      articles === null
     )
       showFrontPage();
-  }, [projectName, buildId, projectSettings, manual, showFrontPage]);
+  }, [projectName, buildId, projectSettings, manual, articles, showFrontPage]);
 
   // /manual and unknown chapters show the first chapter.
   useEffect(() => {
@@ -362,13 +373,28 @@ function App() {
     setProjectBranch("");
     setBuildId(null);
     setProjectSettings(false);
+    setArticles(null);
     setManual({ slug });
+  }
+
+  function openArticles(route = {}) {
+    if (submitting || !confirmLeave()) return;
+    const next = { id: route.id ?? null, edit: Boolean(route.edit) };
+    window.history.pushState(null, "", articlesPath(next));
+    setSettingsDirty(false);
+    setProjectName(null);
+    setProjectBranch("");
+    setBuildId(null);
+    setProjectSettings(false);
+    setManual(null);
+    setArticles(next);
   }
 
   function openProject(name, branch = "") {
     if (submitting || !confirmLeave()) return;
     window.history.pushState(null, "", projectPath(name));
     setManual(null);
+    setArticles(null);
     setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch(branch);
@@ -380,6 +406,7 @@ function App() {
     if (!confirmLeave()) return;
     window.history.pushState(null, "", buildPath(name, branch, id));
     setManual(null);
+    setArticles(null);
     setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch(branch);
@@ -391,6 +418,7 @@ function App() {
     if (submitting || !confirmLeave()) return;
     window.history.pushState(null, "", projectSettingsPath(name));
     setManual(null);
+    setArticles(null);
     setSettingsDirty(false);
     setProjectName(name);
     setProjectBranch("");
@@ -502,9 +530,17 @@ function App() {
         setDark={setDark}
         onOpenManual={() => openManual(manual?.slug ?? chapters[0]?.slug)}
         manualActive={manual !== null}
+        onOpenArticles={() => openArticles()}
+        articlesActive={articles !== null}
       >
         {manual !== null ? (
           <ManualPage slug={manual.slug} onOpen={openManual} />
+        ) : articles !== null ? (
+          <ArticlesPage
+            route={articles}
+            load={publicJson}
+            onOpen={openArticles}
+          />
         ) : (
           projectName !== null &&
           !projectSettings &&
@@ -553,7 +589,10 @@ function App() {
   // Only admins can set a project credential, and only a private project can have one.
   const showCredential = user.roles.includes("admin") && priv;
   const onPage = (target) =>
-    projectName === null && manual === null && page === target;
+    projectName === null &&
+    manual === null &&
+    articles === null &&
+    page === target;
   const role = user.roles.includes("admin")
     ? "Admin"
     : user.roles.includes("lead")
@@ -636,6 +675,10 @@ function App() {
           </nav>
         </div>
         <div className="header-actions">
+          <ArticlesButton
+            active={articles !== null}
+            onOpen={() => openArticles()}
+          />
           <ManualButton
             active={manual !== null}
             onOpen={() => openManual(chapters[0]?.slug)}
@@ -681,6 +724,8 @@ function App() {
       </header>
       {manual !== null ? (
         <ManualPage slug={manual.slug} onOpen={openManual} />
+      ) : articles !== null ? (
+        <ArticlesPage route={articles} load={api} onOpen={openArticles} />
       ) : projectName !== null ? (
         projectSettings ? (
           canEditSettings ? (

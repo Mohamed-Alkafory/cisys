@@ -402,3 +402,26 @@ CREATE TABLE IF NOT EXISTS buildreport (
 );
 CREATE INDEX IF NOT EXISTS buildreport_build ON buildreport (buildid);
 CREATE SEQUENCE IF NOT EXISTS buildreport_seq START WITH 1 INCREMENT BY 50;
+
+-- Who may create, edit and delete articles: ADMIN, LEAD (and admins) or MEMBER (any CISys role).
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS articleeditors character varying(16) NOT NULL DEFAULT 'ADMIN';
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'settings_articleeditors_check') THEN
+        ALTER TABLE settings ADD CONSTRAINT settings_articleeditors_check
+            CHECK (articleeditors IN ('ADMIN', 'LEAD', 'MEMBER'));
+    END IF;
+END $$;
+
+-- Markdown articles, readable by anyone.
+CREATE TABLE IF NOT EXISTS article (
+    id bigint NOT NULL,
+    title character varying(200) NOT NULL,
+    body character varying(100000) NOT NULL,
+    authorsubject character varying(255) NOT NULL,
+    createdat timestamp(6) with time zone NOT NULL,
+    updatedat timestamp(6) with time zone NOT NULL,
+    CONSTRAINT article_pkey PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS article_updated ON article (updatedat DESC, id DESC);
+CREATE SEQUENCE IF NOT EXISTS article_seq START WITH 1 INCREMENT BY 50;

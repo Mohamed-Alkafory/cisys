@@ -548,4 +548,49 @@ class SettingsResourceTest {
       given().contentType("application/json").body(body).put(PULL_REQUESTS).then().statusCode(400);
     }
   }
+
+  private static final String GENERAL = "/api/settings/general";
+
+  @Test
+  void anonymousCannotReadGeneral() {
+    given().get(GENERAL).then().statusCode(401);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  void leadCannotReadOrUpdateGeneral() {
+    given().get(GENERAL).then().statusCode(403);
+    given()
+        .contentType("application/json")
+        .body("{\"articleEditors\":\"LEAD\"}")
+        .put(GENERAL)
+        .then()
+        .statusCode(403);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void adminSavesGeneral() {
+    try {
+      given().get(GENERAL).then().statusCode(200).body("articleEditors", equalTo("ADMIN"));
+      given()
+          .contentType("application/json")
+          .body("{\"articleEditors\":\"MEMBER\"}")
+          .put(GENERAL)
+          .then()
+          .statusCode(200)
+          .body("articleEditors", equalTo("MEMBER"));
+      given().get(GENERAL).then().statusCode(200).body("articleEditors", equalTo("MEMBER"));
+    } finally {
+      ArticleResourceTest.editors(Settings.ArticleEditors.ADMIN);
+    }
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  void rejectsInvalidGeneral() {
+    for (String body : new String[] {"{}", "{\"articleEditors\":\"OWNER\"}"}) {
+      given().contentType("application/json").body(body).put(GENERAL).then().statusCode(400);
+    }
+  }
 }

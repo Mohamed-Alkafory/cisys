@@ -69,6 +69,7 @@ erDiagram
         STRING poll_scope
         INTEGER poll_interval_seconds
         BOOLEAN pull_requests_enabled
+        STRING article_editors
     }
 
     PROJECT_PULL_REQUEST {
@@ -97,6 +98,15 @@ erDiagram
         TIMESTAMP updated_at
     }
 
+    ARTICLE {
+        BIGINT id PK
+        STRING title
+        STRING body
+        STRING author_subject
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
     PROJECT ||--o{ BUILD : has
     BUILD ||--o{ BUILD_COMMENT : has
     PROJECT ||--o{ PROJECT_BRANCH : watches
@@ -117,6 +127,8 @@ erDiagram
 * `SETTINGS.pull_requests_enabled` (default false) is the global switch for pull request and merge request builds.
 * `PROJECT_BRANCH` is the automatic-build cursor: the last commit cisys queued for each watched branch. A missing row makes the branch seed its tip on the next poll without building anything. The row is removed when the branch disappears, its tip loses the workflow file, or automatic builds are turned off.
 * `SETTINGS.poll_enabled` (default true), `poll_granularity` (`PER_COMMIT` or `TIP`), `poll_scope` (`WORKFLOW` or `MAIN_ONLY`) and `poll_interval_seconds` (null uses `cisys.poll.every`) hold the global automatic-build settings.
+* `SETTINGS.article_editors` (`ADMIN`, `LEAD` or `MEMBER`, default `ADMIN`) decides who may create, edit and delete articles.
+* `ARTICLE` rows are markdown articles readable by anyone. `author_subject` holds the `sub` of the user who created the article.
 * `BRANDING` and `SETTINGS` are singleton rows with `id = 1`. Until `SETTINGS` is first saved, its defaults apply.
 * `PROJECT_MEMBER.subject` is the Keycloak subject of a user assigned to the project; a subject is assigned once per project, and the rows are deleted with the project.
 * Users, roles and credentials live in Keycloak and are not stored in the cisys database. The Users page changes them through the Keycloak Admin REST API.

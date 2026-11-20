@@ -38,6 +38,7 @@ The Member, Lead and Admin columns below refer to the caller's global Keycloak r
 | Pin / unpin a build                 | no     | assigned | yes   |
 | Comment on a build                  | assigned | assigned | yes   |
 | Edit a comment                      | own    | own  | own   |
+| Create, edit and delete articles    | if allowed | if allowed | yes |
 | Cancel a build                      | no     | own, or any in their project | yes |
 | Manage project team                | no     | assigned | yes   |
 | Delete a project                    | no     | no   | yes   |
@@ -49,6 +50,7 @@ The Member, Lead and Admin columns below refer to the caller's global Keycloak r
 * "Assigned" means the caller has a row in the project's `projectmember` table; for Start a build any row (`MEMBER` or `LEAD`) suffices, while Pin / unpin, Cancel of others' builds and project management require `LEAD`.
 * In the Cancel row, the global realm `lead` role additionally allows cancelling your own requested builds regardless of project rows.
 * "own" means builds requested by the caller themselves (while holding the global `lead` realm role); "any in their project" means any build in a project where the caller is project `LEAD`, regardless of who requested it.
+* Everyone can read articles, also without signing in. Who may write them is set under Settings → General: admins only (the default), leads and admins, or all users.
 * The address of a project or build that does not exist or is not visible to the user opens the front page instead, so a private project is not revealed; the same applies to any unknown address.
 
 The following chapters describe the application areas in more detail.

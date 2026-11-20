@@ -8,6 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  articlesFromPath,
+  articlesPath,
   manualFromPath,
   manualPath,
   projectBuildFromPath,
@@ -31,5 +33,27 @@ describe("project-paths", () => {
     expect(projectSettingsFromPath("/manual/settings")).toBeNull();
     expect(projectBuildFromPath("/manual/main/build/1")).toBeNull();
     expect(projectNameFromPath("/cisys/")).toBe("cisys");
+  });
+
+  it("reads the article paths", () => {
+    expect(articlesFromPath("/articles")).toEqual({ id: null, edit: false });
+    expect(articlesFromPath("/articles/")).toEqual({ id: null, edit: false });
+    expect(articlesFromPath("/articles/new")).toEqual({ id: null, edit: true });
+    expect(articlesFromPath("/articles/7")).toEqual({ id: 7, edit: false });
+    expect(articlesFromPath("/articles/7/edit")).toEqual({ id: 7, edit: true });
+    expect(articlesFromPath("/articles/new/edit")).toBeNull();
+    expect(articlesFromPath("/articles/abc")).toBeNull();
+    expect(articlesFromPath("/cisys/")).toBeNull();
+    expect(articlesPath()).toBe("/articles");
+    expect(articlesPath({ edit: true })).toBe("/articles/new");
+    expect(articlesPath({ id: 7 })).toBe("/articles/7");
+    expect(articlesPath({ id: 7, edit: true })).toBe("/articles/7/edit");
+  });
+
+  it("never reads articles as a project", () => {
+    expect(projectNameFromPath("/articles")).toBeNull();
+    expect(projectNameFromPath("/Articles/")).toBeNull();
+    expect(projectSettingsFromPath("/articles/settings")).toBeNull();
+    expect(projectBuildFromPath("/articles/main/build/1")).toBeNull();
   });
 });

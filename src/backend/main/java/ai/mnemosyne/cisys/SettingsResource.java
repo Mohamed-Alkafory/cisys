@@ -74,6 +74,35 @@ public class SettingsResource {
   /** Whether pull request and merge request builds are enabled. */
   public record PullRequests(Boolean enabled) {}
 
+  /** Settings that are not about builds. */
+  public record General(Settings.ArticleEditors articleEditors) {}
+
+  /** The general settings. */
+  @GET
+  @Path("/general")
+  public General general() {
+    requireAdmin();
+    return new General(Settings.current().articleEditors);
+  }
+
+  /** Saves the general settings. */
+  @PUT
+  @Path("/general")
+  @Transactional
+  public General updateGeneral(General input) {
+    requireAdmin();
+    if (input == null || input.articleEditors() == null) {
+      throw new BadRequestException("Article editors are required");
+    }
+    Settings s = Settings.findById(1L);
+    if (s == null) {
+      s = new Settings();
+      s.persist();
+    }
+    s.articleEditors = input.articleEditors();
+    return new General(s.articleEditors);
+  }
+
   /** The retention limits. */
   @GET
   @Path("/retention")

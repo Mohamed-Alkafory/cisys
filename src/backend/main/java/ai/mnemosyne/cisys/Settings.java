@@ -93,6 +93,17 @@ public class Settings extends PanacheEntityBase {
   @Column(nullable = false)
   public boolean mirrorManualBuilds = false;
 
+  /** Who may create, edit and delete articles. LEAD includes admins; MEMBER is any CISys role. */
+  public enum ArticleEditors {
+    ADMIN,
+    LEAD,
+    MEMBER
+  }
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 16)
+  public ArticleEditors articleEditors = ArticleEditors.ADMIN;
+
   /** The saved settings, or the defaults. */
   public static Settings current() {
     Settings s = findById(1L);

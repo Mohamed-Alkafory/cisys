@@ -1261,3 +1261,70 @@ body {
     padding: 1rem;
   }
 }
+
+.article-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.article-list {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 56rem;
+  padding: 0;
+  list-style: none;
+}
+.article-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+}
+.article-link {
+  color: var(--color-section-header);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.article-link:hover {
+  text-decoration: underline;
+}
+.article-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.article .article-meta {
+  margin: -0.5rem 0 1rem;
+}
+.article-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.article-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 56rem;
+}
+.article-tabs {
+  display: flex;
+  gap: 0.25rem;
+}
+.article-body {
+  min-height: 20rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.article-preview {
+  min-height: 20rem;
+}

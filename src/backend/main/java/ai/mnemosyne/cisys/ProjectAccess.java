@@ -211,6 +211,18 @@ public class ProjectAccess {
     return isAdmin() || memberRole(p) != null;
   }
 
+  /** Whether the caller may create, edit and delete articles under the general settings. */
+  public boolean canEditArticles() {
+    if (!hasCisysRole()) {
+      return false;
+    }
+    return switch (Settings.current().articleEditors) {
+      case ADMIN -> isAdmin();
+      case LEAD -> isAdmin() || identity.hasRole("lead");
+      case MEMBER -> true;
+    };
+  }
+
   private boolean hasCisysRole() {
     return !identity.isAnonymous()
         && (identity.hasRole("member") || identity.hasRole("lead") || identity.hasRole("admin"));

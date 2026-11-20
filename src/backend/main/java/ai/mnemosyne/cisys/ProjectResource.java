@@ -76,10 +76,10 @@ public class ProjectResource {
   static final String NAME_RULE =
       "Project names use letters, digits, '.', '_' and '-', and start with a letter or digit";
 
-  /** The UI serves the manual at /manual, so no project may take that path. */
-  static final String RESERVED_NAME = "manual";
+  /** The UI serves the manual at /manual and articles at /articles, so no project may take them. */
+  static final Set<String> RESERVED_NAMES = Set.of("manual", "articles");
 
-  static final String RESERVED_RULE = "The project name 'manual' is reserved";
+  static final String RESERVED_RULE = "The project names 'manual' and 'articles' are reserved";
 
   /** A project to create. */
   public record CreateProject(
@@ -160,7 +160,7 @@ public class ProjectResource {
     if (!NAME.matcher(name).matches()) {
       throw badRequest(NAME_RULE);
     }
-    if (name.equalsIgnoreCase(RESERVED_NAME)) {
+    if (reserved(name)) {
       throw badRequest(RESERVED_RULE);
     }
     String url;
@@ -228,6 +228,10 @@ public class ProjectResource {
   }
 
   /** Names the backend reads as configuration, so they cannot be project credentials. */
+  private static boolean reserved(String name) {
+    return RESERVED_NAMES.contains(name.toLowerCase(Locale.ROOT));
+  }
+
   private static final Set<String> RESERVED_CREDENTIALS =
       Set.of(
           "CISYS_GIT_ALLOWED_HOSTS",
@@ -315,7 +319,7 @@ public class ProjectResource {
       throw badRequest(NAME_RULE);
     }
     // A project created before the name was reserved keeps it.
-    if (name.equalsIgnoreCase(RESERVED_NAME) && !name.equalsIgnoreCase(p.name)) {
+    if (reserved(name) && !name.equalsIgnoreCase(p.name)) {
       throw badRequest(RESERVED_RULE);
     }
     String url;

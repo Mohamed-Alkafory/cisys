@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import { Separator } from "./components/ui/separator";
 import PageHeader from "./components/layout/PageHeader";
 import BrandingPanel from "./BrandingPanel";
+import GeneralPanel from "./GeneralPanel";
 import PollingPanel from "./PollingPanel";
 import PullRequestPanel from "./PullRequestPanel";
 
@@ -211,8 +212,9 @@ export default function SettingsPanel({ api, branding, saveBranding }) {
   return (
     <main className="page-container">
       <PageHeader title="Settings" />
-      <Tabs defaultValue="retention" className="settings-tabs">
+      <Tabs defaultValue="general" className="settings-tabs">
         <TabsList>
+          <TabsTrigger value="general">General</TabsTrigger>
           {Object.entries(SECTIONS).map(([value, { title }]) => (
             <TabsTrigger key={value} value={value}>
               {title}
@@ -221,6 +223,13 @@ export default function SettingsPanel({ api, branding, saveBranding }) {
           <TabsTrigger value="network">Network</TabsTrigger>
           <TabsTrigger value="branding">Branding</TabsTrigger>
         </TabsList>
+        <TabsContent
+          value="general"
+          forceMount
+          className="data-[state=inactive]:hidden"
+        >
+          <GeneralPanel api={api} />
+        </TabsContent>
         {Object.keys(SECTIONS).map((value) => (
           <TabsContent
             key={value}
