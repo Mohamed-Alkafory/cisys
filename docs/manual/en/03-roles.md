@@ -47,6 +47,7 @@ The Member, Lead and Admin columns below refer to the caller's global Keycloak r
 | Manage build images                 | no     | no   | yes   |
 | Change branding                     | no     | no   | yes   |
 | Change settings                     | no     | no   | yes   |
+| View the audit log                  | no     | no   | yes   |
 
 * "Assigned" means the caller has a row in the project's `projectmember` table; for Start a build any row (`MEMBER` or `LEAD`) suffices, while Pin / unpin, Cancel of others' builds and project management require `LEAD`.
 * In the Cancel row, the global realm `lead` role additionally allows cancelling your own requested builds regardless of project rows.

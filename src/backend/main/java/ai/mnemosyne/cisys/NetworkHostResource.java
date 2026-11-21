@@ -38,6 +38,7 @@ public class NetworkHostResource {
   static final int MAX_NAME = 100;
 
   @Inject SecurityIdentity identity;
+  @Inject AuditService audit;
 
   /** A host an admin allows. */
   public record Input(String name, String host) {}
@@ -55,6 +56,10 @@ public class NetworkHostResource {
   /** Allows a host; 409 when it is already allowed. */
   @POST
   @Transactional
+  @Audited(
+      action = AuditAction.NETWORK_HOST_CREATE,
+      target = AuditTargetType.NETWORK_HOST,
+      summary = "Allow a network host")
   public Response create(Input input) {
     requireAdmin();
     String name = name(input);
@@ -65,19 +70,35 @@ public class NetworkHostResource {
     if (NetworkHost.count() >= NetworkAllowlist.MAX_ENTRIES) {
       throw tooMany();
     }
-    return Response.status(201).entity(view(add(name, host))).build();
+    NetworkHost created = add(name, host);
+    audit.success(
+        AuditAction.NETWORK_HOST_CREATE,
+        AuditTargetType.NETWORK_HOST,
+        created.id,
+        created.host,
+        (Long) null,
+        (String) null,
+        "Allowed network host " + created.host,
+        AuditDetails.of("name", created.name, "host", created.host));
+    return Response.status(201).entity(view(created)).build();
   }
 
   /** Changes an allowed host. */
   @PUT
   @Path("/{id}")
   @Transactional
+  @Audited(
+      action = AuditAction.NETWORK_HOST_UPDATE,
+      target = AuditTargetType.NETWORK_HOST,
+      summary = "Change a network host")
   public View update(@PathParam("id") Long id, Input input) {
     requireAdmin();
     NetworkHost h = NetworkHost.findById(id);
     if (h == null) {
       throw new NotFoundException();
     }
+    String previousName = h.name;
+    String previousHost = h.host;
     String name = name(input);
     String host = host(input);
     if (NetworkHost.count("host = ?1 and id <> ?2", host, id) > 0) {
@@ -85,6 +106,22 @@ public class NetworkHostResource {
     }
     h.name = name;
     h.host = host;
+    java.util.List<String> changed = new java.util.ArrayList<>();
+    if (!java.util.Objects.equals(previousName, h.name)) {
+      changed.add("name");
+    }
+    if (!java.util.Objects.equals(previousHost, h.host)) {
+      changed.add("host");
+    }
+    audit.success(
+        AuditAction.NETWORK_HOST_UPDATE,
+        AuditTargetType.NETWORK_HOST,
+        h.id,
+        h.host,
+        (Long) null,
+        (String) null,
+        "Changed network host " + h.host,
+        AuditDetails.of("changed", changed, "name", h.name, "host", h.host));
     return view(h);
   }
 
@@ -92,11 +129,28 @@ public class NetworkHostResource {
   @DELETE
   @Path("/{id}")
   @Transactional
+  @Audited(
+      action = AuditAction.NETWORK_HOST_DELETE,
+      target = AuditTargetType.NETWORK_HOST,
+      summary = "Remove a network host")
   public Response delete(@PathParam("id") Long id) {
     requireAdmin();
-    if (!NetworkHost.deleteById(id)) {
+    NetworkHost h = NetworkHost.findById(id);
+    if (h == null) {
       throw new NotFoundException();
     }
+    String name = h.name;
+    String host = h.host;
+    h.delete();
+    audit.success(
+        AuditAction.NETWORK_HOST_DELETE,
+        AuditTargetType.NETWORK_HOST,
+        id,
+        host,
+        (Long) null,
+        (String) null,
+        "Removed network host " + host,
+        AuditDetails.of("name", name, "host", host));
     return Response.noContent().build();
   }
 
@@ -113,6 +167,10 @@ public class NetworkHostResource {
   @Path("/templates/{id}")
   @Consumes(MediaType.WILDCARD)
   @Transactional
+  @Audited(
+      action = AuditAction.NETWORK_TEMPLATE_ADD,
+      target = AuditTargetType.NETWORK_TEMPLATE,
+      summary = "Add a network template")
   public List<View> addTemplate(@PathParam("id") String id) {
     requireAdmin();
     NetworkTemplate template = NetworkTemplate.find(id).orElseThrow(NotFoundException::new);
@@ -124,6 +182,15 @@ public class NetworkHostResource {
     for (String host : missing) {
       add(template.name(), host);
     }
+    audit.success(
+        AuditAction.NETWORK_TEMPLATE_ADD,
+        AuditTargetType.NETWORK_TEMPLATE,
+        template.id(),
+        template.name(),
+        (Long) null,
+        (String) null,
+        "Added the network template " + template.name(),
+        AuditDetails.of("template", template.name(), "added", missing));
     return views();
   }
 

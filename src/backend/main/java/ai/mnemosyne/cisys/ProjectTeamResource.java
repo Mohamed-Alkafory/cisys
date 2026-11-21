@@ -44,6 +44,7 @@ public class ProjectTeamResource {
   @Inject ProjectAccess access;
   @Inject ProjectMemberService memberService;
   @Inject UserDirectory directory;
+  @Inject AuditService audit;
 
   /** One membership entry shown to callers: the user's name and their project role. */
   public record MemberResponse(String username, String role) {}
@@ -78,8 +79,12 @@ public class ProjectTeamResource {
    */
   @POST
   @Transactional
+  @Audited(
+      action = AuditAction.PROJECT_MEMBER_ADD,
+      target = AuditTargetType.PROJECT_MEMBER,
+      summary = "Add project member")
   public Response add(@PathParam("projectId") Long id, AddMember input) {
-    memberService.lockProject(access.manageable(id));
+    Project project = memberService.lockProject(access.manageable(id));
     if (input == null || input.username() == null || input.username().isBlank()) {
       throw badRequest("username is required");
     }
@@ -98,6 +103,14 @@ public class ProjectTeamResource {
     m.role = role;
     m.createdAt = Instant.now();
     m.persist();
+    audit.success(
+        AuditAction.PROJECT_MEMBER_ADD,
+        AuditTargetType.PROJECT_MEMBER,
+        subject,
+        username,
+        project,
+        "Added " + username + " to project " + project.name,
+        AuditDetails.of("role", role.name()));
     return Response.status(201).entity(new MemberResponse(username, role.name())).build();
   }
 
@@ -109,6 +122,10 @@ public class ProjectTeamResource {
   @PUT
   @Path("/{username}")
   @Transactional
+  @Audited(
+      action = AuditAction.PROJECT_MEMBER_ROLE,
+      target = AuditTargetType.PROJECT_MEMBER,
+      summary = "Change project member role")
   public MemberResponse change(
       @PathParam("projectId") Long id, @PathParam("username") String username, ChangeRole input) {
     Project project = memberService.lockProject(access.manageable(id));
@@ -118,7 +135,18 @@ public class ProjectTeamResource {
     if (m.role == TeamRole.LEAD && role != TeamRole.LEAD) {
       memberService.requireAnotherLead(id);
     }
+    TeamRole previous = m.role;
     m.role = role;
+    if (previous != role) {
+      audit.success(
+          AuditAction.PROJECT_MEMBER_ROLE,
+          AuditTargetType.PROJECT_MEMBER,
+          m.subject,
+          username.trim(),
+          project,
+          "Changed " + username.trim() + "'s role in project " + project.name,
+          AuditDetails.of("previous", previous.name(), "current", role.name()));
+    }
     return new MemberResponse(username.trim(), role.name());
   }
 
@@ -130,6 +158,10 @@ public class ProjectTeamResource {
   @DELETE
   @Path("/{username}")
   @Transactional
+  @Audited(
+      action = AuditAction.PROJECT_MEMBER_REMOVE,
+      target = AuditTargetType.PROJECT_MEMBER,
+      summary = "Remove project member")
   public Response remove(@PathParam("projectId") Long id, @PathParam("username") String username) {
     Project project = memberService.lockProject(access.manageable(id));
     ProjectMember m = existing(id, username.trim());
@@ -137,7 +169,17 @@ public class ProjectTeamResource {
     if (m.role == TeamRole.LEAD) {
       memberService.requireAnotherLead(id);
     }
+    TeamRole removedRole = m.role;
+    String subject = m.subject;
     m.delete();
+    audit.success(
+        AuditAction.PROJECT_MEMBER_REMOVE,
+        AuditTargetType.PROJECT_MEMBER,
+        subject,
+        username.trim(),
+        project,
+        "Removed " + username.trim() + " from project " + project.name,
+        AuditDetails.of("role", removedRole.name()));
     return Response.noContent().build();
   }
 

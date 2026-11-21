@@ -42,6 +42,7 @@ public class BuildResource {
   @Inject BuildLogs logs;
   @Inject RepositoryUrlValidator repositoryUrls;
   @Inject ProjectAccess access;
+  @Inject AuditService audit;
 
   /** The image and the commands come from the branch's {@value Workflow#PATH}. */
   public record RunRequest(String branch, String credentialRef) {}
@@ -150,6 +151,7 @@ public class BuildResource {
   @PUT
   @Path("/{buildId}/pin")
   @Transactional
+  @Audited(action = AuditAction.BUILD_PIN, target = AuditTargetType.BUILD, summary = "Pin build")
   public BuildResponse pin(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
     return setPinned(id, buildId, true);
   }
@@ -158,24 +160,40 @@ public class BuildResource {
   @DELETE
   @Path("/{buildId}/pin")
   @Transactional
+  @Audited(
+      action = AuditAction.BUILD_UNPIN,
+      target = AuditTargetType.BUILD,
+      summary = "Unpin build")
   public BuildResponse unpin(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
     return setPinned(id, buildId, false);
   }
 
   /** Project LEADs and global admins may pin. */
   private BuildResponse setPinned(Long id, Long buildId, boolean pinned) {
-    access.editable(id);
+    Project p = access.editable(id);
     Build b = Build.findById(buildId);
     if (b == null || !id.equals(b.projectId)) {
       throw new NotFoundException();
     }
     b.pinned = pinned;
+    audit.success(
+        pinned ? AuditAction.BUILD_PIN : AuditAction.BUILD_UNPIN,
+        AuditTargetType.BUILD,
+        b.id,
+        "#" + b.number,
+        p,
+        (pinned ? "Pinned" : "Unpinned") + " build #" + b.number,
+        AuditDetails.of("pinned", pinned, "branch", b.branch));
     return response(b, true);
   }
 
   /** Global admins, project LEADs, or a requester with a global lead role may cancel. */
   @POST
   @Path("/{buildId}/cancel")
+  @Audited(
+      action = AuditAction.BUILD_CANCEL,
+      target = AuditTargetType.BUILD,
+      summary = "Cancel build")
   public BuildResponse cancel(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
     Project p = access.visible(id);
     Build b = Build.findById(buildId);
@@ -192,6 +210,14 @@ public class BuildResource {
               .entity(java.util.Map.of("error", "The build has already finished."))
               .build());
     }
+    audit.bestEffortSuccess(
+        AuditAction.BUILD_CANCEL,
+        AuditTargetType.BUILD,
+        b.id,
+        "#" + b.number,
+        p,
+        "Cancelled build #" + b.number,
+        AuditDetails.of("branch", b.branch));
     return response(
         io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
             .call(() -> Build.<Build>findById(buildId)),
@@ -200,6 +226,10 @@ public class BuildResource {
 
   /** Queues a build of a branch. Project members (any role) and global admins. */
   @POST
+  @Audited(
+      action = AuditAction.BUILD_START,
+      target = AuditTargetType.BUILD,
+      summary = "Start build")
   public BuildResponse start(@PathParam("projectId") Long id, RunRequest input) {
     Project p = access.buildable(id);
     if (input == null
@@ -222,7 +252,22 @@ public class BuildResource {
       credentialRef = p.credentialRef;
     }
     RunRequest request = new RunRequest(input.branch(), credentialRef);
-    return response(runner.submit(id, access.subject(), p.repositoryUrl, request));
+    Build build = runner.submit(id, access.subject(), p.repositoryUrl, request);
+    audit.bestEffortSuccess(
+        AuditAction.BUILD_START,
+        AuditTargetType.BUILD,
+        build.id,
+        "#" + build.number,
+        p,
+        "Started build #" + build.number,
+        AuditDetails.of(
+            "branch",
+            build.branch,
+            "trigger",
+            build.trigger.name(),
+            "credential",
+            build.credentialRef != null));
+    return response(build);
   }
 
   /**
@@ -231,6 +276,10 @@ public class BuildResource {
    */
   @POST
   @Path("/{buildId}/rerun")
+  @Audited(
+      action = AuditAction.BUILD_RERUN,
+      target = AuditTargetType.BUILD,
+      summary = "Rerun build")
   public BuildResponse rerun(@PathParam("projectId") Long id, @PathParam("buildId") Long buildId) {
     Project p = access.buildable(id);
     Build b = Build.findById(buildId);
@@ -250,7 +299,7 @@ public class BuildResource {
     } catch (IllegalArgumentException e) {
       throw new BadRequestException(e.getMessage());
     }
-    return response(
+    Build build =
         runner.submit(
             id,
             access.subject(),
@@ -261,7 +310,20 @@ public class BuildResource {
             Build.Trigger.MANUAL,
             null,
             null,
-            null));
+            null);
+    audit.bestEffortSuccess(
+        AuditAction.BUILD_RERUN,
+        AuditTargetType.BUILD,
+        build.id,
+        "#" + build.number,
+        p,
+        "Reran build #" + b.number + " as #" + build.number,
+        AuditDetails.of(
+            "sourceBuildId", b.id,
+            "branch", build.branch,
+            "revision", build.revision,
+            "credential", build.credentialRef != null));
+    return response(build);
   }
 
   /** Why the build cannot be run again, or null when it can. */

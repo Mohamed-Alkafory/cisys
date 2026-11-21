@@ -1383,3 +1383,114 @@ body {
 .article-preview {
   min-height: 20rem;
 }
+
+/* Audit log (admin) */
+.audit-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.audit-filters .form-field {
+  min-width: 0;
+}
+@media (max-width: 860px) {
+  .audit-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .audit-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.audit-detail {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: 0.4rem 1rem;
+  margin: 0 0 1rem;
+}
+.audit-event {
+  border-top: 1px solid var(--card-border);
+}
+.audit-event .user-row {
+  border-top: 0;
+}
+.audit-inline-detail {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 0.5rem;
+}
+.audit-inline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.audit-inline-title {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.audit-inline-subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+}
+.audit-inline-detail .audit-detail {
+  margin-bottom: 0.75rem;
+}
+.audit-paging {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding-top: 1rem;
+  font-size: 0.875rem;
+}
+.audit-page-size {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.audit-page-size label {
+  white-space: nowrap;
+}
+.audit-page-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.875rem;
+  color: var(--muted-foreground);
+}
+.audit-page-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+@media (max-width: 560px) {
+  .audit-page-buttons {
+    justify-content: flex-end;
+    margin-left: 0;
+    width: 100%;
+  }
+}
+.audit-detail dt {
+  font-weight: 600;
+}
+.audit-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.audit-json {
+  margin: 0;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--muted);
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+}

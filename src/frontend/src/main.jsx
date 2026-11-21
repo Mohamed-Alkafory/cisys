@@ -45,6 +45,7 @@ import PageHeader from "./components/layout/PageHeader";
 import ImagesPanel from "./ImagesPanel";
 import SettingsPanel from "./SettingsPanel";
 import UsersPanel from "./UsersPanel";
+import AuditPanel from "./AuditPanel";
 import BuildStatistics from "./BuildStatistics";
 import PublicHome from "./PublicHome";
 import PublicStats from "./PublicStats";
@@ -734,6 +735,16 @@ export function App() {
                 Settings
               </button>
             )}
+            {user.roles.includes("admin") && (
+              <button
+                type="button"
+                className="nav-link"
+                aria-current={onPage("audit") ? "page" : undefined}
+                onClick={() => go("audit")}
+              >
+                Audit
+              </button>
+            )}
           </nav>
         </div>
         <div className="header-actions">
@@ -869,6 +880,8 @@ export function App() {
             return saved;
           }}
         />
+      ) : page === "audit" && user.roles.includes("admin") ? (
+        <AuditPanel api={api} />
       ) : (
         <main id="projects" className="page-container">
           <PageHeader

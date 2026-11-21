@@ -52,6 +52,10 @@ These credentials, HTTP, and Keycloak development mode are for a trusted local m
 
 Private projects and their build logs are visible only to their creator and admins. Starting builds requires the Lead or Admin role. Changing branding, and using Git credential references, require the Admin role. The full endpoint mapping is in `docs/SECURITY.md`.
 
+## Audit log
+
+Administrative, ownership, security-sensitive and privileged build actions are recorded with their actor and target. Only admins can read the **Audit** page and the `/api/audit` API. Password resets are recorded, but passwords, tokens, secrets, request bodies, build logs and image data never are. See the **Audit log** chapter for the event catalog, outcomes, retention and the limits of the audit guarantee.
+
 ## Monitoring
 
 The backend answers four monitoring endpoints without a token on the management interface, a separate HTTP server on port `9000`, so a probe or a Prometheus agent can use them:

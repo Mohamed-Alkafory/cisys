@@ -48,6 +48,7 @@ public class SettingsResource {
   @Inject BuildRunner runner;
   @Inject CommitPoller polls;
   @Inject PullRequestPoller pullRequests;
+  @Inject AuditService audit;
 
   /** 0 turns a limit off. */
   public record Retention(Integer maxAgeDays, Integer maxBuilds) {}
@@ -89,6 +90,10 @@ public class SettingsResource {
   @PUT
   @Path("/general")
   @Transactional
+  @Audited(
+      action = AuditAction.SETTINGS_GENERAL_UPDATE,
+      target = AuditTargetType.SETTINGS,
+      summary = "Update general settings")
   public General updateGeneral(General input) {
     requireAdmin();
     if (input == null || input.articleEditors() == null) {
@@ -99,7 +104,21 @@ public class SettingsResource {
       s = new Settings();
       s.persist();
     }
+    Settings.ArticleEditors previousEditors = s.articleEditors;
     s.articleEditors = input.articleEditors();
+    audit.success(
+        AuditAction.SETTINGS_GENERAL_UPDATE,
+        AuditTargetType.SETTINGS,
+        1L,
+        "general",
+        (Long) null,
+        (String) null,
+        "Updated the general settings",
+        AuditDetails.of(
+            "articleEditorsBefore",
+            previousEditors.name(),
+            "articleEditorsAfter",
+            s.articleEditors.name()));
     return new General(s.articleEditors);
   }
 
@@ -116,6 +135,10 @@ public class SettingsResource {
   @PUT
   @Path("/retention")
   @Transactional
+  @Audited(
+      action = AuditAction.SETTINGS_RETENTION_UPDATE,
+      target = AuditTargetType.SETTINGS,
+      summary = "Update retention settings")
   public Retention updateRetention(Retention input) {
     requireAdmin();
     if (input == null
@@ -132,8 +155,27 @@ public class SettingsResource {
       s = new Settings();
       s.persist();
     }
+    int previousDays = s.retentionDays;
+    int previousBuilds = s.retentionMaxBuilds;
     s.retentionDays = input.maxAgeDays();
     s.retentionMaxBuilds = input.maxBuilds();
+    audit.success(
+        AuditAction.SETTINGS_RETENTION_UPDATE,
+        AuditTargetType.SETTINGS,
+        1L,
+        "retention",
+        (Long) null,
+        (String) null,
+        "Updated the retention settings",
+        AuditDetails.of(
+            "maxAgeDaysBefore",
+            previousDays,
+            "maxAgeDaysAfter",
+            s.retentionDays,
+            "maxBuildsBefore",
+            previousBuilds,
+            "maxBuildsAfter",
+            s.retentionMaxBuilds));
     return new Retention(s.retentionDays, s.retentionMaxBuilds);
   }
 
@@ -149,6 +191,10 @@ public class SettingsResource {
   @PUT
   @Path("/builds")
   @Transactional
+  @Audited(
+      action = AuditAction.SETTINGS_BUILDS_UPDATE,
+      target = AuditTargetType.SETTINGS,
+      summary = "Update build settings")
   public Builds updateBuilds(Builds input) {
     requireAdmin();
     if (input == null
@@ -171,9 +217,33 @@ public class SettingsResource {
       s = new Settings();
       s.persist();
     }
+    Integer previousConcurrent = s.maxConcurrentBuilds;
+    Integer previousQueued = s.maxQueuedBuilds;
+    Integer previousTimeout = s.buildTimeoutMinutes;
     s.maxConcurrentBuilds = input.maxConcurrent();
     s.maxQueuedBuilds = input.maxQueued();
     s.buildTimeoutMinutes = input.timeoutMinutes();
+    audit.success(
+        AuditAction.SETTINGS_BUILDS_UPDATE,
+        AuditTargetType.SETTINGS,
+        1L,
+        "builds",
+        (Long) null,
+        (String) null,
+        "Updated the build settings",
+        AuditDetails.of(
+            "maxConcurrentBefore",
+            previousConcurrent,
+            "maxConcurrentAfter",
+            s.maxConcurrentBuilds,
+            "maxQueuedBefore",
+            previousQueued,
+            "maxQueuedAfter",
+            s.maxQueuedBuilds,
+            "timeoutMinutesBefore",
+            previousTimeout,
+            "timeoutMinutesAfter",
+            s.buildTimeoutMinutes));
     return new Builds(s.maxConcurrentBuilds, s.maxQueuedBuilds, s.buildTimeoutMinutes);
   }
 
@@ -189,6 +259,10 @@ public class SettingsResource {
   @PUT
   @Path("/checkout")
   @Transactional
+  @Audited(
+      action = AuditAction.SETTINGS_CHECKOUT_UPDATE,
+      target = AuditTargetType.SETTINGS,
+      summary = "Update checkout settings")
   public Checkout updateCheckout(Checkout input) {
     requireAdmin();
     if (input == null
@@ -206,8 +280,27 @@ public class SettingsResource {
       s = new Settings();
       s.persist();
     }
+    Integer previousSize = s.maxCheckoutMib;
+    Integer previousFiles = s.maxCheckoutFiles;
     s.maxCheckoutMib = input.maxSizeMib();
     s.maxCheckoutFiles = input.maxFiles();
+    audit.success(
+        AuditAction.SETTINGS_CHECKOUT_UPDATE,
+        AuditTargetType.SETTINGS,
+        1L,
+        "checkout",
+        (Long) null,
+        (String) null,
+        "Updated the checkout settings",
+        AuditDetails.of(
+            "maxSizeMibBefore",
+            previousSize,
+            "maxSizeMibAfter",
+            s.maxCheckoutMib,
+            "maxFilesBefore",
+            previousFiles,
+            "maxFilesAfter",
+            s.maxCheckoutFiles));
     return new Checkout(s.maxCheckoutMib, s.maxCheckoutFiles);
   }
 
@@ -223,6 +316,10 @@ public class SettingsResource {
   @PUT
   @Path("/performance")
   @Transactional
+  @Audited(
+      action = AuditAction.SETTINGS_PERFORMANCE_UPDATE,
+      target = AuditTargetType.SETTINGS,
+      summary = "Update performance settings")
   public Performance updatePerformance(Performance input) {
     requireAdmin();
     if (input == null
@@ -243,9 +340,33 @@ public class SettingsResource {
       s = new Settings();
       s.persist();
     }
+    Integer previousMemory = s.maxBuildMemoryMib;
+    Integer previousCpus = s.maxBuildCpus;
+    Integer previousPids = s.maxBuildPids;
     s.maxBuildMemoryMib = input.maxMemoryMib();
     s.maxBuildCpus = input.maxCpus();
     s.maxBuildPids = input.maxPids();
+    audit.success(
+        AuditAction.SETTINGS_PERFORMANCE_UPDATE,
+        AuditTargetType.SETTINGS,
+        1L,
+        "performance",
+        (Long) null,
+        (String) null,
+        "Updated the performance settings",
+        AuditDetails.of(
+            "maxMemoryMibBefore",
+            previousMemory,
+            "maxMemoryMibAfter",
+            s.maxBuildMemoryMib,
+            "maxCpusBefore",
+            previousCpus,
+            "maxCpusAfter",
+            s.maxBuildCpus,
+            "maxPidsBefore",
+            previousPids,
+            "maxPidsAfter",
+            s.maxBuildPids));
     return new Performance(s.maxBuildMemoryMib, s.maxBuildCpus, s.maxBuildPids);
   }
 
@@ -266,6 +387,10 @@ public class SettingsResource {
   @PUT
   @Path("/polling")
   @Transactional
+  @Audited(
+      action = AuditAction.SETTINGS_POLLING_UPDATE,
+      target = AuditTargetType.SETTINGS,
+      summary = "Update polling settings")
   public Polling updatePolling(Polling input) {
     requireAdmin();
     if (input == null || input.enabled() == null) {
@@ -292,6 +417,11 @@ public class SettingsResource {
       s = new Settings();
       s.persist();
     }
+    boolean previousEnabled = s.pollEnabled;
+    Settings.Granularity previousGranularity = s.pollGranularity;
+    Settings.Scope previousScope = s.pollScope;
+    Integer previousInterval = s.pollIntervalSeconds;
+    boolean previousMirror = s.mirrorManualBuilds;
     s.pollEnabled = input.enabled();
     s.pollGranularity = input.granularity();
     s.pollScope = input.scope();
@@ -300,6 +430,35 @@ public class SettingsResource {
     if (input.mirrorManualBuilds() != null) {
       s.mirrorManualBuilds = input.mirrorManualBuilds();
     }
+    audit.success(
+        AuditAction.SETTINGS_POLLING_UPDATE,
+        AuditTargetType.SETTINGS,
+        1L,
+        "polling",
+        (Long) null,
+        (String) null,
+        "Updated the automatic-build settings",
+        AuditDetails.of(
+            "enabledBefore",
+            previousEnabled,
+            "enabledAfter",
+            s.pollEnabled,
+            "granularityBefore",
+            previousGranularity.name(),
+            "granularityAfter",
+            s.pollGranularity.name(),
+            "scopeBefore",
+            previousScope.name(),
+            "scopeAfter",
+            s.pollScope.name(),
+            "intervalSecondsBefore",
+            previousInterval,
+            "intervalSecondsAfter",
+            s.pollIntervalSeconds,
+            "mirrorManualBuildsBefore",
+            previousMirror,
+            "mirrorManualBuildsAfter",
+            s.mirrorManualBuilds));
     return new Polling(
         s.pollEnabled, s.pollGranularity, s.pollScope, effectiveInterval(s), s.mirrorManualBuilds);
   }
@@ -319,6 +478,10 @@ public class SettingsResource {
    */
   @PUT
   @Path("/pull-requests")
+  @Audited(
+      action = AuditAction.SETTINGS_PULL_REQUESTS_UPDATE,
+      target = AuditTargetType.SETTINGS,
+      summary = "Update pull request build settings")
   public PullRequests updatePullRequests(PullRequests input) {
     requireAdmin();
     if (input == null || input.enabled() == null) {
@@ -338,11 +501,24 @@ public class SettingsResource {
             s.persist();
           }
           boolean changed = s.pullRequestsEnabled != input.enabled();
+          boolean previous = s.pullRequestsEnabled;
           s.pullRequestsEnabled = input.enabled();
           if (changed) {
             Project.update("pullRequestBaseline = null");
             ProjectPullRequest.deleteAll();
           }
+          audit.success(
+              AuditAction.SETTINGS_PULL_REQUESTS_UPDATE,
+              AuditTargetType.SETTINGS,
+              1L,
+              "pull-requests",
+              (Long) null,
+              (String) null,
+              "Updated the pull request build setting",
+              AuditDetails.of(
+                  "enabledBefore", previous,
+                  "enabledAfter", s.pullRequestsEnabled,
+                  "changed", changed));
         });
     return new PullRequests(input.enabled());
   }

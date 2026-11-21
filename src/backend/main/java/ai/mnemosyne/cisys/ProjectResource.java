@@ -50,6 +50,7 @@ public class ProjectResource {
   @Inject RepositoryUrlValidator repositoryUrls;
   @Inject RepositoryMirror mirrors;
   @Inject ProjectAccess access;
+  @Inject AuditService audit;
 
   private JsonWebToken token() {
     if (identity.getPrincipal() instanceof JsonWebToken jwt) {
@@ -64,6 +65,15 @@ public class ProjectResource {
       throw new NotAuthorizedException("Bearer");
     }
     return sub;
+  }
+
+  /** The token's display name, or the subject when it has none. */
+  private String username() {
+    Object claim = token().getClaim("preferred_username");
+    if (claim == null || String.valueOf(claim).isBlank()) {
+      return subject();
+    }
+    return String.valueOf(claim);
   }
 
   private void requireCisysRole() {
@@ -143,6 +153,10 @@ public class ProjectResource {
   @POST
   @Path("/projects")
   @Transactional
+  @Audited(
+      action = AuditAction.PROJECT_CREATE,
+      target = AuditTargetType.PROJECT,
+      summary = "Create project")
   public Response create(CreateProject input) {
     if (!(identity.hasRole("lead") || identity.hasRole("admin"))) {
       throw new ForbiddenException();
@@ -208,6 +222,25 @@ public class ProjectResource {
     lead.role = ProjectMember.TeamRole.LEAD;
     lead.createdAt = java.time.Instant.now();
     lead.persist();
+    audit.success(
+        AuditAction.PROJECT_CREATE,
+        AuditTargetType.PROJECT,
+        p.id,
+        p.name,
+        p,
+        "Created project " + p.name,
+        AuditDetails.of(
+            "name", p.name,
+            "repositoryUrl", p.repositoryUrl,
+            "privateRepository", p.privateRepository));
+    audit.success(
+        AuditAction.PROJECT_MEMBER_ADD,
+        AuditTargetType.PROJECT_MEMBER,
+        lead.subject,
+        username(),
+        p,
+        "Added the project creator as LEAD",
+        AuditDetails.of("role", lead.role.name(), "initial", true));
     return Response.status(201).entity(response(p)).build();
   }
 
@@ -215,6 +248,10 @@ public class ProjectResource {
   @PUT
   @Path("/projects/{id}/credential")
   @Transactional
+  @Audited(
+      action = AuditAction.PROJECT_CREDENTIAL_UPDATE,
+      target = AuditTargetType.PROJECT,
+      summary = "Change project credential")
   public ProjectResponse credential(@PathParam("id") Long id, Credential input) {
     if (!identity.hasRole("admin")) {
       throw new ForbiddenException();
@@ -223,7 +260,20 @@ public class ProjectResource {
     if (p == null) {
       throw new NotFoundException();
     }
+    String previous = p.credentialRef;
     p.credentialRef = credential(p.privateRepository, input == null ? null : input.credentialRef());
+    if (!Objects.equals(previous, p.credentialRef)) {
+      audit.success(
+          AuditAction.PROJECT_CREDENTIAL_UPDATE,
+          AuditTargetType.PROJECT,
+          p.id,
+          p.name,
+          p,
+          p.credentialRef == null
+              ? "Cleared the project credential reference"
+              : "Changed the project credential reference",
+          AuditDetails.of("cleared", p.credentialRef == null));
+    }
     return response(p);
   }
 
@@ -260,6 +310,10 @@ public class ProjectResource {
   /** Deletes a project and its builds; the database unlinks their logs. Global admins only. */
   @DELETE
   @Path("/projects/{id}")
+  @Audited(
+      action = AuditAction.PROJECT_DELETE,
+      target = AuditTargetType.PROJECT,
+      summary = "Delete project")
   public Response delete(@PathParam("id") Long id) {
     QuarkusTransaction.requiringNew()
         .run(() -> {
@@ -270,9 +324,22 @@ public class ProjectResource {
             throw conflict(
                 "A build is queued or running. Delete the project when its builds finish.");
           }
+          String name = p.name;
+          String repositoryUrl = p.repositoryUrl;
+          boolean privateRepository = p.privateRepository;
           ProjectBranch.delete("projectId", id);
           ProjectPullRequest.delete("projectId", id);
           p.delete();
+          audit.success(
+              AuditAction.PROJECT_DELETE,
+              AuditTargetType.PROJECT,
+              id,
+              name,
+              id,
+              name,
+              "Deleted project " + name,
+              AuditDetails.of(
+                  "repositoryUrl", repositoryUrl, "privateRepository", privateRepository));
         });
     // After commit, so the queue lock is released: the poller may hold the mirror lock while it
     // waits for the queue lock. If the lock cannot be taken the next tick's orphan sweep removes
@@ -303,9 +370,17 @@ public class ProjectResource {
   @PUT
   @Path("/projects/{id}")
   @Transactional
+  @Audited(
+      action = AuditAction.PROJECT_UPDATE,
+      target = AuditTargetType.PROJECT,
+      summary = "Update project")
   public Response update(@PathParam("id") Long id, UpdateProject input) {
     boolean admin = identity.hasRole("admin");
     Project p = access.editable(id);
+    String previousName = p.name;
+    String previousUrl = p.repositoryUrl;
+    boolean previousPrivate = p.privateRepository;
+    String previousCredential = p.credentialRef;
     if (input == null
         || input.name() == null
         || input.name().isBlank()
@@ -367,6 +442,54 @@ public class ProjectResource {
       ProjectPullRequest.delete("projectId", id);
       p.pullRequestProvider = null;
       p.pullRequestBaseline = null;
+    }
+    java.util.List<String> changed = new java.util.ArrayList<>();
+    if (!Objects.equals(previousName, p.name)) {
+      changed.add("name");
+    }
+    if (!Objects.equals(previousUrl, p.repositoryUrl)) {
+      changed.add("repositoryUrl");
+    }
+    if (previousPrivate != p.privateRepository) {
+      changed.add("privateRepository");
+    }
+    if (!changed.isEmpty()) {
+      audit.success(
+          AuditAction.PROJECT_UPDATE,
+          AuditTargetType.PROJECT,
+          p.id,
+          p.name,
+          p,
+          "Updated project " + p.name,
+          AuditDetails.of(
+              "changed",
+              changed,
+              "nameBefore",
+              previousName,
+              "nameAfter",
+              p.name,
+              "repositoryUrlBefore",
+              previousUrl,
+              "repositoryUrlAfter",
+              p.repositoryUrl,
+              "privateRepositoryBefore",
+              previousPrivate,
+              "privateRepositoryAfter",
+              p.privateRepository,
+              "repositoryChanged",
+              urlChanged));
+    }
+    if (!Objects.equals(previousCredential, p.credentialRef)) {
+      audit.success(
+          AuditAction.PROJECT_CREDENTIAL_UPDATE,
+          AuditTargetType.PROJECT,
+          p.id,
+          p.name,
+          p,
+          p.credentialRef == null
+              ? "Cleared the project credential reference"
+              : "Changed the project credential reference",
+          AuditDetails.of("cleared", p.credentialRef == null));
     }
     return Response.ok(response(p)).build();
   }

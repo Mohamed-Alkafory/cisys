@@ -40,6 +40,7 @@ import java.util.TreeSet;
 public class ImageResource {
   @Inject SecurityIdentity identity;
   @Inject BuildRunner runner;
+  @Inject AuditService audit;
 
   /** The images allowed for builds. */
   public record Selection(List<String> images) {}
@@ -80,6 +81,7 @@ public class ImageResource {
   /** Pulls an image into the local container runtime. */
   @POST
   @Path("/local")
+  @Audited(action = AuditAction.IMAGE_PULL, target = AuditTargetType.IMAGE, summary = "Pull image")
   public List<LocalImage> pull(Pull input) {
     requireAdmin();
     String name = validName(input == null ? null : input.name());
@@ -92,12 +94,25 @@ public class ImageResource {
     if (failed.isPresent()) {
       throw failure("Unable to pull " + name + ": " + failed.get());
     }
+    audit.bestEffortSuccess(
+        AuditAction.IMAGE_PULL,
+        AuditTargetType.IMAGE,
+        name,
+        name,
+        (Long) null,
+        (String) null,
+        "Pulled image " + name,
+        AuditDetails.of());
     return local();
   }
 
   /** Removes an image from the local container runtime, and from the allowed images. */
   @DELETE
   @Path("/local")
+  @Audited(
+      action = AuditAction.IMAGE_REMOVE,
+      target = AuditTargetType.IMAGE,
+      summary = "Remove image")
   public List<LocalImage> remove(@QueryParam("name") String name) {
     requireAdmin();
     validName(name);
@@ -110,19 +125,34 @@ public class ImageResource {
     if (failed.isPresent()) {
       throw failure("Unable to remove " + name + ": " + failed.get());
     }
-    io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
-        .run(() -> AllowedImage.deleteById(name));
+    boolean allowed =
+        io.quarkus.narayana.jta.QuarkusTransaction.requiringNew()
+            .call(() -> AllowedImage.deleteById(name));
+    audit.bestEffortSuccess(
+        AuditAction.IMAGE_REMOVE,
+        AuditTargetType.IMAGE,
+        name,
+        name,
+        (Long) null,
+        (String) null,
+        "Removed image " + name,
+        AuditDetails.of("removedFromAllowlist", allowed));
     return local();
   }
 
   /** Replaces the set of allowed images. */
   @PUT
   @Transactional
+  @Audited(
+      action = AuditAction.IMAGE_ALLOWLIST_UPDATE,
+      target = AuditTargetType.IMAGE,
+      summary = "Update the allowed images")
   public List<String> update(Selection input) {
     requireAdmin();
     if (input == null || input.images() == null || input.images().size() > 500) {
       throw new BadRequestException("A list of images is required");
     }
+    Set<String> before = new TreeSet<>(names());
     Set<String> wanted = new TreeSet<>();
     for (String name : input.images()) {
       wanted.add(validName(name));
@@ -135,6 +165,20 @@ public class ImageResource {
         image.persist();
       }
     }
+    Set<String> after = new TreeSet<>(names());
+    Set<String> added = new TreeSet<>(wanted);
+    added.removeAll(before);
+    Set<String> removed = new TreeSet<>(before);
+    removed.removeAll(after);
+    audit.success(
+        AuditAction.IMAGE_ALLOWLIST_UPDATE,
+        AuditTargetType.IMAGE,
+        "allowlist",
+        "allowed images",
+        (Long) null,
+        (String) null,
+        "Updated the allowed images",
+        AuditDetails.of("added", added, "removed", removed, "total", after.size()));
     return names();
   }
 

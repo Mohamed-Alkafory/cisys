@@ -107,6 +107,27 @@ erDiagram
         TIMESTAMP updated_at
     }
 
+    AUDITEVENT {
+        BIGINT id PK
+        TIMESTAMP occurred_at
+        STRING action
+        STRING outcome
+        STRING actor_subject
+        STRING actor_username
+        STRING actor_roles
+        BIGINT project_id
+        STRING project_name
+        STRING target_type
+        STRING target_id
+        STRING target_name
+        STRING summary
+        JSONB details
+        STRING request_id
+        STRING http_method
+        STRING path
+        INTEGER status_code
+    }
+
     PROJECT ||--o{ BUILD : has
     BUILD ||--o{ BUILD_COMMENT : has
     PROJECT ||--o{ PROJECT_BRANCH : watches
@@ -129,6 +150,7 @@ erDiagram
 * `SETTINGS.poll_enabled` (default true), `poll_granularity` (`PER_COMMIT` or `TIP`), `poll_scope` (`WORKFLOW` or `MAIN_ONLY`) and `poll_interval_seconds` (null uses `cisys.poll.every`) hold the global automatic-build settings.
 * `SETTINGS.article_editors` (`ADMIN`, `LEAD` or `MEMBER`, default `ADMIN`) decides who may create, edit and delete articles.
 * `ARTICLE` rows are markdown articles readable by anyone. `author_subject` holds the `sub` of the user who created the article.
+* `AUDITEVENT` is the append-only audit log. It has **no foreign keys**: `actor_subject`, `actor_username`, `project_id`, `project_name`, `target_id` and `target_name` are snapshots taken when the action happened, so an entry survives the deletion of its project or user. `action` holds a stable action code such as `project.create`, `outcome` is `SUCCESS`, `DENIED` or `FAILURE`, and `details` is a JSON object with allowlisted, redacted values only. `request_id`, `http_method`, `path` and `status_code` describe the request when one was available. Indexes cover time, actor, action, project, outcome and target. The application inserts events but never updates or deletes them and exposes no write API; retention and archive policies are operator-owned.
 * `BRANDING` and `SETTINGS` are singleton rows with `id = 1`. Until `SETTINGS` is first saved, its defaults apply.
 * `PROJECT_MEMBER.subject` is the Keycloak subject of a user assigned to the project; a subject is assigned once per project, and the rows are deleted with the project.
 * Users, roles and credentials live in Keycloak and are not stored in the cisys database. The Users page changes them through the Keycloak Admin REST API.

@@ -51,6 +51,7 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `PUT /api/users/{id}`                     | no                        | a member's own projects | yes |
 | `PUT /api/users/{id}/password`            | no                        | members of own projects | yes |
 | `DELETE /api/users/{id}`                  | no                        | no                   | yes, not themselves |
+| `GET /api/audit`, `GET /api/audit/{id}`   | no                        | no                   | yes |
 
 Without signing in, `GET /api/branding/public`, `GET /api/branding/logo`, `GET /api/stats/public`, the public project page (`GET /api/project-pages/{name}`, `GET /api/project-pages/{name}/builds/{buildId}` with its build logs and comments) `GET /api/project-pages/{name}/branches` and `GET /api/project-pages/{name}/commits` for public projects, and the articles (`GET /api/articles`, `GET /api/articles/{id}`) are readable. The project page accepts an optional `branch` query parameter, which filters the builds but applies the same public/private visibility rules. The statistics are aggregate counts computed from public projects only (public projects, their builds by status, success rate, last build time). Private projects and their builds are left out of every number, and no names, repository URLs, logs or users are exposed. The server caches the result for `STATS_CACHE_SECONDS` (default 30) seconds. The branch endpoint returns remote branch names for public projects. For a private project with a credential reference it reads the repository as that project; without one it requires the same access as the page (project member or admin) and returns only the branches that already have builds, so the private repository is not read; anonymous callers and users without access receive `404`. The commits endpoint takes a required `branch` plus optional `skip` and `limit` parameters (default 50, maximum 100; `skip` must be between 0 and 5000), applies the same visibility rules, and returns commit metadata with the builds of each commit. It reads the project's mirror when available. When the mirror directory or branch is absent, or a private project has no credential reference, it returns only commits that already have builds and reports `HISTORY_UNAVAILABLE`; `HISTORY_LIMIT` is reported only when a commit beyond the newest 5000 exists. A genuine mirror read failure is `502`, and a busy mirror is `503` with `Retry-After`. Anonymous callers and users without access receive `404` for private projects.
 
@@ -70,6 +71,18 @@ The public project page and the public statistics never include them.
 The private flag controls visibility inside cisys; it does not grant or restrict Git access.
 
 Automatic builds fetch each project's repository on a server-side timer; nothing in the repository or a provider needs to reach cisys, so there is no inbound push endpoint to authenticate. Polling uses the same host, port and redirect rules as a manual build, and it revalidates the URL immediately before every fetch because DNS can change after a project was saved.
+
+## Audit log
+
+Administrative, ownership, security-sensitive and privileged build actions are recorded in the `auditevent` table, including their actor, project and target snapshots. Only global admins may read the log through `GET /api/audit` and `GET /api/audit/{id}`; the frontend hides the **Audit** page from everyone else, and the backend enforces the same role on every request. There is no write API: the audited actions produce the events, and the application never updates or deletes them.
+
+`DENIED` events record authenticated callers whose annotated mutation answered `403`; `FAILURE` events record `409` and `502`. `400`, `401`, `404` and `429` are not recorded, and anonymous callers are never recorded. The response to the original request is never changed by the audit write.
+
+The log holds only allowlisted, redacted details. It never stores passwords, tokens, client secrets, credential values or credential references (only whether a credential was cleared), request or response bodies, build logs, workflows, base64 images or sensitive headers. Values that look like a JWT or a `data:` URL are replaced; long strings and collections are capped.
+
+Database-only actions write the event in the same transaction as the change, so an audit failure rolls the change back. Success events for external effects (Keycloak user operations, image pulls/removals, build submission and cancellation) are written best-effort after the effect succeeds; a failed audit insert is logged and does not fail the operation, which leaves a documented reconciliation gap. Denied and failed events are best-effort too.
+
+There is no automatic retention or deletion. The table grows with administrative activity and build starts, so include it in backups, monitor its size, and apply an operator-owned archive or delete policy if required. Rows are append-only only at the application level: a database administrator can still change them, so use database permissions, backups or external log shipping when audit evidence must resist insiders. See the **Audit log** chapter in the manual for the event catalog and API.
 
 ## Authentication
 

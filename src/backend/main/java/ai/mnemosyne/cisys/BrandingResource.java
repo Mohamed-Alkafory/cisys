@@ -34,6 +34,7 @@ import java.util.Base64;
 public class BrandingResource {
   @Inject SecurityIdentity identity;
   @Inject EntityManager em;
+  @Inject AuditService audit;
 
   /**
    * The name and colors only, readable without signing in so the Keycloak login pages can use them.
@@ -88,6 +89,10 @@ public class BrandingResource {
   /** Saves the branding. Admins only. */
   @PUT
   @Transactional
+  @Audited(
+      action = AuditAction.BRANDING_UPDATE,
+      target = AuditTargetType.BRANDING,
+      summary = "Update branding")
   public Branding update(Input input) {
     if (!identity.hasRole("admin")) {
       throw new ForbiddenException();
@@ -108,6 +113,12 @@ public class BrandingResource {
       b = new Branding();
       em.persist(b);
     }
+    String previousName = b.name;
+    String previousHeader = b.headerColor;
+    String previousHeading = b.headingColor;
+    String previousButton = b.buttonColor;
+    String previousLogo = b.logo;
+    String previousBackground = b.background;
     b.name = input.name().trim();
     b.headerColor = input.headerColor();
     b.headingColor = input.headingColor();
@@ -115,6 +126,54 @@ public class BrandingResource {
     b.logo = emptyToNull(input.logo());
     b.background = emptyToNull(input.background());
     em.flush();
+    java.util.List<String> changed = new java.util.ArrayList<>();
+    if (!java.util.Objects.equals(previousName, b.name)) {
+      changed.add("name");
+    }
+    if (!java.util.Objects.equals(previousHeader, b.headerColor)) {
+      changed.add("headerColor");
+    }
+    if (!java.util.Objects.equals(previousHeading, b.headingColor)) {
+      changed.add("headingColor");
+    }
+    if (!java.util.Objects.equals(previousButton, b.buttonColor)) {
+      changed.add("buttonColor");
+    }
+    boolean logoChanged = !java.util.Objects.equals(previousLogo, b.logo);
+    boolean backgroundChanged = !java.util.Objects.equals(previousBackground, b.background);
+    if (logoChanged) {
+      changed.add("logo");
+    }
+    if (backgroundChanged) {
+      changed.add("background");
+    }
+    audit.success(
+        AuditAction.BRANDING_UPDATE,
+        AuditTargetType.BRANDING,
+        1L,
+        b.name,
+        (Long) null,
+        (String) null,
+        "Updated the branding",
+        AuditDetails.of(
+            "changed",
+            changed,
+            "name",
+            b.name,
+            "headerColor",
+            b.headerColor,
+            "headingColor",
+            b.headingColor,
+            "buttonColor",
+            b.buttonColor,
+            "logoChanged",
+            logoChanged,
+            "logoPresent",
+            b.logo != null,
+            "backgroundChanged",
+            backgroundChanged,
+            "backgroundPresent",
+            b.background != null));
     return b;
   }
 

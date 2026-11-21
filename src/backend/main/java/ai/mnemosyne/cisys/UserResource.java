@@ -62,6 +62,7 @@ public class UserResource {
   @Inject SecurityIdentity identity;
   @Inject UserDirectory directory;
   @Inject ProjectMemberService memberService;
+  @Inject AuditService audit;
 
   /** A user to create or change; leads only send {@code projectIds} when changing a user. */
   public record Input(
@@ -194,6 +195,7 @@ public class UserResource {
    * of their projects.
    */
   @POST
+  @Audited(action = AuditAction.USER_CREATE, target = AuditTargetType.USER, summary = "Create user")
   public Response create(Input input) {
     Caller caller = caller();
     if (input == null) {
@@ -231,7 +233,9 @@ public class UserResource {
       // New assignments come from the shared safe path; existing rows cannot exist yet, so this
       // cannot demote anyone.
       QuarkusTransaction.requiringNew()
-          .run(() -> memberService.assign(id, caller.admin() ? null : caller.projects(), projects));
+          .run(() ->
+              memberService.assign(
+                  id, caller.admin() ? null : caller.projects(), projects, username));
     } catch (RuntimeException e) {
       // Leave no half-created user behind.
       try {
@@ -242,6 +246,15 @@ public class UserResource {
       throw e;
     }
     User created = directory.find(id).orElseThrow(NotFoundException::new);
+    audit.bestEffortSuccess(
+        AuditAction.USER_CREATE,
+        AuditTargetType.USER,
+        created.id(),
+        created.username(),
+        (Long) null,
+        (String) null,
+        "Created user " + created.username(),
+        AuditDetails.of("role", role, "projectIds", projects));
     return Response.status(201).entity(views(caller, roles(), List.of(created)).get(0)).build();
   }
 
@@ -251,6 +264,7 @@ public class UserResource {
    */
   @PUT
   @Path("/{id}")
+  @Audited(action = AuditAction.USER_UPDATE, target = AuditTargetType.USER, summary = "Update user")
   public View update(@PathParam("id") String id, Input input) {
     Caller caller = caller();
     if (input == null) {
@@ -269,7 +283,7 @@ public class UserResource {
           throw new ForbiddenException();
         }
         QuarkusTransaction.requiringNew()
-            .run(() -> memberService.assign(id, caller.projects(), wanted));
+            .run(() -> memberService.assign(id, caller.projects(), wanted, user.username()));
       }
       return views(caller, roles(), List.of(user)).get(0);
     }
@@ -281,6 +295,9 @@ public class UserResource {
     if (id.equals(caller.subject()) && (!"admin".equals(role) || !enabled)) {
       throw error(400, "You cannot remove your own admin access");
     }
+    String email = input.email() == null ? user.email() : email(input.email());
+    String firstName = input.firstName() == null ? user.firstName() : name(input.firstName());
+    String lastName = input.lastName() == null ? user.lastName() : name(input.lastName());
     // Memberships are updated first, in one transaction, so a safeguard failure (for example a
     // last-LEAD conflict) leaves both the membership rows and the directory untouched. The
     // directory is external to the database, though: if a directory call fails after this
@@ -288,19 +305,53 @@ public class UserResource {
     // idempotently).
     if (input.projectIds() != null) {
       Set<Long> wanted = projectIds(input.projectIds());
-      QuarkusTransaction.requiringNew().run(() -> memberService.assign(id, null, wanted));
+      QuarkusTransaction.requiringNew()
+          .run(() -> memberService.assign(id, null, wanted, user.username()));
     }
-    User changed =
-        new User(
-            id,
-            user.username(),
-            input.email() == null ? user.email() : email(input.email()),
-            input.firstName() == null ? user.firstName() : name(input.firstName()),
-            input.lastName() == null ? user.lastName() : name(input.lastName()),
-            enabled);
+    User changed = new User(id, user.username(), email, firstName, lastName, enabled);
     directory.update(changed);
     if (role != null && !role.equals(current)) {
       directory.setRole(id, role);
+    }
+    List<String> fields = new java.util.ArrayList<>();
+    if (!Objects.equals(user.email(), email)) {
+      fields.add("email");
+    }
+    if (!Objects.equals(user.firstName(), firstName)) {
+      fields.add("firstName");
+    }
+    if (!Objects.equals(user.lastName(), lastName)) {
+      fields.add("lastName");
+    }
+    if (!Objects.equals(current, role)) {
+      fields.add("role");
+    }
+    if (user.enabled() != enabled) {
+      fields.add("enabled");
+    }
+    if (input.projectIds() != null) {
+      fields.add("projects");
+    }
+    if (!fields.isEmpty()) {
+      Map<String, Object> details = new LinkedHashMap<>();
+      details.put("changed", fields);
+      if (!Objects.equals(current, role)) {
+        details.put("roleBefore", current);
+        details.put("roleAfter", role);
+      }
+      if (user.enabled() != enabled) {
+        details.put("enabledBefore", user.enabled());
+        details.put("enabledAfter", enabled);
+      }
+      audit.bestEffortSuccess(
+          AuditAction.USER_UPDATE,
+          AuditTargetType.USER,
+          changed.id(),
+          changed.username(),
+          (Long) null,
+          (String) null,
+          "Updated user " + changed.username(),
+          details);
     }
     return views(caller, roles(), List.of(changed)).get(0);
   }
@@ -310,9 +361,13 @@ public class UserResource {
    */
   @PUT
   @Path("/{id}/password")
+  @Audited(
+      action = AuditAction.USER_PASSWORD_RESET,
+      target = AuditTargetType.USER,
+      summary = "Reset user password")
   public Response password(@PathParam("id") String id, Password input) {
     Caller caller = caller();
-    directory.find(id).orElseThrow(NotFoundException::new);
+    User user = directory.find(id).orElseThrow(NotFoundException::new);
     if (!caller.admin()) {
       if (!"member".equals(directory.role(id))
           || !ProjectMember.subjects(caller.projects()).contains(id)) {
@@ -320,12 +375,22 @@ public class UserResource {
       }
     }
     directory.setPassword(id, password(input == null ? null : input.password()));
+    audit.bestEffortSuccess(
+        AuditAction.USER_PASSWORD_RESET,
+        AuditTargetType.USER,
+        user.id(),
+        user.username(),
+        (Long) null,
+        (String) null,
+        "Reset the password of " + user.username(),
+        AuditDetails.of());
     return Response.noContent().build();
   }
 
   /** Deletes a user and its assignments. Admins only, and not themselves. */
   @DELETE
   @Path("/{id}")
+  @Audited(action = AuditAction.USER_DELETE, target = AuditTargetType.USER, summary = "Delete user")
   public Response delete(@PathParam("id") String id) {
     Caller caller = caller();
     if (!caller.admin()) {
@@ -334,12 +399,22 @@ public class UserResource {
     if (id.equals(caller.subject())) {
       throw error(400, "You cannot delete yourself");
     }
-    directory.find(id).orElseThrow(NotFoundException::new);
+    User user = directory.find(id).orElseThrow(NotFoundException::new);
+    String role = directory.role(id);
     // Memberships are removed first with the last-LEAD safeguards; the directory is external, so
     // if deleting the user fails, the user still exists without memberships and can be deleted on
     // retry. The reverse order could strand projects without a LEAD.
-    QuarkusTransaction.requiringNew().run(() -> memberService.removeSubject(id));
+    QuarkusTransaction.requiringNew().run(() -> memberService.removeSubject(id, user.username()));
     directory.delete(id);
+    audit.bestEffortSuccess(
+        AuditAction.USER_DELETE,
+        AuditTargetType.USER,
+        user.id(),
+        user.username(),
+        (Long) null,
+        (String) null,
+        "Deleted user " + user.username(),
+        AuditDetails.of("role", role));
     return Response.noContent().build();
   }
 

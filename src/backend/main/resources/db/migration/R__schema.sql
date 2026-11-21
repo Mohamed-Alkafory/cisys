@@ -428,3 +428,36 @@ CREATE TABLE IF NOT EXISTS article (
 );
 CREATE INDEX IF NOT EXISTS article_updated ON article (updatedat DESC, id DESC);
 CREATE SEQUENCE IF NOT EXISTS article_seq START WITH 1 INCREMENT BY 50;
+
+-- Administrative and security-sensitive actions. Rows are append-only from the application's
+-- point of view: there are no foreign keys, so a record survives the deletion of its target, and
+-- the actor and project names are snapshots taken when the action happened. Details is an
+-- allowlisted, redacted JSON object; it never holds passwords, tokens, image data or build logs.
+CREATE TABLE IF NOT EXISTS auditevent (
+    id bigint NOT NULL,
+    occurredat timestamp(6) with time zone NOT NULL,
+    action character varying(60) NOT NULL,
+    outcome character varying(16) NOT NULL,
+    actorsubject character varying(255),
+    actorusername character varying(255),
+    actorroles character varying(255),
+    projectid bigint,
+    projectname character varying(100),
+    targettype character varying(40),
+    targetid character varying(255),
+    targetname character varying(255),
+    summary character varying(500) NOT NULL,
+    details jsonb NOT NULL DEFAULT '{}'::jsonb,
+    requestid character varying(64),
+    httpmethod character varying(10),
+    path character varying(512),
+    statuscode integer,
+    CONSTRAINT auditevent_pkey PRIMARY KEY (id)
+);
+CREATE SEQUENCE IF NOT EXISTS auditevent_seq START WITH 1 INCREMENT BY 50;
+CREATE INDEX IF NOT EXISTS auditevent_occurredat ON auditevent (occurredat DESC, id DESC);
+CREATE INDEX IF NOT EXISTS auditevent_actor ON auditevent (actorsubject);
+CREATE INDEX IF NOT EXISTS auditevent_action ON auditevent (action);
+CREATE INDEX IF NOT EXISTS auditevent_project ON auditevent (projectid);
+CREATE INDEX IF NOT EXISTS auditevent_outcome ON auditevent (outcome);
+CREATE INDEX IF NOT EXISTS auditevent_target ON auditevent (targettype, targetid);

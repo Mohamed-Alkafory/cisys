@@ -40,6 +40,7 @@ import java.util.Map;
 public class ArticleResource {
   @Inject ProjectAccess access;
   @Inject UserDirectory directory;
+  @Inject AuditService audit;
 
   /** The title and markdown body of an article. */
   public record Input(String title, String body) {}
@@ -91,6 +92,10 @@ public class ArticleResource {
   @POST
   @Authenticated
   @Transactional
+  @Audited(
+      action = AuditAction.ARTICLE_CREATE,
+      target = AuditTargetType.ARTICLE,
+      summary = "Create article")
   public Response create(Input input) {
     requireEditor();
     Article a = new Article();
@@ -98,6 +103,15 @@ public class ArticleResource {
     a.authorSubject = access.subject();
     a.createdAt = a.updatedAt;
     a.persist();
+    audit.success(
+        AuditAction.ARTICLE_CREATE,
+        AuditTargetType.ARTICLE,
+        a.id,
+        a.title,
+        (Long) null,
+        (String) null,
+        "Created article " + a.title,
+        AuditDetails.of("title", a.title));
     return Response.status(201).entity(view(a)).build();
   }
 
@@ -106,10 +120,32 @@ public class ArticleResource {
   @Path("/{id}")
   @Authenticated
   @Transactional
+  @Audited(
+      action = AuditAction.ARTICLE_UPDATE,
+      target = AuditTargetType.ARTICLE,
+      summary = "Update article")
   public View update(@PathParam("id") Long id, Input input) {
     requireEditor();
     Article a = find(id);
+    String previousTitle = a.title;
+    String previousBody = a.body;
     apply(a, input);
+    java.util.List<String> changed = new java.util.ArrayList<>();
+    if (!java.util.Objects.equals(previousTitle, a.title)) {
+      changed.add("title");
+    }
+    if (!java.util.Objects.equals(previousBody, a.body)) {
+      changed.add("body");
+    }
+    audit.success(
+        AuditAction.ARTICLE_UPDATE,
+        AuditTargetType.ARTICLE,
+        a.id,
+        a.title,
+        (Long) null,
+        (String) null,
+        "Updated article " + a.title,
+        AuditDetails.of("changed", changed, "title", a.title));
     return view(a);
   }
 
@@ -118,9 +154,24 @@ public class ArticleResource {
   @Path("/{id}")
   @Authenticated
   @Transactional
+  @Audited(
+      action = AuditAction.ARTICLE_DELETE,
+      target = AuditTargetType.ARTICLE,
+      summary = "Delete article")
   public Response delete(@PathParam("id") Long id) {
     requireEditor();
-    find(id).delete();
+    Article a = find(id);
+    String title = a.title;
+    a.delete();
+    audit.success(
+        AuditAction.ARTICLE_DELETE,
+        AuditTargetType.ARTICLE,
+        id,
+        title,
+        (Long) null,
+        (String) null,
+        "Deleted article " + title,
+        AuditDetails.of("title", title));
     return Response.noContent().build();
   }
 

@@ -42,6 +42,7 @@ import java.util.TreeSet;
 public class ProjectMemberService {
 
   @Inject ProjectAccess access;
+  @Inject AuditService audit;
 
   /** Locks the given projects in ascending project id order and returns them by id. */
   Map<Long, Project> lockProjects(Collection<Long> ids) {
@@ -108,6 +109,16 @@ public class ProjectMemberService {
    * invariant is violated for the rows this operation does touch.
    */
   void assign(String subject, Collection<Long> scope, Collection<Long> wanted) {
+    assign(subject, scope, wanted, null);
+  }
+
+  /**
+   * As {@link #assign(String, Collection, Collection)}, passing the target's display name for the
+   * audit event. Every row inserted or deleted here is recorded once; no caller records membership
+   * changes for this path.
+   */
+  void assign(
+      String subject, Collection<Long> scope, Collection<Long> wanted, String targetUsername) {
     TreeSet<Long> wantedSet = new TreeSet<>(wanted);
     TreeSet<Long> scopeSet = scope == null ? null : new TreeSet<>(scope);
     if (!wantedSet.isEmpty() && Project.count("id in ?1", wantedSet) != wantedSet.size()) {
@@ -136,6 +147,14 @@ public class ProjectMemberService {
           m.role = TeamRole.MEMBER;
           m.createdAt = java.time.Instant.now();
           m.persist();
+          audit.success(
+              AuditAction.PROJECT_MEMBER_ADD,
+              AuditTargetType.PROJECT_MEMBER,
+              subject,
+              name(targetUsername, subject),
+              project,
+              "Added " + name(targetUsername, subject) + " to project " + project.name,
+              AuditDetails.of("role", TeamRole.MEMBER.name()));
         }
         // Unchanged assignments keep their role and creation time.
         continue;
@@ -147,7 +166,16 @@ public class ProjectMemberService {
       if (current.role == TeamRole.LEAD) {
         requireAnotherLead(projectId);
       }
+      TeamRole removedRole = current.role;
       current.delete();
+      audit.success(
+          AuditAction.PROJECT_MEMBER_REMOVE,
+          AuditTargetType.PROJECT_MEMBER,
+          subject,
+          name(targetUsername, subject),
+          project,
+          "Removed " + name(targetUsername, subject) + " from project " + project.name,
+          AuditDetails.of("role", removedRole.name()));
     }
   }
 
@@ -165,6 +193,14 @@ public class ProjectMemberService {
    * which is not done; such a row refers to a directory user that may no longer exist.
    */
   void removeSubject(String subject) {
+    removeSubject(subject, null);
+  }
+
+  /**
+   * As {@link #removeSubject(String)}, passing the target's display name for the audit event. Every
+   * deleted row is recorded once.
+   */
+  void removeSubject(String subject, String targetUsername) {
     List<ProjectMember> snapshot = ProjectMember.list("subject", subject);
     TreeSet<Long> ids = new TreeSet<>();
     snapshot.forEach(m -> ids.add(m.projectId));
@@ -183,9 +219,24 @@ public class ProjectMemberService {
     for (Long projectId : ids) {
       ProjectMember row = current(projectId, subject);
       if (row != null) {
+        TeamRole removedRole = row.role;
+        Project project = locked.get(projectId);
         row.delete();
+        audit.success(
+            AuditAction.PROJECT_MEMBER_REMOVE,
+            AuditTargetType.PROJECT_MEMBER,
+            subject,
+            name(targetUsername, subject),
+            project,
+            "Removed " + name(targetUsername, subject) + " from project " + project.name,
+            AuditDetails.of("role", removedRole.name()));
       }
     }
+  }
+
+  /** A username for display, falling back to the stable subject. */
+  private static String name(String username, String subject) {
+    return username == null || username.isBlank() ? subject : username;
   }
 
   /** Finds the subject's row in one project, refreshed from the database (defeats the L1 cache). */

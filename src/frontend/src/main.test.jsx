@@ -260,3 +260,49 @@ describe("project tab routing", () => {
     expect(commitCalls()).toHaveLength(0);
   });
 });
+
+describe("audit navigation", () => {
+  it("is hidden from non-admins", async () => {
+    keycloakMock.init.mockResolvedValue(true);
+    render(<App />);
+    await screen.findByRole("button", { name: "Projects" }, FIND);
+    expect(screen.queryByRole("button", { name: "Audit" })).toBeNull();
+  });
+
+  it("opens the audit log for admins", async () => {
+    keycloakMock.init.mockResolvedValue(true);
+    fetchMock.mockImplementation((input) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/session")
+        return json({ username: "admin", subject: "admin", roles: ["admin"] });
+      if (url.pathname === "/api/audit")
+        return json({
+          total: 1,
+          events: [
+            {
+              id: 7,
+              occurredAt: "2026-01-02T03:04:05Z",
+              action: "project.create",
+              outcome: "SUCCESS",
+              actorUsername: "admin",
+              targetType: "PROJECT",
+              targetName: "demo",
+              summary: "Created project demo",
+            },
+          ],
+        });
+      return fetchResponse(input);
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Audit" }, FIND));
+    expect(
+      await screen.findByText("Created project demo", {}, FIND),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Audit" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+  });
+});
