@@ -41,7 +41,7 @@ function relativeTime(value) {
   return format.format(seconds, "second");
 }
 
-function StatTile({ icon: Icon, label, value }) {
+export function StatTile({ icon: Icon, label, value }) {
   return (
     <Card className="project-card stat-card">
       <CardHeader>

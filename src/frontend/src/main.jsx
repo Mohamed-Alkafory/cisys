@@ -45,6 +45,7 @@ import PageHeader from "./components/layout/PageHeader";
 import ImagesPanel from "./ImagesPanel";
 import SettingsPanel from "./SettingsPanel";
 import UsersPanel from "./UsersPanel";
+import BuildStatistics from "./BuildStatistics";
 import PublicHome from "./PublicHome";
 import PublicStats from "./PublicStats";
 import ProjectBuilds from "./ProjectBuilds";
@@ -662,6 +663,16 @@ function App() {
                 Users
               </button>
             )}
+            {canCreate && (
+              <button
+                type="button"
+                className="nav-link"
+                aria-current={onPage("reports") ? "page" : undefined}
+                onClick={() => go("reports")}
+              >
+                Reports
+              </button>
+            )}
             {user.roles.includes("admin") && (
               <button
                 type="button"
@@ -782,6 +793,8 @@ function App() {
         <ImagesPanel api={api} />
       ) : page === "users" && canManageUsers ? (
         <UsersPanel api={api} user={user} />
+      ) : page === "reports" && canCreate ? (
+        <BuildStatistics load={api} onOpenBuild={openBuild} />
       ) : page === "settings" && user.roles.includes("admin") ? (
         <SettingsPanel
           api={api}

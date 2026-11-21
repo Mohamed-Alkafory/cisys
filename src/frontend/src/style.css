@@ -505,6 +505,20 @@ body {
 .stats-grid .stat-card {
   margin-bottom: 0;
 }
+.report-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 18rem));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.report-section {
+  margin-top: 2rem;
+}
+.report-heading {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
 .stat-label {
   display: inline-flex;
   align-items: center;

@@ -41,6 +41,7 @@ The Member, Lead and Admin columns below refer to the caller's global Keycloak r
 | Create, edit and delete articles    | if allowed | if allowed | yes |
 | Cancel a build                      | no     | own, or any in their project | yes |
 | Manage project team                | no     | assigned | yes   |
+| View build reports                  | no     | assigned (LEAD) | yes |
 | Delete a project                    | no     | no   | yes   |
 | Use a Git credential reference      | no     | no   | yes   |
 | Manage build images                 | no     | no   | yes   |
