@@ -17,7 +17,9 @@ import {
 import { Badge } from "./components/ui/badge";
 import { Card, CardContent } from "./components/ui/card";
 import PageHeader from "./components/layout/PageHeader";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
 import BuildStatus from "./BuildStatus";
+import ProjectCommits from "./ProjectCommits";
 import {
   buildPath,
   duration,
@@ -40,6 +42,8 @@ export default function ProjectBuilds({
   onBuild,
   onNotFound,
   initialBranch = "",
+  tab = "builds",
+  onTabChange = () => {},
 }) {
   // undefined while loading.
   const [page, setPage] = useState(undefined);
@@ -242,99 +246,119 @@ export default function ProjectBuilds({
             <p className="branch-panel-note">Branches unavailable</p>
           )}
         </aside>
-        <Card className="project-card builds-panel">
-          <CardContent>
-            {!buildsReady ? (
-              <p className="loading-state" role="status">
-                Loading builds…
-              </p>
-            ) : builds.length === 0 ? (
-              <p>No builds</p>
-            ) : (
-              <div className="builds-table-wrap">
-                <table className="builds-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">
-                        <span className="sr-only">Status</span>
-                      </th>
-                      <th scope="col">Build</th>
-                      <th scope="col">Branch</th>
-                      <th scope="col">Commit</th>
-                      <th scope="col">Trigger</th>
-                      <th scope="col">Started</th>
-                      <th scope="col">Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {builds.map((b) => (
-                      <tr
-                        key={b.id}
-                        className={onOpenBuild ? "builds-row-link" : undefined}
-                        onClick={onOpenBuild ? () => openBuild(b) : undefined}
-                      >
-                        <td className="builds-status-cell">
-                          <BuildStatus status={b.status} />
-                        </td>
-                        <td>
-                          <a
-                            className="build-link"
-                            href={buildPath(
-                              project.name,
-                              b.branch || activeBranch,
-                              b.id,
-                            )}
-                            onClick={(event) => {
-                              if (!onOpenBuild) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              openBuild(b);
-                            }}
+        <Tabs value={tab} onValueChange={onTabChange} className="project-tabs">
+          <TabsList>
+            <TabsTrigger value="builds">Builds</TabsTrigger>
+            <TabsTrigger value="commits">Commits</TabsTrigger>
+          </TabsList>
+          <TabsContent value="builds">
+            <Card className="project-card builds-panel">
+              <CardContent>
+                {!buildsReady ? (
+                  <p className="loading-state" role="status">
+                    Loading builds…
+                  </p>
+                ) : builds.length === 0 ? (
+                  <p>No builds</p>
+                ) : (
+                  <div className="builds-table-wrap">
+                    <table className="builds-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">
+                            <span className="sr-only">Status</span>
+                          </th>
+                          <th scope="col">Build</th>
+                          <th scope="col">Branch</th>
+                          <th scope="col">Commit</th>
+                          <th scope="col">Trigger</th>
+                          <th scope="col">Started</th>
+                          <th scope="col">Duration</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {builds.map((b) => (
+                          <tr
+                            key={b.id}
+                            className={
+                              onOpenBuild ? "builds-row-link" : undefined
+                            }
+                            onClick={
+                              onOpenBuild ? () => openBuild(b) : undefined
+                            }
                           >
-                            #{b.number}
-                          </a>
-                          {b.pinned && (
-                            <Pin
-                              className="build-pin"
-                              size={14}
-                              role="img"
-                              aria-label="Pinned"
-                            />
-                          )}
-                        </td>
-                        <td className="build-branch">
-                          {b.branch || "—"}
-                          {b.pullRequest != null && (
-                            <span className="build-meta">
-                              {" "}
-                              {pullRequestLabel(
-                                b.pullRequestProvider,
-                                b.pullRequest,
+                            <td className="builds-status-cell">
+                              <BuildStatus status={b.status} />
+                            </td>
+                            <td>
+                              <a
+                                className="build-link"
+                                href={buildPath(
+                                  project.name,
+                                  b.branch || activeBranch,
+                                  b.id,
+                                )}
+                                onClick={(event) => {
+                                  if (!onOpenBuild) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  openBuild(b);
+                                }}
+                              >
+                                #{b.number}
+                              </a>
+                              {b.pinned && (
+                                <Pin
+                                  className="build-pin"
+                                  size={14}
+                                  role="img"
+                                  aria-label="Pinned"
+                                />
                               )}
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          <code
-                            className="build-commit"
-                            title={b.revision ?? undefined}
-                          >
-                            {shortRevision(b.revision)}
-                          </code>
-                        </td>
-                        <td className="build-meta">
-                          {triggerLabel(b.trigger, b.pullRequestProvider)}
-                        </td>
-                        <td className="build-meta">{startedAt(b)}</td>
-                        <td className="build-meta">{duration(b)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                            </td>
+                            <td className="build-branch">
+                              {b.branch || "—"}
+                              {b.pullRequest != null && (
+                                <span className="build-meta">
+                                  {" "}
+                                  {pullRequestLabel(
+                                    b.pullRequestProvider,
+                                    b.pullRequest,
+                                  )}
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <code
+                                className="build-commit"
+                                title={b.revision ?? undefined}
+                              >
+                                {shortRevision(b.revision)}
+                              </code>
+                            </td>
+                            <td className="build-meta">
+                              {triggerLabel(b.trigger, b.pullRequestProvider)}
+                            </td>
+                            <td className="build-meta">{startedAt(b)}</td>
+                            <td className="build-meta">{duration(b)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="commits">
+            <ProjectCommits
+              name={project.name}
+              branch={activeBranch}
+              load={load}
+              onOpenBuild={onOpenBuild}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
     </main>
   );

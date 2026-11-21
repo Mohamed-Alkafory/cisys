@@ -356,7 +356,7 @@ describe("ProjectSettings tabs (Team save semantics)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await vi.waitFor(() => expect(calls.some(([m]) => m === "PUT")).toBe(true));
     // The mutation happened, so the server already changed; the refresh failing must be visible.
-    expect(screen.findByText(/could not be refreshed/)).toBeTruthy();
+    expect(await screen.findByText(/could not be refreshed/)).toBeTruthy();
     expect(screen.queryByText("Team saved.")).toBeNull();
   });
 

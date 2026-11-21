@@ -14,7 +14,10 @@ import {
   manualPath,
   projectBuildFromPath,
   projectNameFromPath,
+  projectPath,
   projectSettingsFromPath,
+  readTabFromSearch,
+  withTab,
 } from "./project-paths";
 
 describe("project-paths", () => {
@@ -55,5 +58,48 @@ describe("project-paths", () => {
     expect(projectNameFromPath("/Articles/")).toBeNull();
     expect(projectSettingsFromPath("/articles/settings")).toBeNull();
     expect(projectBuildFromPath("/articles/main/build/1")).toBeNull();
+  });
+
+  it("reads only the commits tab from the query string", () => {
+    expect(readTabFromSearch("")).toBe("builds");
+    expect(readTabFromSearch("?tab=builds")).toBe("builds");
+    expect(readTabFromSearch("?tab=commits")).toBe("commits");
+    expect(readTabFromSearch("?tab=other")).toBe("builds");
+    expect(readTabFromSearch("?tab=COMMITS")).toBe("builds");
+  });
+
+  it("updates the tab without losing other query parameters", () => {
+    expect(withTab("", "builds")).toBe("");
+    expect(withTab("?tab=commits", "builds")).toBe("");
+    expect(withTab("?tab=commits&x=1", "builds")).toBe("?x=1");
+    expect(withTab("?branch=feature%2Fx&tab=builds&x=1", "commits")).toBe(
+      "?branch=feature%2Fx&tab=commits&x=1",
+    );
+    expect(withTab("?branch=feature%2Fx&x=1", "commits")).toBe(
+      "?branch=feature%2Fx&x=1&tab=commits",
+    );
+  });
+
+  it("builds project paths with a clean or commits URL", () => {
+    expect(projectPath("cisys")).toBe("/cisys/");
+    expect(projectPath("cisys", "builds")).toBe("/cisys/");
+    expect(projectPath("cisys", "commits")).toBe("/cisys/?tab=commits");
+    expect(projectPath("a b", "commits")).toBe("/a%20b/?tab=commits");
+    expect(projectPath("cisys", "commits", "?x=1", "#details")).toBe(
+      "/cisys/?x=1&tab=commits#details",
+    );
+    expect(projectPath("cisys", "builds", "?x=1", "#details")).toBe(
+      "/cisys/?x=1#details",
+    );
+  });
+
+  it("matches routes from the pathname even when a query string is present", () => {
+    const url = new URL("/cisys/?tab=commits&x=1", "http://localhost");
+    expect(projectNameFromPath(url.pathname)).toBe("cisys");
+    expect(projectBuildFromPath("/cisys/feature%2Fx/build/7")).toEqual({
+      name: "cisys",
+      branch: "feature/x",
+      buildId: 7,
+    });
   });
 });

@@ -66,6 +66,8 @@ import {
   projectPath,
   projectSettingsFromPath,
   projectSettingsPath,
+  readTabFromSearch,
+  withTab,
 } from "./project-paths";
 import { buildPath } from "./build-format";
 import headerLogo from "./assets/logo-header.svg";
@@ -173,7 +175,7 @@ async function api(path, opts = {}) {
   return response.json();
 }
 
-function App() {
+export function App() {
   // 'loading' until Keycloak answers, then 'public' for anonymous visitors or 'app' for signed-in users.
   const [mode, setMode] = useState("loading");
   const [stats, setStats] = useState(undefined);
@@ -222,6 +224,10 @@ function App() {
   const [articles, setArticles] = useState(() =>
     articlesFromPath(window.location.pathname),
   );
+  // The current query string. It is the single source of truth for the project tab,
+  // so replaceState updates below must update this state as well.
+  const [search, setSearch] = useState(() => window.location.search);
+  const projectTab = readTabFromSearch(search);
   const [dark, setDark] = useState(
     () => localStorage.getItem("cisys-theme") === "dark",
   );
@@ -312,6 +318,7 @@ function App() {
       setProjectSettings(settings !== null);
       setManual(manualFromPath(window.location.pathname));
       setArticles(articlesFromPath(window.location.pathname));
+      setSearch(window.location.search);
       setProjectName(
         settings
           ? settings.name
@@ -327,8 +334,13 @@ function App() {
   // Switches to an in-app page, leaving any project URL behind.
   function go(target, replace = false) {
     if (submitting || !confirmLeave()) return;
-    if (window.location.pathname !== "/")
+    if (
+      window.location.pathname !== "/" ||
+      window.location.search ||
+      window.location.hash
+    )
       window.history[replace ? "replaceState" : "pushState"](null, "", "/");
+    setSearch("");
     setProjectName(null);
     setProjectBranch("");
     setBuildId(null);
@@ -362,6 +374,7 @@ function App() {
   useEffect(() => {
     if (manual && !chapterBySlug(manual.slug) && chapters.length > 0) {
       window.history.replaceState(null, "", manualPath(chapters[0].slug));
+      setSearch("");
       setManual({ slug: chapters[0].slug });
     }
   }, [manual]);
@@ -369,6 +382,7 @@ function App() {
   function openManual(slug) {
     if (submitting || !confirmLeave()) return;
     window.history.pushState(null, "", manualPath(slug));
+    setSearch("");
     setSettingsDirty(false);
     setProjectName(null);
     setProjectBranch("");
@@ -382,6 +396,7 @@ function App() {
     if (submitting || !confirmLeave()) return;
     const next = { id: route.id ?? null, edit: Boolean(route.edit) };
     window.history.pushState(null, "", articlesPath(next));
+    setSearch("");
     setSettingsDirty(false);
     setProjectName(null);
     setProjectBranch("");
@@ -391,9 +406,17 @@ function App() {
     setArticles(next);
   }
 
-  function openProject(name, branch = "") {
+  function openProject(
+    name,
+    branch = "",
+    tab = "builds",
+    search = "",
+    hash = "",
+  ) {
     if (submitting || !confirmLeave()) return;
-    window.history.pushState(null, "", projectPath(name));
+    const nextSearch = withTab(search, tab);
+    window.history.pushState(null, "", projectPath(name, tab, search, hash));
+    setSearch(nextSearch);
     setManual(null);
     setArticles(null);
     setSettingsDirty(false);
@@ -405,7 +428,13 @@ function App() {
 
   function openBuild(name, branch, id) {
     if (!confirmLeave()) return;
-    window.history.pushState(null, "", buildPath(name, branch, id));
+    const nextSearch = withTab(window.location.search, projectTab);
+    window.history.pushState(
+      null,
+      "",
+      buildPath(name, branch, id) + nextSearch + window.location.hash,
+    );
+    setSearch(nextSearch);
     setManual(null);
     setArticles(null);
     setSettingsDirty(false);
@@ -418,6 +447,7 @@ function App() {
   function openProjectSettings(name) {
     if (submitting || !confirmLeave()) return;
     window.history.pushState(null, "", projectSettingsPath(name));
+    setSearch("");
     setManual(null);
     setArticles(null);
     setSettingsDirty(false);
@@ -425,6 +455,17 @@ function App() {
     setProjectBranch("");
     setBuildId(null);
     setProjectSettings(true);
+  }
+
+  function changeProjectTab(tab) {
+    if (tab === projectTab) return;
+    const nextSearch = withTab(window.location.search, tab);
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + nextSearch + window.location.hash,
+    );
+    setSearch(nextSearch);
   }
 
   function resetProjectForm() {
@@ -552,7 +593,15 @@ function App() {
               branch={projectBranch}
               buildId={buildId}
               load={publicJson}
-              onBack={() => openProject(projectName, projectBranch)}
+              onBack={() =>
+                openProject(
+                  projectName,
+                  projectBranch,
+                  projectTab,
+                  window.location.search,
+                  window.location.hash,
+                )
+              }
               onOpenBuild={openBuild}
               onNotFound={showFrontPage}
             />
@@ -561,6 +610,8 @@ function App() {
               key={projectName}
               name={projectName}
               initialBranch={projectBranch}
+              tab={projectTab}
+              onTabChange={changeProjectTab}
               load={publicJson}
               onOpenBuild={openBuild}
               onNotFound={showFrontPage}
@@ -760,7 +811,15 @@ function App() {
             branch={projectBranch}
             buildId={buildId}
             load={api}
-            onBack={() => openProject(projectName, projectBranch)}
+            onBack={() =>
+              openProject(
+                projectName,
+                projectBranch,
+                projectTab,
+                window.location.search,
+                window.location.hash,
+              )
+            }
             onOpenBuild={openBuild}
             onNotFound={showFrontPage}
           />
@@ -769,6 +828,8 @@ function App() {
             key={projectName}
             name={projectName}
             initialBranch={projectBranch}
+            tab={projectTab}
+            onTabChange={changeProjectTab}
             load={api}
             onOpenBuild={openBuild}
             onBuild={canStartBuilds ? startBranchBuild : undefined}
@@ -984,4 +1045,5 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+const root = document.getElementById("root");
+if (root) createRoot(root).render(<App />);

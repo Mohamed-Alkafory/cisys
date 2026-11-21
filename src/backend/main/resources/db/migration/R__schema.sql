@@ -347,6 +347,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS build_project_pull_request_revision
     ON build (projectid, revision)
     WHERE trigger = 'PULL_REQUEST' AND revision IS NOT NULL;
 
+-- The commit view maps every revision on a page to all of its builds in one query.
+CREATE INDEX IF NOT EXISTS build_project_revision ON build (projectid, revision);
+
 -- The last head discovered for each pull request. The submitted revision is stored separately so
 -- deleting an old build through retention can never make the same head build twice.
 CREATE TABLE IF NOT EXISTS projectpullrequest (

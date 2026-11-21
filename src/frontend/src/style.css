@@ -413,6 +413,47 @@ body {
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
+.commit-note {
+  margin: 0 0 0.85rem;
+  color: var(--muted-foreground);
+  font-size: 0.85rem;
+}
+.commit-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.commit-error .error-message {
+  flex: 1 1 100%;
+  margin-bottom: 0;
+}
+.commits-table td.commit-message {
+  min-width: 16rem;
+  max-width: 34rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.commits-table .commit-author {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.commit-builds {
+  white-space: normal;
+}
+.commit-build {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0 0.65rem 0.2rem 0;
+}
+.commit-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.9rem;
+}
 .build-title {
   display: flex;
   align-items: center;
@@ -724,10 +765,10 @@ body {
     max-height: 55vh;
   }
 }
-.settings-tabs {
+:is(.settings-tabs, .project-tabs) {
   gap: 0;
 }
-.settings-tabs [role="tablist"] {
+:is(.settings-tabs, .project-tabs) [role="tablist"] {
   height: auto;
   width: 100%;
   justify-content: flex-start;
@@ -737,7 +778,7 @@ body {
   border-radius: 0;
   border-bottom: 1px solid var(--card-border);
 }
-.settings-tabs [role="tab"] {
+:is(.settings-tabs, .project-tabs) [role="tab"] {
   flex: none;
   height: auto;
   margin-bottom: -1px;
@@ -748,19 +789,19 @@ body {
   color: var(--muted-foreground);
   box-shadow: none;
 }
-.settings-tabs [role="tab"]:hover {
+:is(.settings-tabs, .project-tabs) [role="tab"]:hover {
   color: var(--foreground);
 }
-.settings-tabs [role="tab"][data-state="active"] {
+:is(.settings-tabs, .project-tabs) [role="tab"][data-state="active"] {
   background: var(--card-bg);
   color: var(--foreground);
   font-weight: 600;
   border-bottom-color: var(--card-bg);
 }
-.settings-tabs [role="tab"]::after {
+:is(.settings-tabs, .project-tabs) [role="tab"]::after {
   display: none;
 }
-.settings-tabs [role="tabpanel"] .project-card {
+:is(.settings-tabs, .project-tabs) [role="tabpanel"] .project-card {
   border-top: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;

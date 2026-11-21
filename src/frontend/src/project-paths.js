@@ -78,8 +78,24 @@ export function projectBuildFromPath(pathname) {
   }
 }
 
-export function projectPath(name) {
-  return `/${encodeURIComponent(name)}/`;
+/** The project page tab selected by a query string. Anything but "commits" is the default. */
+export function readTabFromSearch(search) {
+  return new URLSearchParams(search).get("tab") === "commits"
+    ? "commits"
+    : "builds";
+}
+
+/** The query string for a project tab, preserving every other query parameter. */
+export function withTab(search, tab) {
+  const params = new URLSearchParams(search);
+  if (tab === "commits") params.set("tab", "commits");
+  else params.delete("tab");
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function projectPath(name, tab = "builds", search = "", hash = "") {
+  return `/${encodeURIComponent(name)}/${withTab(search, tab)}${hash}`;
 }
 
 /** Returns { name } for paths like /cisys/settings, otherwise null. */

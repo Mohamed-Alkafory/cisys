@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  buildPath,
   pullRequestKind,
   pullRequestLabel,
   triggerLabel,
@@ -31,5 +32,12 @@ describe("build-format", () => {
     expect(triggerLabel("POLL")).toBe("Poll");
     expect(triggerLabel("PULL_REQUEST", "GITHUB")).toBe("Pull request");
     expect(triggerLabel("PULL_REQUEST", "GITLAB")).toBe("Merge request");
+  });
+
+  it("encodes a branch with slashes in a build path", () => {
+    expect(buildPath("demo", "feature/login", 7)).toBe(
+      "/demo/feature%2Flogin/build/7",
+    );
+    expect(buildPath("demo", "", 7)).toBe("/demo/~/build/7");
   });
 });

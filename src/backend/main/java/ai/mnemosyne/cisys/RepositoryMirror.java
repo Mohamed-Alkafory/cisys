@@ -19,6 +19,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -30,11 +31,16 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.lib.StoredConfig;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevSort;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.revwalk.filter.AndRevFilter;
+import org.eclipse.jgit.revwalk.filter.MaxCountRevFilter;
+import org.eclipse.jgit.revwalk.filter.SkipRevFilter;
 import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider;
 import org.eclipse.jgit.treewalk.TreeWalk;
@@ -58,6 +64,15 @@ public class RepositoryMirror {
   /** Test-only: accept file repository URLs, which the request path never produces. */
   @ConfigProperty(name = "cisys.poll.allow-local", defaultValue = "false")
   boolean allowLocal;
+
+  /** Keeps a commit row compact; the full body is never sent to the commit view. */
+  private static final int MAX_MESSAGE_CHARS = 200;
+
+  /** One commit in a branch's history, fully materialized before the mirror is closed. */
+  record CommitInfo(String revision, String message, String author, Instant authoredAt) {}
+
+  /** A page of commits and whether the branch exists in the mirror. */
+  record CommitLog(List<CommitInfo> commits, boolean branchPresent) {}
 
   private final ConcurrentHashMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
 
@@ -197,6 +212,51 @@ public class RepositoryMirror {
       }
       return names;
     }
+  }
+
+  /**
+   * A page of commits reachable from {@code branch}, newest first, and whether the branch exists.
+   * The caller must hold {@link #lock(Long)}. The walk uses only {@link RevSort#COMMIT_TIME_DESC};
+   * {@link RevSort#TOPO} would consume the whole reachable history before emitting the first
+   * commit, defeating the skip bound. Clock skew can therefore place a parent before a child. The
+   * order is deterministic for a fixed repository state, including equal timestamps. At most {@code
+   * limit} commits are read.
+   */
+  CommitLog commitLog(Long projectId, String branch, int skip, int limit) throws Exception {
+    checkReadable("commits", branch);
+    try (Repository repo = openRead(projectId);
+        RevWalk walk = new RevWalk(repo)) {
+      // Resolve only the exact branch ref: never parse user input as revision syntax.
+      Ref ref = repo.exactRef("refs/heads/" + branch);
+      if (ref == null || ref.getObjectId() == null) {
+        return new CommitLog(List.of(), false);
+      }
+      walk.sort(RevSort.COMMIT_TIME_DESC);
+      walk.setRevFilter(
+          AndRevFilter.create(SkipRevFilter.create(skip), MaxCountRevFilter.create(limit)));
+      walk.markStart(walk.parseCommit(ref.getObjectId()));
+      List<CommitInfo> commits = new ArrayList<>();
+      for (RevCommit commit : walk) {
+        commits.add(info(commit));
+      }
+      return new CommitLog(commits, true);
+    }
+  }
+
+  private static CommitInfo info(RevCommit commit) {
+    PersonIdent author = commit.getAuthorIdent();
+    if (author == null) {
+      author = commit.getCommitterIdent();
+    }
+    String message = commit.getShortMessage();
+    if (message != null && message.length() > MAX_MESSAGE_CHARS) {
+      message = message.substring(0, MAX_MESSAGE_CHARS - 1) + "…";
+    }
+    return new CommitInfo(
+        commit.name(),
+        message,
+        author == null ? null : author.getName(),
+        author == null ? null : author.getWhenAsInstant());
   }
 
   /** The tip commit of a branch, or null when the branch is gone. */
