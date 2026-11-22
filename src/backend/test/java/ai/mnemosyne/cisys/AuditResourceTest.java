@@ -25,6 +25,8 @@ import io.quarkus.test.junit.TestProfile;
 import io.quarkus.test.security.TestSecurity;
 import io.quarkus.test.security.jwt.Claim;
 import io.quarkus.test.security.jwt.JwtSecurity;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -65,6 +67,7 @@ class AuditResourceTest {
     QuarkusTransaction.requiringNew()
         .run(() -> {
           AuditEvent.deleteAll();
+          AllowedImage.deleteAll();
           NetworkHost.deleteAll();
           Article.deleteAll();
           Build.deleteAll();
@@ -177,17 +180,24 @@ class AuditResourceTest {
   }
 
   private static Long build(Long projectId) {
+    return build(projectId, Build.Status.PASSED, null);
+  }
+
+  private static Long build(Long projectId, Build.Status status, String revision) {
     return QuarkusTransaction.requiringNew()
         .call(() -> {
+          Project project = Project.findById(projectId);
           Build b = new Build();
           b.projectId = projectId;
           b.number = Build.nextNumber(projectId);
           b.requestedBy = "lead-id";
-          b.status = Build.Status.PASSED;
+          b.status = status;
           b.branch = "main";
           b.image = "alpine:3.23";
-          b.exitCode = 0;
+          b.exitCode = status == Build.Status.PASSED ? 0 : null;
           b.startedAt = Instant.now();
+          b.revision = revision;
+          b.repositoryUrl = project.repositoryUrl;
           b.persist();
           return b.id;
         });
@@ -197,6 +207,17 @@ class AuditResourceTest {
   void anonymousCannotReadTheAuditLog() {
     given().get(PATH).then().statusCode(401);
     given().get(PATH + "/1").then().statusCode(401);
+  }
+
+  @Test
+  void doesNotRecordAuthenticationFailures() {
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"anonymous\",\"repositoryUrl\":\"https://github.com/repo.git\"}")
+        .post("/api/projects")
+        .then()
+        .statusCode(401);
+    assertEquals(0, count("project.create"));
   }
 
   @Test
@@ -280,7 +301,37 @@ class AuditResourceTest {
         .body("events", hasSize(1))
         .body("events[0].summary", equalTo("Updated project alpha"));
 
-    given().queryParam("max", 100000).get(PATH).then().statusCode(200).body("events", hasSize(3));
+    given().queryParam("max", 100000).get(PATH).then().statusCode(400);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "admin-id"),
+        @Claim(key = "preferred_username", value = "admin")
+      })
+  void rejectsInvalidPaginationAndNumericFilters() {
+    given().queryParam("first", -1).get(PATH).then().statusCode(400);
+    given().queryParam("max", 0).get(PATH).then().statusCode(400);
+    given().queryParam("max", 201).get(PATH).then().statusCode(400);
+    given().queryParam("first", "abc").get(PATH).then().statusCode(400);
+    given().queryParam("max", "abc").get(PATH).then().statusCode(400);
+    given().queryParam("project", "abc").get(PATH).then().statusCode(400);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "admin-id"),
+        @Claim(key = "preferred_username", value = "admin")
+      })
+  void rejectsShortSearchTermsButAcceptsTwoCharacters() {
+    given().queryParam("search", "a").get(PATH).then().statusCode(400);
+    given().queryParam("search", " a ").get(PATH).then().statusCode(400);
+    given().queryParam("search", "al").get(PATH).then().statusCode(200);
+    given().queryParam("search", "").get(PATH).then().statusCode(200);
   }
 
   @Test
@@ -1151,5 +1202,361 @@ class AuditResourceTest {
     AuditEvent password = find("user.password.reset", AuditOutcome.SUCCESS);
     assertFalse(password.details.containsValue("another-secret"));
     assertEquals(1, count("user.delete"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "admin-id"),
+        @Claim(key = "preferred_username", value = "admin")
+      })
+  void recordsBrandingAndImageOperations() {
+    String brandName = "Brand-" + UUID.randomUUID();
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"name\":\""
+                + brandName
+                + "\",\"headerColor\":\"#123456\",\"headingColor\":\"#345678\","
+                + "\"buttonColor\":\"#567890\"}")
+        .put("/api/branding")
+        .then()
+        .statusCode(200);
+
+    AuditEvent branding = find("branding.update", AuditOutcome.SUCCESS);
+    assertEquals("admin-id", branding.actorSubject);
+    assertEquals("BRANDING", branding.targetType.name());
+    assertTrue(((List<?>) branding.details.get("changed")).contains("name"));
+    assertEquals(brandName, branding.details.get("name"));
+
+    BuildRunner fake =
+        new BuildRunner() {
+          @Override
+          Optional<String> pull(String name) {
+            return Optional.empty();
+          }
+
+          @Override
+          Optional<String> remove(String name) {
+            return Optional.empty();
+          }
+
+          @Override
+          List<LocalImage> images() {
+            return List.of();
+          }
+        };
+    QuarkusMock.installMockForType(fake, BuildRunner.class);
+
+    given()
+        .contentType("application/json")
+        .body("{\"images\":[\"alpine:3.23\"]}")
+        .put("/api/images")
+        .then()
+        .statusCode(200);
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"alpine:3.23\"}")
+        .post("/api/images/local")
+        .then()
+        .statusCode(200);
+    given().queryParam("name", "alpine:3.23").delete("/api/images/local").then().statusCode(200);
+
+    AuditEvent allowlist = find("image.allowlist.update", AuditOutcome.SUCCESS);
+    assertEquals("IMAGE", allowlist.targetType.name());
+    AuditEvent pull = find("image.pull", AuditOutcome.SUCCESS);
+    assertEquals("alpine:3.23", pull.targetId);
+    AuditEvent remove = find("image.remove", AuditOutcome.SUCCESS);
+    assertEquals("alpine:3.23", remove.targetId);
+    assertEquals(true, remove.details.get("removedFromAllowlist"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "admin-id"),
+        @Claim(key = "preferred_username", value = "admin")
+      })
+  void recordsProjectCredentialChangesWithoutTheReference() {
+    String name = "credential-" + UUID.randomUUID();
+    Long id =
+        given()
+            .contentType("application/json")
+            .body(
+                "{\"name\":\""
+                    + name
+                    + "\",\"repositoryUrl\":\"https://github.com/octocat/"
+                    + name
+                    + ".git\",\"privateRepository\":true}")
+            .post("/api/projects")
+            .then()
+            .statusCode(201)
+            .extract()
+            .jsonPath()
+            .getLong("id");
+
+    given()
+        .contentType("application/json")
+        .body("{\"credentialRef\":\"CISYS_GIT_TEST\"}")
+        .put("/api/projects/" + id + "/credential")
+        .then()
+        .statusCode(200);
+    AuditEvent set = find("project.credential.update", AuditOutcome.SUCCESS);
+    assertEquals("PROJECT", set.targetType.name());
+    assertEquals(id, set.projectId);
+    assertEquals(Map.of("cleared", false), set.details);
+    assertFalse(set.details.toString().contains("CISYS_GIT_TEST"));
+
+    given()
+        .contentType("application/json")
+        .body("{}")
+        .put("/api/projects/" + id + "/credential")
+        .then()
+        .statusCode(200);
+    AuditEvent cleared = find("project.credential.update", AuditOutcome.SUCCESS);
+    assertEquals(Map.of("cleared", true), cleared.details);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "lead-id"),
+        @Claim(key = "preferred_username", value = "lead")
+      })
+  void recordsProjectTeamChanges() {
+    Long id = project("lead-id");
+
+    given()
+        .contentType("application/json")
+        .body("{\"username\":\"member\",\"role\":\"MEMBER\"}")
+        .post("/api/projects/" + id + "/team")
+        .then()
+        .statusCode(201);
+    AuditEvent added = find("project.member.add", AuditOutcome.SUCCESS);
+    assertEquals("lead-id", added.actorSubject);
+    assertEquals("PROJECT_MEMBER", added.targetType.name());
+    assertEquals("member-id", added.targetId);
+    assertEquals("member", added.targetName);
+    assertEquals("MEMBER", added.details.get("role"));
+
+    given()
+        .contentType("application/json")
+        .body("{\"role\":\"LEAD\"}")
+        .put("/api/projects/" + id + "/team/member")
+        .then()
+        .statusCode(200);
+    AuditEvent role = find("project.member.role", AuditOutcome.SUCCESS);
+    assertEquals("MEMBER", role.details.get("previous"));
+    assertEquals("LEAD", role.details.get("current"));
+
+    given().delete("/api/projects/" + id + "/team/member").then().statusCode(204);
+    AuditEvent removed = find("project.member.remove", AuditOutcome.SUCCESS);
+    assertEquals("member-id", removed.targetId);
+    assertEquals("member", removed.targetName);
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "lead-id"),
+        @Claim(key = "preferred_username", value = "lead")
+      })
+  void recordsBuildStartRerunAndCancel() {
+    Long id = project("lead-id");
+    Long finished = build(id, Build.Status.PASSED, "abcdef1234567890");
+    Long queued = build(id, Build.Status.QUEUED, null);
+
+    BuildRunner fake =
+        new BuildRunner() {
+          @Override
+          Build submit(
+              Long projectId,
+              String actor,
+              String url,
+              String branch,
+              String credentialRef,
+              String revision,
+              Build.Trigger trigger,
+              String triggerActor,
+              Integer pullRequest,
+              String pullRequestProvider) {
+            return QuarkusTransaction.requiringNew()
+                .call(() -> {
+                  Build b = new Build();
+                  b.projectId = projectId;
+                  b.number = Build.nextNumber(projectId);
+                  b.requestedBy = actor;
+                  b.status = Build.Status.QUEUED;
+                  b.branch = branch;
+                  b.revision = revision;
+                  b.repositoryUrl = url;
+                  b.trigger = trigger == null ? Build.Trigger.MANUAL : trigger;
+                  b.startedAt = Instant.now();
+                  b.persist();
+                  return b;
+                });
+          }
+
+          @Override
+          boolean cancel(Long buildId) {
+            return true;
+          }
+        };
+    QuarkusMock.installMockForType(fake, BuildRunner.class);
+
+    Long started =
+        given()
+            .contentType("application/json")
+            .body("{\"branch\":\"main\"}")
+            .post("/api/projects/" + id + "/builds")
+            .then()
+            .statusCode(200)
+            .extract()
+            .jsonPath()
+            .getLong("id");
+    given()
+        .contentType("application/json")
+        .post("/api/projects/" + id + "/builds/" + finished + "/rerun")
+        .then()
+        .statusCode(200);
+    given()
+        .contentType("application/json")
+        .post("/api/projects/" + id + "/builds/" + queued + "/cancel")
+        .then()
+        .statusCode(200);
+
+    assertEquals(1, count("build.start"));
+    assertEquals(1, count("build.rerun"));
+    assertEquals(1, count("build.cancel"));
+
+    AuditEvent start = find("build.start", AuditOutcome.SUCCESS);
+    assertEquals("lead-id", start.actorSubject);
+    assertEquals(id, start.projectId);
+    assertEquals(String.valueOf(started), start.targetId);
+    assertEquals("main", start.details.get("branch"));
+
+    AuditEvent rerun = find("build.rerun", AuditOutcome.SUCCESS);
+    assertEquals(id, rerun.projectId);
+    assertEquals("BUILD", rerun.targetType.name());
+
+    AuditEvent cancel = find("build.cancel", AuditOutcome.SUCCESS);
+    assertEquals(String.valueOf(queued), cancel.targetId);
+    assertEquals("main", cancel.details.get("branch"));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "admin-id"),
+        @Claim(key = "preferred_username", value = "admin")
+      })
+  void recordsNetworkHostLifecycleAndTemplate() {
+    Long id =
+        given()
+            .contentType("application/json")
+            .body("{\"name\":\"npm\",\"host\":\"registry.npmjs.org\"}")
+            .post("/api/network-hosts")
+            .then()
+            .statusCode(201)
+            .extract()
+            .jsonPath()
+            .getLong("id");
+
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"Yarn\",\"host\":\"registry.yarnpkg.com\"}")
+        .put("/api/network-hosts/" + id)
+        .then()
+        .statusCode(200);
+    given().post("/api/network-hosts/templates/npm").then().statusCode(200);
+    given().delete("/api/network-hosts/" + id).then().statusCode(204);
+
+    AuditEvent created = find("network.host.create", AuditOutcome.SUCCESS);
+    assertEquals("registry.npmjs.org", created.targetName);
+    assertEquals("npm", created.details.get("name"));
+
+    AuditEvent updated = find("network.host.update", AuditOutcome.SUCCESS);
+    assertEquals("registry.yarnpkg.com", updated.targetName);
+    assertTrue(((List<?>) updated.details.get("changed")).contains("host"));
+
+    AuditEvent template = find("network.template.add", AuditOutcome.SUCCESS);
+    assertEquals("NETWORK_TEMPLATE", template.targetType.name());
+
+    AuditEvent deleted = find("network.host.delete", AuditOutcome.SUCCESS);
+    assertEquals(String.valueOf(id), deleted.targetId);
+    assertEquals("registry.yarnpkg.com", deleted.targetName);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "admin-id"),
+        @Claim(key = "preferred_username", value = "admin")
+      })
+  void recordsABadGatewayAsAFailure() {
+    TestUserDirectory down =
+        new TestUserDirectory() {
+          @Override
+          public String create(UserDirectory.User user, String password) {
+            throw new UserDirectory.UnavailableException("down");
+          }
+        };
+    QuarkusMock.installMockForType(down, TestUserDirectory.class);
+
+    given()
+        .contentType("application/json")
+        .body(
+            "{\"username\":\"unavailable\",\"password\":\"secret-pass\","
+                + "\"role\":\"member\",\"projectIds\":[]}")
+        .post("/api/users")
+        .then()
+        .statusCode(502);
+
+    AuditEvent failure = find("user.create", AuditOutcome.FAILURE);
+    assertEquals("admin-id", failure.actorSubject);
+    assertEquals(502, failure.statusCode);
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(
+      claims = {
+        @Claim(key = "sub", value = "admin-id"),
+        @Claim(key = "preferred_username", value = "admin")
+      })
+  void doesNotRecordValidationMissingOrThrottledResponses() {
+    given()
+        .contentType("application/json")
+        .body("{\"username\":\"bad-role\",\"password\":\"secret-pass\",\"role\":\"planet\"}")
+        .post("/api/users")
+        .then()
+        .statusCode(400);
+    assertEquals(0, count("user.create"));
+
+    given().delete("/api/projects/999999999").then().statusCode(404);
+    assertEquals(0, count("project.delete"));
+
+    BuildRunner full =
+        new BuildRunner() {
+          @Override
+          Build submit(Long projectId, String actor, String url, BuildResource.RunRequest request) {
+            throw new WebApplicationException(Response.status(429).build());
+          }
+        };
+    QuarkusMock.installMockForType(full, BuildRunner.class);
+    Long id = project("lead-id");
+    given()
+        .contentType("application/json")
+        .body("{\"branch\":\"main\"}")
+        .post("/api/projects/" + id + "/builds")
+        .then()
+        .statusCode(429);
+    assertEquals(0, count("build.start"));
   }
 }

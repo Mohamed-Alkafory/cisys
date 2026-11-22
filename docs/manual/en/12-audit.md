@@ -102,17 +102,38 @@ Denied and failed events are also best-effort and never replace the original res
 
 There is **no automatic audit retention or deletion**. Every recorded action adds a row, so the table grows with administrative activity, build starts and reruns, and user changes. Database details are indexed by time, actor, action, project, outcome and target.
 
+Expected scale is modest: a busy instance that queues 100 builds per day writes roughly 36,000 build rows a year, and administrative, user, project and settings changes add a few thousand more. A small team usually stays in the tens of thousands of rows; a large installation with many builds and frequent reruns can reach low millions per year. Search uses case-insensitive `LIKE '%term%'`, which cannot use a B-tree index, so very large tables make search slower. Keep the table at a size operators are comfortable searching by archiving old rows, and narrow a search with the action, actor, project, outcome or date filters.
+
 Operators should:
 
 * monitor table and index size, and the database backup size;
 * include `auditevent` in backups;
 * archive or delete old rows with an operator-owned SQL policy if required, after checking the organisation's retention requirements.
 
+Manual retention is deliberately not automated. A safe sequence is to export the rows first, then delete them in bounded batches so a large delete does not lock the table for long:
+
+```sql
+-- 1. Archive a copy outside the database, for example with pg_dump or COPY.
+COPY (SELECT * FROM auditevent WHERE occurredat < now() - interval '1 year')
+  TO '/var/backups/auditevent-old.csv' WITH (FORMAT csv, HEADER true);
+
+-- 2. Delete in batches; repeat until no rows are returned.
+DELETE FROM auditevent
+ WHERE id IN (
+   SELECT id FROM auditevent
+    WHERE occurredat < now() - interval '1 year'
+    ORDER BY id
+    LIMIT 10000
+ );
+```
+
+Verify the archive before deleting, and keep the deleted rows for as long as the organisation's audit policy requires. `VACUUM` (or autovacuum) reclaims the space afterwards.
+
 Rows are append-only from the application's point of view: the API exposes no write, update or delete endpoint, and the application never modifies an existing event. This is an application-level guarantee, not tamper-proof storage. A database administrator can still change rows; use database permissions, backups and, where required, external log shipping or a write-once archive if audit evidence must be resistant to insiders.
 
 ## Reading the log
 
-The **Audit** page lists events newest first. Use the search box (summary, action, actor, project and target names), the action field, and the outcome, target type, from and to filters. Select an event to see its full redacted details and request metadata. The list pages 50 events at a time and shows the total number of matching events.
+The **Audit** page lists events newest first. Use the search box (summary, action, actor, project and target names), the action field, and the outcome, target type, from and to filters. A search term must be at least 2 characters; blank search is ignored. Select an event to see its full redacted details and request metadata. The list pages 50 events at a time and shows the total number of matching events.
 
 The API is admin-only:
 
@@ -121,4 +142,4 @@ The API is admin-only:
 | `GET` | `/api/audit?search=&action=&actor=&outcome=&project=&targetType=&target=&from=&to=&first=&max=` | One page of events and the total |
 | `GET` | `/api/audit/{id}` | One event with its details |
 
-`first` defaults to `0`; `max` defaults to `50` and is capped at `200`. `from` and `to` are ISO-8601 instants and bound `occurredAt`. `action`, `outcome` and `targetType` are matched against the action code and enum names. A caller without the `admin` role receives `403`.
+`first` defaults to `0` and must be zero or more; `max` defaults to `50` and must be between `1` and `200`. Values outside those ranges, or values that are not numbers, are rejected with `400` instead of being clamped. A `search` term must be at least 2 characters. `from` and `to` are ISO-8601 instants and bound `occurredAt`. `action`, `outcome` and `targetType` are matched against the action code and enum names. A caller without the `admin` role receives `403`.

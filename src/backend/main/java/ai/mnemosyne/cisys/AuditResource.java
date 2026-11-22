@@ -37,6 +37,7 @@ import java.util.Map;
 public class AuditResource {
   static final int DEFAULT_PAGE = 50;
   static final int MAX_PAGE = 200;
+  static final int MIN_SEARCH = 2;
 
   @Inject SecurityIdentity identity;
 
@@ -66,7 +67,9 @@ public class AuditResource {
 
   /**
    * Events matching every supplied filter, newest first; {@code first}/{@code max} page the result.
-   * {@code max} is capped at {@value #MAX_PAGE}.
+   * {@code first} must be zero or more and {@code max} must be between 1 and {@value #MAX_PAGE};
+   * invalid values are rejected with {@code 400}, never clamped. A non-blank {@code search} must be
+   * at least {@value #MIN_SEARCH} characters.
    */
   @GET
   public Page list(
@@ -74,16 +77,21 @@ public class AuditResource {
       @QueryParam("action") String action,
       @QueryParam("actor") String actor,
       @QueryParam("outcome") String outcome,
-      @QueryParam("project") Long project,
+      @QueryParam("project") String project,
       @QueryParam("targetType") String targetType,
       @QueryParam("target") String target,
       @QueryParam("from") String from,
       @QueryParam("to") String to,
-      @QueryParam("first") Integer first,
-      @QueryParam("max") Integer max) {
+      @QueryParam("first") String first,
+      @QueryParam("max") String max) {
     requireAdmin();
-    int offset = first == null ? 0 : Math.max(0, first);
-    int size = max == null ? DEFAULT_PAGE : Math.min(MAX_PAGE, Math.max(1, max));
+    int offset =
+        first == null || first.isBlank() ? 0 : integer(first, "first", 0, Integer.MAX_VALUE);
+    int size = max == null || max.isBlank() ? DEFAULT_PAGE : integer(max, "max", 1, MAX_PAGE);
+    Long projectId = project == null || project.isBlank() ? null : longValue(project, "project");
+    if (hasText(search) && search.strip().length() < MIN_SEARCH) {
+      throw new BadRequestException("search must be at least " + MIN_SEARCH + " characters");
+    }
     StringBuilder where = new StringBuilder("1 = 1");
     Map<String, Object> params = new LinkedHashMap<>();
     if (hasText(search)) {
@@ -109,9 +117,9 @@ public class AuditResource {
       where.append(" and outcome = :outcome");
       params.put("outcome", enumValue(AuditOutcome.class, outcome));
     }
-    if (project != null) {
+    if (projectId != null) {
       where.append(" and projectId = :project");
-      params.put("project", project);
+      params.put("project", projectId);
     }
     if (hasText(targetType)) {
       where.append(" and targetType = :targetType");
@@ -202,6 +210,27 @@ public class AuditResource {
             .replace("%", "\\%")
             .replace("_", "\\_");
     return "%" + escaped + "%";
+  }
+
+  private static int integer(String value, String name, int min, int max) {
+    int parsed;
+    try {
+      parsed = Integer.parseInt(value.strip());
+    } catch (NumberFormatException e) {
+      throw new BadRequestException(name + " must be an integer");
+    }
+    if (parsed < min || parsed > max) {
+      throw new BadRequestException(name + " must be between " + min + " and " + max);
+    }
+    return parsed;
+  }
+
+  private static long longValue(String value, String name) {
+    try {
+      return Long.parseLong(value.strip());
+    } catch (NumberFormatException e) {
+      throw new BadRequestException(name + " must be a number");
+    }
   }
 
   private static Instant instant(String value, String name) {
