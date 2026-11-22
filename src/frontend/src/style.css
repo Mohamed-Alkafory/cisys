@@ -1417,6 +1417,12 @@ body {
 .audit-event .user-row {
   border-top: 0;
 }
+/* Audit rows have a single action: drop the three-slot grid and right-align. */
+.audit-event .user-actions {
+  display: flex;
+  justify-content: flex-end;
+  justify-self: stretch;
+}
 .audit-inline-detail {
   margin: 0 0 1rem;
   padding: 0.75rem 1rem 1rem;
