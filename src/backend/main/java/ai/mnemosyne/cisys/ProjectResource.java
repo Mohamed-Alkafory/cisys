@@ -88,11 +88,20 @@ public class ProjectResource {
 
   /** The UI's own pages, such as /manual and /settings, so no project may use these names. */
   static final Set<String> RESERVED_NAMES =
-      Set.of("manual", "articles", "home", "images", "users", "reports", "settings", "profile");
+      Set.of(
+          "manual",
+          "articles",
+          "home",
+          "images",
+          "users",
+          "reports",
+          "settings",
+          "profile",
+          "audit");
 
   static final String RESERVED_RULE =
-      "The project names manual, articles, home, images, users, reports, settings and profile"
-          + " are reserved";
+      "The project names manual, articles, home, images, users, reports, settings, profile and"
+          + " audit are reserved";
 
   /** A project to create. */
   public record CreateProject(
