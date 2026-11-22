@@ -356,6 +356,25 @@ public record Workflow(
   static final String WORKSPACE = "workspace";
 
   /**
+   * The directory in the build context that holds the project's cache, see {@link ProjectCache}.
+   */
+  static final String CACHE = "cache";
+
+  /** The directory, writable by the steps, that the last step moves the cache into. */
+  static final String SAVED_CACHE_PARENT = "/cisys-cache";
+
+  /** Where the last step leaves the cache for the runner to take out of the image. */
+  static final String SAVED_CACHE = SAVED_CACHE_PARENT + "/project";
+
+  /** The project's cache directory in the build, {@code $HOME/.cisys/<project name>}. */
+  static String cacheDir(String projectName) {
+    if (!ProjectResource.NAME.matcher(projectName).matches()) {
+      throw new IllegalArgumentException(ProjectResource.NAME_RULE + ": " + projectName);
+    }
+    return "/tmp/.cisys/" + projectName;
+  }
+
+  /**
    * The Containerfile that builds this workflow's image from the local image {@code baseId}, which
    * {@link ImageReference#resolve} found for {@code container}; see {@link #containerfile(String,
    * int)}.
@@ -368,7 +387,16 @@ public record Workflow(
    * As {@link #containerfile(String)}, with the steps given the egress proxy when {@code network}.
    */
   public String containerfile(String baseId, boolean network) {
-    return containerfile(baseId, network, WAIT_SECONDS);
+    return containerfile(baseId, network, null);
+  }
+
+  /**
+   * As {@link #containerfile(String, boolean)}, with the cache of the project {@code cacheName}, or
+   * none when null: {@value #CACHE} in the build context is copied to {@link #cacheDir} and, when
+   * every step passed, moved to {@value #SAVED_CACHE}.
+   */
+  public String containerfile(String baseId, boolean network, String cacheName) {
+    return containerfile(baseId, network, WAIT_SECONDS, true, true, cacheName);
   }
 
   String containerfile(String baseId, int waitSeconds) {
@@ -430,7 +458,7 @@ public record Workflow(
    * {@link #PROXY}.
    */
   String containerfile(String baseId, boolean network, int waitSeconds) {
-    return containerfile(baseId, network, waitSeconds, true, true);
+    return containerfile(baseId, network, waitSeconds, true, true, null);
   }
 
   /**
@@ -462,11 +490,19 @@ public record Workflow(
    * this file has no per-{@code RUN} flags.
    */
   String stepsContainerfile(String preparedImage, boolean network, int waitSeconds) {
-    return containerfile(preparedImage, network, waitSeconds, false, false);
+    return containerfile(preparedImage, network, waitSeconds, false, false, null);
   }
 
   String stepsContainerfile(String preparedImage, boolean network) {
-    return stepsContainerfile(preparedImage, network, WAIT_SECONDS);
+    return stepsContainerfile(preparedImage, network, null);
+  }
+
+  /**
+   * As {@link #stepsContainerfile(String, boolean)}, with the cache of the project {@code
+   * cacheName}.
+   */
+  String stepsContainerfile(String preparedImage, boolean network, String cacheName) {
+    return containerfile(preparedImage, network, WAIT_SECONDS, false, false, cacheName);
   }
 
   private String containerfile(
@@ -474,7 +510,9 @@ public record Workflow(
       boolean network,
       int waitSeconds,
       boolean installToolsAndDependencies,
-      boolean perRunNetworkFlags) {
+      boolean perRunNetworkFlags,
+      String cacheName) {
+    String cache = cacheName == null ? null : cacheDir(cacheName);
     if (installToolsAndDependencies && !baseId.matches(BASE)) {
       throw new IllegalArgumentException("Not an image ID: " + baseId);
     }
@@ -520,7 +558,26 @@ public record Workflow(
           "environment",
           exports());
     }
-    run(f, readable, "", "mkdir -p /workspace && chown " + BUILD_USER + " /workspace", "workspace");
+    run(
+        f,
+        readable,
+        "",
+        "mkdir -p /workspace && chown "
+            + BUILD_USER
+            + " /workspace"
+            + (cache == null
+                ? ""
+                : " && mkdir -p "
+                    + quote(cache)
+                    + " "
+                    + SAVED_CACHE_PARENT
+                    + " && chown "
+                    + BUILD_USER
+                    + " /tmp/.cisys "
+                    + quote(cache)
+                    + " "
+                    + SAVED_CACHE_PARENT),
+        "workspace");
     f.append("USER ").append(BUILD_USER).append('\n');
     f.append("WORKDIR /workspace\n");
     f.append("ENV HOME=/tmp GIT_TERMINAL_PROMPT=0\n");
@@ -529,6 +586,16 @@ public record Workflow(
         .append(' ')
         .append(WORKSPACE)
         .append(" /workspace\n");
+    if (cache != null) {
+      // The name has no spaces or quotes, see cacheDir, so the destination needs no quoting here.
+      f.append("COPY --chown=")
+          .append(BUILD_USER)
+          .append(' ')
+          .append(CACHE)
+          .append(' ')
+          .append(cache)
+          .append('\n');
+    }
     List<String> runs = runs(waitSeconds);
     for (int i = 0; i < runs.size(); i++) {
       run(
@@ -540,7 +607,7 @@ public record Workflow(
               + " || exit 1\n"
               + (network ? PROXY : "")
               + runs.get(i)
-              + (i == runs.size() - 1 ? CLEAN_UP : ""),
+              + (i == runs.size() - 1 ? saveCache(cache) + CLEAN_UP : ""),
           "step");
     }
     checkSize(f);
@@ -557,6 +624,20 @@ public record Workflow(
       "echo '==> Removing the files the steps wrote'\n"
           + "find /workspace /tmp /var/tmp -mindepth 1 -delete 2>/dev/null\n"
           + "exit 0\n";
+
+  /**
+   * Moves the cache directory to {@value #SAVED_CACHE}, before {@link #CLEAN_UP} deletes it. Only
+   * the last step runs it, so only a build whose steps all passed saves its cache.
+   */
+  static String saveCache(String cache) {
+    return cache == null
+        ? ""
+        : "echo '==> Saving the cache'\nmv "
+            + quote(cache)
+            + " "
+            + SAVED_CACHE
+            + " || echo '==> Could not save the cache'\n";
+  }
 
   private static void checkSize(StringBuilder file) {
     if (file.length() > MAX_CONTAINERFILE) {

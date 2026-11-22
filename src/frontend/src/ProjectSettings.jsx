@@ -38,12 +38,14 @@ export default function ProjectSettings({
   const [url, setUrl] = useState(project.repositoryUrl);
   const [priv, setPriv] = useState(project.privateRepository);
   const [credential, setCredential] = useState(project.credentialRef || "");
+  const [cache, setCache] = useState(!!project.cache);
   // Last-saved snapshot of the repository fields; drives change detection.
   const [repoSnapshot, setRepoSnapshot] = useState({
     name: project.name,
     url: project.repositoryUrl,
     privateRepository: project.privateRepository,
     credential: (project.credentialRef || "").trim(),
+    cache: !!project.cache,
   });
   const [originalMembers, setOriginalMembers] = useState(null); // null while loading / before Team is opened
   const [draftMembers, setDraftMembers] = useState(null);
@@ -115,7 +117,8 @@ export default function ProjectSettings({
     name !== repoSnapshot.name ||
     url !== repoSnapshot.url ||
     priv !== repoSnapshot.privateRepository ||
-    (isAdmin && credential.trim() !== repoSnapshot.credential);
+    (isAdmin && credential.trim() !== repoSnapshot.credential) ||
+    cache !== repoSnapshot.cache;
   const memberPlan =
     originalMembers && draftMembers
       ? diffMembers(toMap(originalMembers), draftMembers)
@@ -149,7 +152,12 @@ export default function ProjectSettings({
   }
 
   async function repoPut() {
-    const body = { name, repositoryUrl: url, privateRepository: priv };
+    const body = {
+      name,
+      repositoryUrl: url,
+      privateRepository: priv,
+      cache,
+    };
     // A lead's save leaves the credential untouched.
     if (isAdmin)
       body.credentialRef = priv && credential.trim() ? credential.trim() : null;
@@ -215,11 +223,13 @@ export default function ProjectSettings({
           url: saved.repositoryUrl,
           privateRepository: saved.privateRepository,
           credential: (saved.credentialRef || "").trim(),
+          cache: !!saved.cache,
         });
         setName(saved.name);
         setUrl(saved.repositoryUrl);
         setPriv(saved.privateRepository);
         setCredential(saved.credentialRef || "");
+        setCache(!!saved.cache);
         onSaved(saved);
       } catch (e) {
         setError(e.message || "Unable to save the project.");
@@ -286,6 +296,7 @@ export default function ProjectSettings({
       setUrl(repoSnapshot.url);
       setPriv(repoSnapshot.privateRepository);
       setCredential(repoSnapshot.credential);
+      setCache(repoSnapshot.cache);
       setError("");
       return;
     }
@@ -417,6 +428,24 @@ export default function ProjectSettings({
                     />
                   </div>
                 )}
+                <div className="form-field">
+                  <Label htmlFor="settings-cache" className="whitespace-nowrap">
+                    Cache
+                  </Label>
+                  <span className="private-choice">
+                    <input
+                      id="settings-cache"
+                      type="checkbox"
+                      checked={cache}
+                      onChange={(e) => setCache(e.target.checked)}
+                      aria-describedby="settings-cache-help"
+                    />
+                  </span>
+                  <p id="settings-cache-help" className="file-help">
+                    Keeps {"$HOME/.cisys/<project name>"} between builds; saved
+                    after passed builds, not pull requests.
+                  </p>
+                </div>
               </form>
             </CardContent>
           </Card>

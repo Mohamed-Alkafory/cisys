@@ -72,6 +72,29 @@ describe("ProjectSettings", () => {
     );
   });
 
+  it("saves the cache setting", async () => {
+    const saved = { ...project(), cache: true };
+    const api = vi.fn(async () => saved);
+    render(
+      <ProjectSettings
+        project={project()}
+        api={api}
+        isAdmin={false}
+        onSaved={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Cache").checked).toBe(false);
+    fireEvent.click(screen.getByLabelText("Cache"));
+    fireEvent.submit(document.getElementById("project-settings-form"));
+    await vi.waitFor(() => expect(api).toHaveBeenCalled());
+    const [, init] = api.mock.calls.find(([path]) => path === "/projects/1");
+    expect(JSON.parse(init.body).cache).toBe(true);
+    await vi.waitFor(() =>
+      expect(screen.getByLabelText("Cache").checked).toBe(true),
+    );
+  });
+
   it("saves the project from the repository card only", async () => {
     const saved = { ...project(), name: "renamed" };
     const api = vi.fn(async () => saved);

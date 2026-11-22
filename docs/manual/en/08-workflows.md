@@ -231,5 +231,5 @@ The build page shows the workflow file the build read, under **Workflow**, and t
 
 * One workflow file per branch, at a fixed path. Builds can be started from the web UI or by the automatic-build timer; the global automatic-build settings, not the workflow file, decide whether new commits trigger builds and which branches are watched.
 * All jobs run one after another in a single image build. Jobs do not run in parallel and have no separate images.
-* Steps reach the network only through the HTTPS proxy, for the hosts an admin allowed, and there are no per-step timeouts, caches or artifacts.
+* Steps reach the network only through the HTTPS proxy, for the hosts an admin allowed, and there are no per-step timeouts, caches or artifacts. A project can keep one cache directory between builds, see **Cache** in the **Projects** chapter.
 * `dependencies` names one package per entry for the container's distribution; there is no per-distribution choice of package names in a single workflow.

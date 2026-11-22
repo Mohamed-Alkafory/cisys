@@ -42,6 +42,8 @@ The project credential is used for branch discovery, the poller's mirror fetches
 
 Admins, and the lead who owns a project, can open its settings page with the pencil button in the repositories list. **Save** applies the change and returns to the project page; **Cancel** leaves without saving. Saving keeps queued and running builds on the repository URL, branch, image, command and credential they started with; the change affects new page views and new builds.
 
+**Cache** keeps the directory `$HOME/.cisys/<project name>` from one build to the next, for example for a local Maven repository (`mvn -Dmaven.repo.local=$HOME/.cisys/my-project/m2 package`). A build copies the stored cache there before the first step. After a build whose steps all passed, that directory replaces the stored cache; pull request builds use the cache but never save it. The cache is kept on the server under `cisys.cache.dir` by project id, so renaming the project keeps it; changing the repository URL or deleting the project removes it. A cache larger than `cisys.cache.max-mib` (default 2048) is not saved, and the build log says so. The project name must follow the rule above.
+
 Projects created before this naming rule keep working. An administrator can rename one in the database; its builds follow, because they reference the project's id:
 
 ```sql

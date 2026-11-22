@@ -491,6 +491,49 @@ class ProjectResourceTest {
   @Test
   @TestSecurity(user = "admin", roles = "admin")
   @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
+  void cacheSettingIsSavedKeptByOlderClientsAndCleared() {
+    String repo =
+        "\"repositoryUrl\":\"https://github.com/org/cached.git\",\"privateRepository\":false";
+    int id =
+        given()
+            .contentType("application/json")
+            .body("{\"name\":\"cached\"," + repo + "}")
+            .when()
+            .post("/api/projects")
+            .then()
+            .statusCode(201)
+            .body("cache", equalTo(false))
+            .extract()
+            .path("id");
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"cached\"," + repo + ",\"cache\":true}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("cache", equalTo(true));
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"cached\"," + repo + "}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("cache", equalTo(true));
+    given()
+        .contentType("application/json")
+        .body("{\"name\":\"cached\"," + repo + ",\"cache\":false}")
+        .when()
+        .put("/api/projects/" + id)
+        .then()
+        .statusCode(200)
+        .body("cache", equalTo(false));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = {@Claim(key = "sub", value = "admin-id")})
   void adminChangesAndClearsTheCredential() {
     int id =
         given()

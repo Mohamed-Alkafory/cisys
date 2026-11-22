@@ -80,6 +80,36 @@ class WorkflowTest {
   }
 
   @Test
+  void aCachedBuildCopiesTheCacheInAndSavesItAfterTheLastStep() {
+    Workflow w = Workflow.parse(VALID);
+    String id = "0".repeat(64);
+    String plain = w.containerfile(id, false);
+    String cached = w.containerfile(id, false, "my-project");
+    assertFalse(plain.contains(".cisys/") || plain.contains("cisys-cache"), plain);
+    assertTrue(
+        cached.contains(
+            "mkdir -p '/tmp/.cisys/my-project' /cisys-cache && chown 65534:65534 /tmp/.cisys"
+                + " '/tmp/.cisys/my-project' /cisys-cache"),
+        cached);
+    String copy = "COPY --chown=65534:65534 cache /tmp/.cisys/my-project\n";
+    assertTrue(cached.contains(copy) && cached.indexOf(copy) == cached.lastIndexOf(copy), cached);
+    assertTrue(
+        cached.indexOf(copy) > cached.indexOf("COPY --chown=65534:65534 workspace /workspace"),
+        cached);
+    assertTrue(cached.indexOf(copy) < cached.indexOf("==> Step:"), cached);
+    String save = "mv '/tmp/.cisys/my-project' /cisys-cache/project ||";
+    assertTrue(cached.contains(save) && cached.indexOf(save) == cached.lastIndexOf(save), cached);
+    assertTrue(cached.lastIndexOf("==> Step:") < cached.indexOf(save), cached);
+    assertTrue(cached.indexOf(save) < cached.indexOf("Removing the files the steps wrote"), cached);
+    String steps = w.stepsContainerfile("prepared", false, "my-project");
+    assertTrue(steps.contains(copy), steps);
+    assertTrue(steps.contains(save), steps);
+    assertFalse(w.stepsContainerfile("prepared", false).contains(".cisys/"));
+    assertThrows(
+        IllegalArgumentException.class, () -> w.containerfile(id, false, "a b'; rm -rf /"));
+  }
+
+  @Test
   void parsesWorkflow() {
     Workflow w = Workflow.parse(VALID);
     assertEquals("main branch", w.name());

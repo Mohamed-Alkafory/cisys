@@ -37,4 +37,8 @@ public class Project extends PanacheEntity {
 
   /** The highest pull request number present when the feature was enabled; null means seed next. */
   public Integer pullRequestBaseline;
+
+  /** Keeps {@code $HOME/.cisys/<name>} between builds; see {@link ProjectCache}. */
+  @Column(nullable = false)
+  public boolean cache;
 }
