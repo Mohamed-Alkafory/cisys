@@ -8,9 +8,49 @@
 
 import { branchFromSegment } from "./build-format";
 
-// The manual lives at /manual and articles at /articles, so no project may use those names.
+// The manual, articles and the top-level pages own these paths, so no project may use their names.
 const MANUAL = "manual";
 const ARTICLES = "articles";
+export const PAGES = [
+  "home",
+  "images",
+  "users",
+  "reports",
+  "settings",
+  "profile",
+  "audit",
+];
+const RESERVED = new Set([MANUAL, ARTICLES, ...PAGES]);
+
+/** The projects list is at /, every other top-level page at /<page>. */
+export function pagePath(page) {
+  return page === "projects" ? "/" : `/${page}`;
+}
+
+/**
+ * What a path shows: { page }, { manual }, { articles } or { project, branch, buildId, settings },
+ * or null for an unknown path.
+ */
+export function routeFromPath(pathname) {
+  if (pathname === "/") return { page: "projects" };
+  const page = /^\/([^/]+)\/?$/.exec(pathname)?.[1].toLowerCase();
+  if (PAGES.includes(page)) return { page };
+  const manual = manualFromPath(pathname);
+  if (manual) return { manual };
+  const articles = articlesFromPath(pathname);
+  if (articles) return { articles };
+  const build = projectBuildFromPath(pathname);
+  if (build)
+    return {
+      project: build.name,
+      branch: build.branch,
+      buildId: build.buildId,
+    };
+  const settings = projectSettingsFromPath(pathname);
+  if (settings) return { project: settings.name, settings: true };
+  const name = projectNameFromPath(pathname);
+  return name === null ? null : { project: name };
+}
 
 /** Returns { slug } for /manual (slug null) or /manual/builds, otherwise null. */
 export function manualFromPath(pathname) {
@@ -46,8 +86,7 @@ export function articlesPath({ id = null, edit = false } = {}) {
 }
 
 function isReserved(name) {
-  const lower = name.toLowerCase();
-  return lower === MANUAL || lower === ARTICLES;
+  return RESERVED.has(name.toLowerCase());
 }
 
 /** Returns the project name for paths like /cisys/ (or /cisys), otherwise null. */

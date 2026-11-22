@@ -299,7 +299,8 @@ class ProjectResourceTest {
   @TestSecurity(user = "lead", roles = "lead")
   @JwtSecurity(claims = {@Claim(key = "sub", value = "lead-id")})
   void rejectsTheReservedNames() {
-    for (String name : new String[] {"manual", "Manual", "MANUAL", "articles", "Articles"}) {
+    for (String name :
+        new String[] {"manual", "Manual", "MANUAL", "articles", "Articles", "settings", "Images"}) {
       given()
           .contentType("application/json")
           .body(

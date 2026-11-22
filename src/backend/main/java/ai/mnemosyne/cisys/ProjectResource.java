@@ -86,10 +86,13 @@ public class ProjectResource {
   static final String NAME_RULE =
       "Project names use letters, digits, '.', '_' and '-', and start with a letter or digit";
 
-  /** The UI serves the manual at /manual and articles at /articles, so no project may take them. */
-  static final Set<String> RESERVED_NAMES = Set.of("manual", "articles");
+  /** The UI's own pages, such as /manual and /settings, so no project may use these names. */
+  static final Set<String> RESERVED_NAMES =
+      Set.of("manual", "articles", "home", "images", "users", "reports", "settings", "profile");
 
-  static final String RESERVED_RULE = "The project names 'manual' and 'articles' are reserved";
+  static final String RESERVED_RULE =
+      "The project names manual, articles, home, images, users, reports, settings and profile"
+          + " are reserved";
 
   /** A project to create. */
   public record CreateProject(

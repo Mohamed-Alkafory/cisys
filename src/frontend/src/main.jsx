@@ -6,8 +6,15 @@
  *   OF THE PROGRAM CONSTITUTES RECIPIENT'S ACCEPTANCE OF THIS AGREEMENT.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  createBrowserRouter,
+  RouterProvider,
+  useBlocker,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import Keycloak from "keycloak-js";
 import {
   FolderGit2,
@@ -58,16 +65,13 @@ import ArticlesButton from "./ArticlesButton";
 import ArticlesPage from "./ArticlesPage";
 import { chapterBySlug, chapters } from "./manual";
 import {
-  articlesFromPath,
   articlesPath,
-  manualFromPath,
   manualPath,
-  projectBuildFromPath,
-  projectNameFromPath,
+  pagePath,
   projectPath,
-  projectSettingsFromPath,
   projectSettingsPath,
   readTabFromSearch,
+  routeFromPath,
   withTab,
 } from "./project-paths";
 import { buildPath } from "./build-format";
@@ -176,7 +180,7 @@ async function api(path, opts = {}) {
   return response.json();
 }
 
-export function App() {
+function AppPage() {
   // 'loading' until Keycloak answers, then 'public' for anonymous visitors or 'app' for signed-in users.
   const [mode, setMode] = useState("loading");
   const [stats, setStats] = useState(undefined);
@@ -192,43 +196,22 @@ export function App() {
   const [credential, setCredential] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [branding, setBranding] = useState(null);
-  const [page, setPage] = useState("projects");
   const [settingsDirty, setSettingsDirty] = useState(false);
-  const settingsDirtyRef = React.useRef(false);
-  settingsDirtyRef.current = settingsDirty;
-  // Blocks leaving the settings page while there are unsaved changes.
-  const confirmLeave = () =>
-    !settingsDirtyRef.current ||
-    window.confirm("You have unsaved changes. Leave anyway?");
-  // Set when the URL is a project page such as /cisys/, a build such as /cisys/master/build/51,
-  // or the project's settings page /cisys/settings.
-  const [projectName, setProjectName] = useState(
-    () =>
-      projectBuildFromPath(window.location.pathname)?.name ??
-      projectSettingsFromPath(window.location.pathname)?.name ??
-      projectNameFromPath(window.location.pathname),
+  const location = useLocation();
+  const navigate = useNavigate();
+  const route = useMemo(
+    () => routeFromPath(location.pathname),
+    [location.pathname],
   );
-  const [projectBranch, setProjectBranch] = useState(
-    () => projectBuildFromPath(window.location.pathname)?.branch ?? "",
-  );
-  const [buildId, setBuildId] = useState(
-    () => projectBuildFromPath(window.location.pathname)?.buildId ?? null,
-  );
-  const [projectSettings, setProjectSettings] = useState(
-    () => projectSettingsFromPath(window.location.pathname) !== null,
-  );
-  // Set to { slug } when the URL is the manual, /manual or /manual/builds.
-  const [manual, setManual] = useState(() =>
-    manualFromPath(window.location.pathname),
-  );
-  // Set to { id, edit } when the URL is /articles, /articles/new, /articles/7 or /articles/7/edit.
-  const [articles, setArticles] = useState(() =>
-    articlesFromPath(window.location.pathname),
-  );
-  // The current query string. It is the single source of truth for the project tab,
-  // so replaceState updates below must update this state as well.
-  const [search, setSearch] = useState(() => window.location.search);
-  const projectTab = readTabFromSearch(search);
+  const page = route?.page ?? null;
+  const manual = route?.manual ?? null;
+  const articles = route?.articles ?? null;
+  const projectName = route?.project ?? null;
+  // A project page's branch is not in its URL; Back from a build passes it along.
+  const projectBranch = route?.branch ?? location.state?.branch ?? "";
+  const buildId = route?.buildId ?? null;
+  const projectSettings = Boolean(route?.settings);
+  const projectTab = readTabFromSearch(location.search);
   const [dark, setDark] = useState(
     () => localStorage.getItem("cisys-theme") === "dark",
   );
@@ -310,163 +293,74 @@ export function App() {
       .catch(() => showPublic());
   }, [loadPublicStats]);
 
+  // Leaving a page, Back included, waits for an added project and asks about unsaved settings.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      currentLocation.pathname !== nextLocation.pathname &&
+      (submitting || settingsDirty),
+  );
   useEffect(() => {
-    const onPopState = () => {
-      const build = projectBuildFromPath(window.location.pathname);
-      const settings = projectSettingsFromPath(window.location.pathname);
-      setBuildId(build ? build.buildId : null);
-      setProjectBranch(build ? build.branch : "");
-      setProjectSettings(settings !== null);
-      setManual(manualFromPath(window.location.pathname));
-      setArticles(articlesFromPath(window.location.pathname));
-      setSearch(window.location.search);
-      setProjectName(
-        settings
-          ? settings.name
-          : build
-            ? build.name
-            : projectNameFromPath(window.location.pathname),
-      );
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
-  // Switches to an in-app page, leaving any project URL behind.
-  function go(target, replace = false) {
-    if (submitting || !confirmLeave()) return;
+    if (blocker.state !== "blocked") return;
     if (
-      window.location.pathname !== "/" ||
-      window.location.search ||
-      window.location.hash
+      !submitting &&
+      window.confirm("You have unsaved changes. Leave anyway?")
     )
-      window.history[replace ? "replaceState" : "pushState"](null, "", "/");
-    setSearch("");
-    setProjectName(null);
-    setProjectBranch("");
-    setBuildId(null);
-    setProjectSettings(false);
-    setManual(null);
-    setArticles(null);
-    setSettingsDirty(false);
-    setPage(target);
-  }
+      blocker.proceed();
+    else blocker.reset();
+  }, [blocker, submitting]);
 
-  const goRef = React.useRef(null);
-  goRef.current = go;
-  // A project or build that does not exist, or that the visitor may not see, and any unknown path,
-  // goes straight to the front page. The URL is replaced, so Back does not return to it.
-  const showFrontPage = useCallback(() => goRef.current("home", true), []);
-
-  useEffect(() => {
-    const path = window.location.pathname;
-    if (
-      path !== "/" &&
-      projectName === null &&
-      buildId === null &&
-      !projectSettings &&
-      manual === null &&
-      articles === null
-    )
-      showFrontPage();
-  }, [projectName, buildId, projectSettings, manual, articles, showFrontPage]);
-
-  // /manual and unknown chapters show the first chapter.
-  useEffect(() => {
-    if (manual && !chapterBySlug(manual.slug) && chapters.length > 0) {
-      window.history.replaceState(null, "", manualPath(chapters[0].slug));
-      setSearch("");
-      setManual({ slug: chapters[0].slug });
-    }
-  }, [manual]);
-
-  function openManual(slug) {
-    if (submitting || !confirmLeave()) return;
-    window.history.pushState(null, "", manualPath(slug));
-    setSearch("");
-    setSettingsDirty(false);
-    setProjectName(null);
-    setProjectBranch("");
-    setBuildId(null);
-    setProjectSettings(false);
-    setArticles(null);
-    setManual({ slug });
-  }
-
-  function openArticles(route = {}) {
-    if (submitting || !confirmLeave()) return;
-    const next = { id: route.id ?? null, edit: Boolean(route.edit) };
-    window.history.pushState(null, "", articlesPath(next));
-    setSearch("");
-    setSettingsDirty(false);
-    setProjectName(null);
-    setProjectBranch("");
-    setBuildId(null);
-    setProjectSettings(false);
-    setManual(null);
-    setArticles(next);
-  }
-
-  function openProject(
+  const go = (target, replace = false) =>
+    navigate(pagePath(target), { replace });
+  const openManual = (slug) => navigate(manualPath(slug));
+  const openArticles = (next = {}) =>
+    navigate(articlesPath({ id: next.id ?? null, edit: Boolean(next.edit) }));
+  const openProject = (
     name,
     branch = "",
     tab = "builds",
     search = "",
     hash = "",
-  ) {
-    if (submitting || !confirmLeave()) return;
-    const nextSearch = withTab(search, tab);
-    window.history.pushState(null, "", projectPath(name, tab, search, hash));
-    setSearch(nextSearch);
-    setManual(null);
-    setArticles(null);
-    setSettingsDirty(false);
-    setProjectName(name);
-    setProjectBranch(branch);
-    setBuildId(null);
-    setProjectSettings(false);
-  }
-
-  function openBuild(name, branch, id) {
-    if (!confirmLeave()) return;
-    const nextSearch = withTab(window.location.search, projectTab);
-    window.history.pushState(
-      null,
-      "",
-      buildPath(name, branch, id) + nextSearch + window.location.hash,
+  ) => navigate(projectPath(name, tab, search, hash), { state: { branch } });
+  // A build keeps the project's query and hash, so Back returns to the same tab.
+  const openBuild = (name, branch, id) =>
+    navigate(
+      buildPath(name, branch, id) +
+        withTab(location.search, projectTab) +
+        location.hash,
     );
-    setSearch(nextSearch);
-    setManual(null);
-    setArticles(null);
-    setSettingsDirty(false);
-    setProjectName(name);
-    setProjectBranch(branch);
-    setBuildId(id);
-    setProjectSettings(false);
-  }
+  const openProjectSettings = (name) => navigate(projectSettingsPath(name));
 
-  function openProjectSettings(name) {
-    if (submitting || !confirmLeave()) return;
-    window.history.pushState(null, "", projectSettingsPath(name));
-    setSearch("");
-    setManual(null);
-    setArticles(null);
-    setSettingsDirty(false);
-    setProjectName(name);
-    setProjectBranch("");
-    setBuildId(null);
-    setProjectSettings(true);
-  }
+  // A project or build that does not exist, or that the visitor may not see, and any unknown path,
+  // goes straight to the front page. The URL is replaced, so Back does not return to it.
+  const showFrontPage = useCallback(
+    () => navigate(mode === "app" ? pagePath("home") : "/", { replace: true }),
+    [navigate, mode],
+  );
+
+  useEffect(() => {
+    if (mode === "loading") return;
+    if (
+      route === null ||
+      (mode === "public" && page !== null && page !== "projects")
+    )
+      showFrontPage();
+  }, [mode, route, page, showFrontPage]);
+
+  // /manual and unknown chapters show the first chapter.
+  useEffect(() => {
+    if (manual && !chapterBySlug(manual.slug) && chapters.length > 0)
+      navigate(manualPath(chapters[0].slug), { replace: true });
+  }, [manual, navigate]);
 
   function changeProjectTab(tab) {
     if (tab === projectTab) return;
-    const nextSearch = withTab(window.location.search, tab);
-    window.history.replaceState(
-      null,
-      "",
-      window.location.pathname + nextSearch + window.location.hash,
+    navigate(
+      location.pathname + withTab(location.search, tab) + location.hash,
+      {
+        replace: true,
+        state: location.state,
+      },
     );
-    setSearch(nextSearch);
   }
 
   function resetProjectForm() {
@@ -542,19 +436,24 @@ export function App() {
     user != null &&
     (user.roles.includes("admin") || team.get(settingsProject.id) === "LEAD");
 
-  // The settings page is for the project's LEADs and admins, like the pencil button.
+  // A project's settings page is for its LEADs and admins, like the pencil button; the top-level
+  // pages follow the navigation links.
   useEffect(() => {
+    if (mode !== "app" || !ready) return;
+    const admin = user.roles.includes("admin");
+    const lead = admin || user.roles.includes("lead");
     if (
-      mode === "app" &&
-      ready &&
-      projectSettings &&
-      projectName !== null &&
-      !canEditSettings
+      (projectSettings && projectName !== null && !canEditSettings) ||
+      ((page === "images" || page === "settings" || page === "audit") &&
+        !admin) ||
+      ((page === "users" || page === "reports") && !lead)
     )
       showFrontPage();
   }, [
     mode,
     ready,
+    user,
+    page,
     projectSettings,
     projectName,
     canEditSettings,
@@ -599,8 +498,8 @@ export function App() {
                   projectName,
                   projectBranch,
                   projectTab,
-                  window.location.search,
-                  window.location.hash,
+                  location.search,
+                  location.hash,
                 )
               }
               onOpenBuild={openBuild}
@@ -641,11 +540,7 @@ export function App() {
     viewedProject != null && (isAdmin || team.get(viewedProject.id) != null);
   // Only admins can set a project credential, and only a private project can have one.
   const showCredential = user.roles.includes("admin") && priv;
-  const onPage = (target) =>
-    projectName === null &&
-    manual === null &&
-    articles === null &&
-    page === target;
+  const onPage = (target) => page === target;
   const role = user.roles.includes("admin")
     ? "Admin"
     : user.roles.includes("lead")
@@ -669,7 +564,7 @@ export function App() {
         <div className="header-main">
           <a
             className="brand"
-            href="/"
+            href={pagePath("home")}
             aria-label={`${branding.name} home`}
             onClick={(event) => {
               event.preventDefault();
@@ -827,8 +722,8 @@ export function App() {
                 projectName,
                 projectBranch,
                 projectTab,
-                window.location.search,
-                window.location.hash,
+                location.search,
+                location.hash,
               )
             }
             onOpenBuild={openBuild}
@@ -1056,6 +951,14 @@ export function App() {
       <AppFooter />
     </div>
   );
+}
+
+// App reads the page from the URL itself; the router supplies navigation and the leave blocker.
+export function App() {
+  const [router] = useState(() =>
+    createBrowserRouter([{ path: "*", element: <AppPage /> }]),
+  );
+  return <RouterProvider router={router} />;
 }
 
 const root = document.getElementById("root");

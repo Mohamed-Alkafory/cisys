@@ -17,6 +17,7 @@ import {
   projectPath,
   projectSettingsFromPath,
   readTabFromSearch,
+  routeFromPath,
   withTab,
 } from "./project-paths";
 
@@ -58,6 +59,36 @@ describe("project-paths", () => {
     expect(projectNameFromPath("/Articles/")).toBeNull();
     expect(projectSettingsFromPath("/articles/settings")).toBeNull();
     expect(projectBuildFromPath("/articles/main/build/1")).toBeNull();
+  });
+
+  it("reads every route from one path", () => {
+    expect(routeFromPath("/")).toEqual({ page: "projects" });
+    expect(routeFromPath("/images")).toEqual({ page: "images" });
+    expect(routeFromPath("/Settings/")).toEqual({ page: "settings" });
+    expect(routeFromPath("/manual/builds")).toEqual({
+      manual: { slug: "builds" },
+    });
+    expect(routeFromPath("/articles/7")).toEqual({
+      articles: { id: 7, edit: false },
+    });
+    expect(routeFromPath("/cisys/")).toEqual({ project: "cisys" });
+    expect(routeFromPath("/cisys/settings")).toEqual({
+      project: "cisys",
+      settings: true,
+    });
+    expect(routeFromPath("/cisys/main/build/51")).toEqual({
+      project: "cisys",
+      branch: "main",
+      buildId: 51,
+    });
+    expect(routeFromPath("/a/b/c")).toBeNull();
+  });
+
+  it("never reads a top-level page as a project", () => {
+    expect(projectNameFromPath("/users")).toBeNull();
+    expect(projectSettingsFromPath("/settings/settings")).toBeNull();
+    expect(projectBuildFromPath("/home/main/build/1")).toBeNull();
+    expect(projectNameFromPath("/audit")).toBeNull();
   });
 
   it("reads only the commits tab from the query string", () => {
