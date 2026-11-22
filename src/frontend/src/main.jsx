@@ -715,6 +715,16 @@ export function App() {
                 Users
               </button>
             )}
+            {user.roles.includes("admin") && (
+              <button
+                type="button"
+                className="nav-link"
+                aria-current={onPage("audit") ? "page" : undefined}
+                onClick={() => go("audit")}
+              >
+                Audit
+              </button>
+            )}
             {canCreate && (
               <button
                 type="button"
@@ -733,16 +743,6 @@ export function App() {
                 onClick={() => go("settings")}
               >
                 Settings
-              </button>
-            )}
-            {user.roles.includes("admin") && (
-              <button
-                type="button"
-                className="nav-link"
-                aria-current={onPage("audit") ? "page" : undefined}
-                onClick={() => go("audit")}
-              >
-                Audit
               </button>
             )}
           </nav>
