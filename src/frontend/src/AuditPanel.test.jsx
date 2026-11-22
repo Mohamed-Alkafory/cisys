@@ -100,6 +100,31 @@ describe("AuditPanel", () => {
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
+  it("shows an explicit timezone in the list and the details", async () => {
+    const load = vi.fn((path) =>
+      Promise.resolve(
+        String(path).startsWith("/audit?")
+          ? { total: 1, events: [event] }
+          : { ...event, details: { nested: true } },
+      ),
+    );
+    render(<AuditPanel api={load} />);
+
+    const expected = new Date(event.occurredAt).toLocaleString(undefined, {
+      timeZoneName: "short",
+    });
+    expect(expected).not.toBe(new Date(event.occurredAt).toLocaleString());
+    const row = (await screen.findByText("Created project alpha")).closest(
+      ".audit-event",
+    );
+    expect(within(row).getByText(expected)).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText("Show details for event 7"));
+    await screen.findByText(/"nested": true/);
+    const detail = document.querySelector(".audit-inline-detail");
+    expect(within(detail).getByText(expected)).toBeTruthy();
+  });
+
   it("collapses the details when the same control is clicked again", async () => {
     const load = vi.fn((path) =>
       Promise.resolve(
@@ -327,6 +352,18 @@ describe("AuditPanel", () => {
       );
       expect(query.get("first")).toBe("0");
     });
+  });
+
+  it("does not send a one-character search", async () => {
+    const load = vi.fn(() => Promise.resolve({ total: 1, events: [event] }));
+    render(<AuditPanel api={load} />);
+    await screen.findByText("Created project alpha");
+
+    fireEvent.change(screen.getByLabelText("Search the audit log"), {
+      target: { value: "a" },
+    });
+    await waitFor(() => expect(listCalls(load)).toHaveLength(2));
+    expect(lastQuery(load).get("search")).toBeNull();
   });
 
   it("clears a stale error after a successful load", async () => {

@@ -51,7 +51,9 @@ function instant(value) {
 
 function when(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString(undefined, { timeZoneName: "short" });
 }
 
 export default function AuditPanel({ api }) {
@@ -69,7 +71,7 @@ export default function AuditPanel({ api }) {
 
   const load = useCallback(async () => {
     const query = new URLSearchParams({ first, max: pageSize });
-    if (search.trim()) query.set("search", search.trim());
+    if (search.trim().length >= 2) query.set("search", search.trim());
     if (action.trim()) query.set("action", action.trim());
     if (outcome) query.set("outcome", outcome);
     if (targetType) query.set("targetType", targetType);
