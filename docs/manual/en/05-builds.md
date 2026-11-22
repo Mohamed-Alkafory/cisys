@@ -103,7 +103,7 @@ The project's creator and admins can **Pin** a build on its build page, and **Un
 
 ## Comments
 
-Members of a project and admins can comment on a build at the bottom of its build page. Only the author can edit a comment; an edited comment is marked **(edited)**. Comments cannot be deleted, and they are deleted together with their build. Anyone who can see the build can read its comments, including visitors of a public project who are not signed in.
+Members of a project and admins can comment on a build at the bottom of its build page. Only the author can edit a comment, and only while they are still a member of the project; an edited comment is marked **(edited)**. The author, the project's leads and admins can delete a comment. Deleting cannot be undone. Comments are also deleted together with their build. Anyone who can see the build can read its comments, including visitors of a public project who are not signed in.
 
 ## Build retention
 

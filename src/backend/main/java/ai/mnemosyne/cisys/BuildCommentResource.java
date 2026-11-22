@@ -12,6 +12,7 @@ import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
@@ -28,8 +29,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Adds and edits comments on a build. Project members and admins may comment; only the author may
- * edit. Comments are read through {@link ProjectPageResource}.
+ * Adds, edits and deletes comments on a build. Project members and admins may comment; only the
+ * author, while still a member, may edit. The author, project LEADs and admins may delete. Comments
+ * are read through {@link ProjectPageResource}.
  */
 @Path("/api/projects/{projectId}/builds/{buildId}/comments")
 @Produces(MediaType.APPLICATION_JSON)
@@ -42,16 +44,25 @@ public class BuildCommentResource {
   /** The text of a comment. */
   public record Input(String body) {}
 
-  /** A comment, with its author's username; {@code mine} when the caller wrote it. */
+  /**
+   * A comment, with its author's username; {@code mine} when the caller wrote it, {@code canDelete}
+   * when the caller may delete it.
+   */
   public record View(
-      Long id, String author, String body, Instant createdAt, Instant updatedAt, boolean mine) {}
+      Long id,
+      String author,
+      String body,
+      Instant createdAt,
+      Instant updatedAt,
+      boolean mine,
+      boolean canDelete) {}
 
   /** Adds a comment to the build. */
   @POST
   @Transactional
   public Response create(
       @PathParam("projectId") Long projectId, @PathParam("buildId") Long buildId, Input input) {
-    access.buildable(projectId);
+    Project p = access.buildable(projectId);
     build(projectId, buildId);
     BuildComment c = new BuildComment();
     c.buildId = buildId;
@@ -60,11 +71,11 @@ public class BuildCommentResource {
     c.createdAt = Instant.now();
     c.persist();
     return Response.status(201)
-        .entity(views(List.of(c), c.authorSubject, directory).get(0))
+        .entity(views(List.of(c), c.authorSubject, true, moderates(p), directory).get(0))
         .build();
   }
 
-  /** Changes the text of the caller's own comment. */
+  /** Changes the text of the caller's own comment while they are still a project member. */
   @PUT
   @Path("/{commentId}")
   @Transactional
@@ -73,34 +84,72 @@ public class BuildCommentResource {
       @PathParam("buildId") Long buildId,
       @PathParam("commentId") Long commentId,
       Input input) {
-    access.visible(projectId);
-    build(projectId, buildId);
-    BuildComment c = BuildComment.findById(commentId);
-    if (c == null || !buildId.equals(c.buildId)) {
-      throw new NotFoundException();
-    }
+    Project p = access.buildable(projectId);
+    BuildComment c = comment(projectId, buildId, commentId);
     String subject = access.subject();
     if (!subject.equals(c.authorSubject)) {
       throw new ForbiddenException();
     }
     c.body = body(input);
     c.updatedAt = Instant.now();
-    return views(List.of(c), subject, directory).get(0);
+    return views(List.of(c), subject, true, moderates(p), directory).get(0);
   }
 
-  /** The comments as {@code caller} sees them; authors are looked up once each. */
-  static List<View> views(List<BuildComment> comments, String caller, UserDirectory directory) {
+  /** Deletes a comment: the author while still a member, project LEADs and admins. */
+  @DELETE
+  @Path("/{commentId}")
+  @Transactional
+  public Response delete(
+      @PathParam("projectId") Long projectId,
+      @PathParam("buildId") Long buildId,
+      @PathParam("commentId") Long commentId) {
+    Project p = access.visible(projectId);
+    BuildComment c = comment(projectId, buildId, commentId);
+    boolean author = access.subject().equals(c.authorSubject) && access.canComment(p);
+    if (!author && !moderates(p)) {
+      throw new ForbiddenException();
+    }
+    c.delete();
+    return Response.noContent().build();
+  }
+
+  /**
+   * The comments as {@code caller} sees them; authors are looked up once each. {@code member} is
+   * whether the caller may comment, {@code moderator} whether they may delete anyone's comment.
+   */
+  static List<View> views(
+      List<BuildComment> comments,
+      String caller,
+      boolean member,
+      boolean moderator,
+      UserDirectory directory) {
     Map<String, String> names = new HashMap<>();
     return comments.stream()
-        .map(c ->
-            new View(
-                c.id,
-                names.computeIfAbsent(c.authorSubject, s -> username(directory, s)),
-                c.body,
-                c.createdAt,
-                c.updatedAt,
-                c.authorSubject.equals(caller)))
+        .map(c -> {
+          boolean mine = c.authorSubject.equals(caller);
+          return new View(
+              c.id,
+              names.computeIfAbsent(c.authorSubject, s -> username(directory, s)),
+              c.body,
+              c.createdAt,
+              c.updatedAt,
+              mine,
+              moderator || (mine && member));
+        })
         .toList();
+  }
+
+  private boolean moderates(Project p) {
+    return access.canManage(p, ProjectMember.TeamRole.LEAD);
+  }
+
+  private static BuildComment comment(Long projectId, Long buildId, Long commentId) {
+    build(projectId, buildId);
+    BuildComment c = BuildComment.findById(commentId);
+    if (c == null || !buildId.equals(c.buildId)) {
+      throw new NotFoundException();
+    }
+    return c;
   }
 
   /** An unreachable directory leaves the comments readable. */

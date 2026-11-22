@@ -37,7 +37,8 @@ The Member, Lead and Admin columns below refer to the caller's global Keycloak r
 | Start a build                       | assigned (MEMBER) | assigned | yes   |
 | Pin / unpin a build                 | no     | assigned | yes   |
 | Comment on a build                  | assigned | assigned | yes   |
-| Edit a comment                      | own    | own  | own   |
+| Edit a comment                      | own, assigned | own, assigned | own |
+| Delete a comment                    | own, assigned | own; any assigned (LEAD) | yes |
 | Create, edit and delete articles    | if allowed | if allowed | yes |
 | Cancel a build                      | no     | own, or any in their project | yes |
 | Manage project team                | no     | assigned | yes   |

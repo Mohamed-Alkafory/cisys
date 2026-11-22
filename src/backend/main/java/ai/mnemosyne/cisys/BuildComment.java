@@ -14,7 +14,7 @@ import jakarta.persistence.Entity;
 import java.time.Instant;
 import java.util.List;
 
-/** A comment on a build. Only its author may change it. */
+/** A comment on a build. Only its author may change it; project LEADs and admins may delete it. */
 @Entity
 public class BuildComment extends PanacheEntity {
   /** The longest comment, in characters. */

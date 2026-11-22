@@ -237,6 +237,90 @@ class BuildCommentResourceTest {
   }
 
   @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "member-id"))
+  void removedMemberCannotEditOrDelete() {
+    Seeded s = seed(false, null, null);
+    Long c = comment(s.build(), "member-id", "first");
+    given()
+        .contentType("application/json")
+        .body(body("changed"))
+        .put(path(s) + "/" + c)
+        .then()
+        .statusCode(403);
+    given().delete(path(s) + "/" + c).then().statusCode(403);
+    assertEquals("first", stored(c).body);
+    given()
+        .get(page(s) + "/comments")
+        .then()
+        .statusCode(200)
+        .body("[0].mine", equalTo(true))
+        .body("[0].canDelete", equalTo(false));
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "member-id"))
+  void authorDeletesOwnComment() {
+    Seeded s = seed(false, "member-id", ProjectMember.TeamRole.MEMBER);
+    Long c = comment(s.build(), "member-id", "first");
+    given().get(page(s) + "/comments").then().body("[0].canDelete", equalTo(true));
+    given().delete(path(s) + "/" + c).then().statusCode(204);
+    assertNull(stored(c));
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "member-id"))
+  void memberCannotDeleteOthersComment() {
+    Seeded s = seed(false, "member-id", ProjectMember.TeamRole.MEMBER);
+    Long c = comment(s.build(), "other-id", "first");
+    given().get(page(s) + "/comments").then().body("[0].canDelete", equalTo(false));
+    given().delete(path(s) + "/" + c).then().statusCode(403);
+    assertNotNull(stored(c));
+  }
+
+  @Test
+  @TestSecurity(user = "lead", roles = "lead")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "lead-id"))
+  void leadDeletesAnyComment() {
+    Seeded s = seed(false, "lead-id", ProjectMember.TeamRole.LEAD);
+    Long c = comment(s.build(), "member-id", "spam");
+    given().get(page(s) + "/comments").then().body("[0].canDelete", equalTo(true));
+    given().delete(path(s) + "/" + c).then().statusCode(204);
+    assertNull(stored(c));
+  }
+
+  @Test
+  @TestSecurity(user = "admin", roles = "admin")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "admin-id"))
+  void adminDeletesAnyComment() {
+    Seeded s = seed(true, null, null);
+    Long c = comment(s.build(), "member-id", "secret");
+    given().delete(path(s) + "/" + c).then().statusCode(204);
+    assertNull(stored(c));
+  }
+
+  @Test
+  @TestSecurity(user = "member", roles = "member")
+  @JwtSecurity(claims = @Claim(key = "sub", value = "outsider-id"))
+  void deleteOnPrivateProjectIs404() {
+    Seeded s = seed(true, "member-id", ProjectMember.TeamRole.MEMBER);
+    Long c = comment(s.build(), "member-id", "first");
+    given().delete(path(s) + "/" + c).then().statusCode(404);
+    assertNotNull(stored(c));
+  }
+
+  @Test
+  void anonymousCannotDelete() {
+    Seeded s = seed(false, "member-id", ProjectMember.TeamRole.MEMBER);
+    Long c = comment(s.build(), "member-id", "first");
+    given().get(page(s) + "/comments").then().body("[0].canDelete", equalTo(false));
+    given().delete(path(s) + "/" + c).then().statusCode(401);
+    assertNotNull(stored(c));
+  }
+
+  @Test
   void deletingTheBuildDeletesItsComments() {
     Seeded s = seed(false, null, null);
     Long c = comment(s.build(), "member-id", "first");

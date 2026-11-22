@@ -27,6 +27,7 @@ const comments = [
     createdAt: "2026-11-19T10:00:00Z",
     updatedAt: "2026-11-19T11:00:00Z",
     mine: true,
+    canDelete: true,
   },
   {
     id: 1,
@@ -35,6 +36,7 @@ const comments = [
     createdAt: "2026-11-19T09:00:00Z",
     updatedAt: null,
     mine: false,
+    canDelete: false,
   },
 ];
 
@@ -67,10 +69,26 @@ describe("BuildComments", () => {
     expect(screen.getAllByLabelText("Edit comment")).toHaveLength(1);
   });
 
-  it("hides the form when commenting is not allowed", async () => {
+  it("hides the form and edit when commenting is not allowed", async () => {
     renderComments({ canComment: false });
     await screen.findByText("Mine");
     expect(screen.queryByLabelText("New comment")).toBeNull();
+    expect(screen.queryByLabelText("Edit comment")).toBeNull();
+  });
+
+  it("offers delete where allowed and deletes after confirming", async () => {
+    const api = vi.fn(async () => comments);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderComments({ load: api });
+    await screen.findByText("Mine");
+    expect(screen.getAllByLabelText("Delete comment")).toHaveLength(1);
+    fireEvent.click(screen.getByLabelText("Delete comment"));
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("/projects/7/builds/42/comments/2", {
+        method: "DELETE",
+      }),
+    );
+    window.confirm.mockRestore();
   });
 
   it("posts a new comment", async () => {

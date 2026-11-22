@@ -30,7 +30,8 @@ The Keycloak admin console (<http://localhost:8180/admin>) uses `admin` / `admin
 | `POST` build with a `credentialRef`       | no                        | no                   | yes   |
 | `PUT`/`DELETE .../builds/{id}/pin`        | no                        | own projects         | yes   |
 | `POST .../builds/{id}/comments`           | assigned projects         | assigned projects    | yes   |
-| `PUT .../builds/{id}/comments/{id}`       | own comments              | own comments         | own comments |
+| `PUT .../builds/{id}/comments/{id}`       | own, in assigned projects | own, in assigned projects | own comments |
+| `DELETE .../builds/{id}/comments/{id}`    | own, in assigned projects | own; any in own projects | yes |
 | `POST /api/articles`, `PUT`/`DELETE /api/articles/{id}` | when General allows members | when General allows leads | yes |
 | `GET /api/projects/{id}/team`             | assigned members          | assigned members     | all   |
 | `POST /api/projects/{id}/team`            | no                        | assigned (`LEAD`)    | yes   |

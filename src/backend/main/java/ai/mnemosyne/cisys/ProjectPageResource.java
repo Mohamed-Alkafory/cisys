@@ -139,7 +139,12 @@ public class ProjectPageResource {
     if (b == null || !p.id.equals(b.projectId)) {
       throw new NotFoundException();
     }
-    return BuildCommentResource.views(BuildComment.of(buildId), access.subjectOrNull(), directory);
+    return BuildCommentResource.views(
+        BuildComment.of(buildId),
+        access.subjectOrNull(),
+        access.canComment(p),
+        access.canManage(p, ProjectMember.TeamRole.LEAD),
+        directory);
   }
 
   /** One stored report of a build; see {@link ReportType}. */

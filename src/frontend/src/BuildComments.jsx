@@ -7,12 +7,12 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Textarea } from "./components/ui/textarea";
 
-/** Comments on a build; members may add one and authors may edit theirs. */
+/** Comments on a build; members may add one, authors may edit theirs, and authors, leads and admins may delete. */
 export default function BuildComments({
   name,
   projectId,
@@ -71,6 +71,21 @@ export default function BuildComments({
     if (await save(`${base}/${editing}`, "PUT", editText)) setEditing(null);
   }
 
+  async function remove(id) {
+    if (!window.confirm("Delete this comment? This cannot be undone.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await load(`${base}/${id}`, { method: "DELETE" });
+      if (editing === id) setEditing(null);
+      await loadComments();
+    } catch (e) {
+      setError(e.message || "Unable to delete the comment.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Card className="project-card">
       <CardHeader>
@@ -90,7 +105,7 @@ export default function BuildComments({
                   <span className="comment-author">{c.author}</span>
                   <span>{new Date(c.createdAt).toLocaleString()}</span>
                   {c.updatedAt && <span>(edited)</span>}
-                  {c.mine && editing !== c.id && (
+                  {c.mine && canComment && editing !== c.id && (
                     <Button
                       type="button"
                       variant="ghost"
@@ -104,6 +119,20 @@ export default function BuildComments({
                       aria-label="Edit comment"
                     >
                       <Pencil size={14} aria-hidden="true" />
+                    </Button>
+                  )}
+                  {c.canDelete && editing !== c.id && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="comment-edit"
+                      disabled={busy}
+                      onClick={() => remove(c.id)}
+                      title="Delete"
+                      aria-label="Delete comment"
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
                     </Button>
                   )}
                 </div>
