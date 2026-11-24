@@ -89,7 +89,7 @@ There is no automatic retention or deletion. The table grows with administrative
 
 * The browser signs in with the Keycloak authorization-code flow with PKCE (`S256`) as the public client `cisys-ui`. Direct access grants are disabled in the development realm.
 * The backend validates bearer access tokens and reads roles from `realm_access/roles`.
-* CORS allows `http://localhost:5173` only. Change `quarkus.http.cors.origins` for any other frontend origin.
+* CORS allows only the origins in `CISYS_CORS_ORIGINS`, which defaults to `http://localhost:5173,http://localhost:8180`. It is an exact, comma-separated origin list and must never be `*`; set it to the deployed frontend origins.
 
 ## Health and metrics
 

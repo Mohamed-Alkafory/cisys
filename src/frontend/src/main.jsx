@@ -75,14 +75,15 @@ import {
   withTab,
 } from "./project-paths";
 import { buildPath } from "./build-format";
+import { resolveConfig } from "./app-config";
 import headerLogo from "./assets/logo-header.svg";
 import "./style.css";
 
-const API = "http://localhost:8080/api";
+const { apiUrl: API, keycloakUrl, realm, clientId } = resolveConfig();
 const keycloak = new Keycloak({
-  url: "http://localhost:8180",
-  realm: "cisys",
-  clientId: "cisys-ui",
+  url: keycloakUrl,
+  realm,
+  clientId,
 });
 // Matches the Branding entity defaults, used when the public branding cannot be loaded.
 const DEFAULT_BRANDING = {

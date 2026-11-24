@@ -120,6 +120,7 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | Variable            | Default                                  | Description                                          |
 | :------------------ | :--------------------------------------- | :--------------------------------------------------- |
 | `KEYCLOAK_URL`      | `http://localhost:8180`                  | Keycloak base URL (the `cisys` realm is appended)    |
+| `CISYS_CORS_ORIGINS` | `http://localhost:5173,http://localhost:8180` | Comma-separated exact origins allowed by CORS; never use `*` |
 | `SESSION_INVALIDATE_ON_SHUTDOWN` | `true` | Signs all users out of the realm when cisys shuts down |
 | `KEYCLOAK_ADMIN_CLIENT_ID` | `cisys-backend` | Keycloak service account used to sign users out |
 | `KEYCLOAK_ADMIN_CLIENT_SECRET` | `cisys` | Secret of that service account |
@@ -143,6 +144,28 @@ If you prefer not to use Compose, run PostgreSQL and Keycloak yourself and point
 | `CISYS_GIT_INSECURE_TLS_HOSTS` | not set                     | Hosts whose self-signed certificate is accepted      |
 
 The runner executes repository-controlled code. Read the **Builds** chapter of the manual and [SECURITY.md](SECURITY.md) before using it.
+
+### Running the built frontend on another origin
+
+The frontend is a static bundle (`npm --prefix src/frontend run build`, output in `src/frontend/dist`). cisys does not serve it: a static host or a reverse proxy serves the bundle and forwards `/api` to the backend. Deploying that host is out of scope here; this section only covers the endpoints the bundle uses.
+
+The bundle reads its endpoints at runtime from `/config.js` (copied from `src/frontend/public/config.js` into `dist`). Edit `config.js` next to `index.html`; no rebuild is needed:
+
+```js
+window.cisysConfig = {
+  apiUrl: "https://ci.example.com/api",
+  keycloakUrl: "https://sso.example.com",
+  realm: "cisys",
+  clientId: "cisys-ui",
+};
+```
+
+Leave a key out to keep the local development default for it. For a non-localhost deployment:
+
+- **Backend CORS.** Set `CISYS_CORS_ORIGINS` to the exact frontend origins, for example `https://ci.example.com`. Use scheme, host and port, list them comma-separated, and never use `*`. The defaults are `http://localhost:5173,http://localhost:8180`.
+- **Keycloak realm.** On the `cisys-ui` client, add the deployed frontend origin to **Valid redirect URIs**, **Valid post logout redirect URIs** and **Web origins**. The development values are `http://localhost:5173/*` (and `http://localhost:5173` for web origins). A realm imported before this can be updated in the Keycloak admin console.
+
+The default `config.js` is empty, so the dev setup runs unchanged on `http://localhost:5173` with the defaults above.
 
 ## Run tests
 
