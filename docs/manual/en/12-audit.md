@@ -56,7 +56,7 @@ Every event stores a snapshot of the actor, the project and the target, so the e
 | `build.unpin` | A build is unpinned. |
 | `build.cancel` | A queued or running build is cancelled. |
 
-Comments, webhook deliveries, anonymous reads, failed sign-ins and ordinary read requests are intentionally not audited. Failed sign-ins happen in Keycloak and are available from its own event log.
+Comments (create, edit and delete), webhook deliveries, anonymous reads, failed sign-ins and ordinary read requests are intentionally not audited. Failed sign-ins happen in Keycloak and are available from its own event log.
 
 ## Outcomes and refused calls
 
