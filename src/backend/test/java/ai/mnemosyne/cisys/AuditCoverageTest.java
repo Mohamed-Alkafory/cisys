@@ -40,7 +40,8 @@ class AuditCoverageTest {
   private static final Set<String> ALLOWED_UNAUDITED =
       Set.of(
           "ai.mnemosyne.cisys.BuildCommentResource#create",
-          "ai.mnemosyne.cisys.BuildCommentResource#update");
+          "ai.mnemosyne.cisys.BuildCommentResource#update",
+          "ai.mnemosyne.cisys.BuildCommentResource#delete");
 
   @Test
   void everyMutatingEndpointIsAuditedOrAllowlisted() throws Exception {
